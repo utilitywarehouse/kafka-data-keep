@@ -31,13 +31,55 @@ type BackupAppConfig struct {
 
 func loadBackupAppConfig() BackupAppConfig {
 	var cfg BackupAppConfig
-	flag.StringVar(&cfg.Brokers, "brokers", getEnv("KAFKA_BROKERS", "localhost:9092"), "Kafka brokers (comma separated)")
-	flag.StringVar(&cfg.BrokersDNSSrv, "brokersDNSSrv", getEnv("KAFKA_BROKERS_DNS_SRV", ""), "DNS SRV record with the kafka seed brokers")
-	flag.StringVar(&cfg.TopicsRegex, "topics-regex", getEnv("KAFKA_TOPICS_REGEX", "*"), "List of kafka topics regex to consume (comma separated)")
-	flag.StringVar(&cfg.ExcludeTopicsRegex, "exclude-topics-regex", getEnv("KAFKA_EXCLUDE_TOPICS_REGEX", ""), "List of kafka topics regex to exclude from consuming (comma separated)")
-	flag.StringVar(&cfg.GroupID, "group-id", getEnv("KAFKA_GROUP_ID", "kafka-data-keep"), "Kafka consumer group ID")
-	flag.StringVar(&cfg.Bucket, "bucket", getEnv("S3_BUCKET", ""), "S3 bucket name where to store the backups")
-	flag.Int64Var(&cfg.FileSize, "file-size", getEnvInt64("FILE_SIZE", 5*1024*1024), "File size in bytes")
+
+	// Kafka Connection
+	flag.StringVar(
+		&cfg.Brokers,
+		"brokers",
+		getEnv("KAFKA_BROKERS", "localhost:9092"),
+		"Kafka brokers (comma separated)",
+	)
+	flag.StringVar(
+		&cfg.BrokersDNSSrv,
+		"brokersDNSSrv",
+		getEnv("KAFKA_BROKERS_DNS_SRV", ""),
+		"DNS SRV record with the kafka seed brokers",
+	)
+
+	// Kafka Consumer
+	flag.StringVar(
+		&cfg.TopicsRegex,
+		"topics-regex",
+		getEnv("KAFKA_TOPICS_REGEX", ".*"),
+		"List of kafka topics regex to consume (comma separated)",
+	)
+	flag.StringVar(
+		&cfg.ExcludeTopicsRegex,
+		"exclude-topics-regex",
+		getEnv("KAFKA_EXCLUDE_TOPICS_REGEX", ""),
+		"List of kafka topics regex to exclude from consuming (comma separated)",
+	)
+	flag.StringVar(
+		&cfg.GroupID,
+		"group-id",
+		getEnv("KAFKA_GROUP_ID", "kafka-data-keep"),
+		"Kafka consumer group ID",
+	)
+
+	// Storage
+	flag.StringVar(
+		&cfg.Bucket,
+		"bucket",
+		getEnv("S3_BUCKET", ""),
+		"S3 bucket name where to store the backups",
+	)
+	flag.Int64Var(
+		&cfg.FileSize,
+		"file-size",
+		getEnvInt64("FILE_SIZE", 5*1024*1024),
+		"File size in bytes",
+	)
+
 	flag.Parse()
 	return cfg
 }
