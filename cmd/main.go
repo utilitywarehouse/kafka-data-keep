@@ -136,8 +136,22 @@ func main() {
 		}
 	}()
 
-	// Initialize Kafka client
-	const maxPollRecords = 10000 // this affects how many records are processed per poll, not how many are fetched from Kafka
+	client, err := initKafkaClient(cfg, mgr)
+	if err != nil {
+		slog.Error("failed to create kafka client", "error", err)
+		os.Exit(1)
+	}
+	defer client.CloseAllowingRebalance()
+
+	slog.Info("Starting backup application...")
+	if err := backup.Run(ctx, client, mgr); err != nil {
+		slog.Error("consumer error", "error", err)
+	}
+
+}
+
+const maxPollRecords = 10000 // this affects how many records are processed per poll, not how many are fetched from Kafka
+func initKafkaClient(cfg BackupAppConfig, mgr *backup.PartitionsWriterManager) (*kafka.Client, error) {
 	opts := []kgo.Opt{
 		kgo.ConsumeRegex(), // use regex to consume topics
 		kgo.ConsumeTopics(strings.Split(cfg.TopicsRegex, ",")...),
@@ -163,18 +177,7 @@ func main() {
 	} else {
 		opts = append(opts, kgo.SeedBrokers(cfg.Brokers))
 	}
-	client, err := kafka.NewClient(opts...)
-	if err != nil {
-		slog.Error("failed to create kafka client", "error", err)
-		os.Exit(1)
-	}
-	defer client.CloseAllowingRebalance()
-
-	slog.Info("Starting backup application...")
-	if err := backup.Run(ctx, client, mgr); err != nil {
-		slog.Error("consumer error", "error", err)
-	}
-
+	return kafka.NewClient(opts...)
 }
 
 func getEnv(key, fallback string) string {
