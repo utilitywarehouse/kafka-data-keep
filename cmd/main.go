@@ -20,18 +20,16 @@ import (
 
 func main() {
 	var (
-		brokers  = flag.String("brokers", "localhost:9092", "Kafka brokers (comma separated)")
-		topics   = flag.String("topics", "", "Kafka topics (comma separated)")
-		groupID  = flag.String("group-id", "kafka-backup-restore", "Kafka consumer group ID")
-		bucket   = flag.String("bucket", "", "S3 bucket name")
-		fileSize = flag.Int64("file-size", 5*1024*1024, "File size in bytes")
+		brokers            = flag.String("brokers", "localhost:9092", "Kafka brokers (comma separated)")
+		brokersDNSSrv      = flag.String("brokersDNSSrv", "", "DNS SRV record with the kafka seed brokers")
+		topicsRegex        = flag.String("topics-regex", "*", "List of kafka topics regex to consume (comma separated)")
+		excludeTopicsRegex = flag.String("exclude-topics-regex", "", "List of kafka topics regex to exclude from consuming (comma separated)")
+		groupID            = flag.String("group-id", "kafka-data-keep", "Kafka consumer group ID")
+		bucket             = flag.String("bucket", "", "S3 bucket name where to store the backups")
+		fileSize           = flag.Int64("file-size", 5*1024*1024, "File size in bytes")
 	)
 	flag.Parse()
 
-	if *topics == "" {
-		slog.Error("topics must be provided")
-		os.Exit(1)
-	}
 	if *bucket == "" {
 		slog.Error("bucket must be provided")
 		os.Exit(1)
@@ -80,10 +78,12 @@ func main() {
 	// Initialize Kafka client
 	const maxPollRecords = 10000 // this affects how many records are processed per poll, not how many are fetched from Kafka
 	opts := []kgo.Opt{
+		kgo.ConsumeRegex(), // use regex to consume topics
+		kgo.ConsumeTopics(strings.Split(*topicsRegex, ",")...),
+		kgo.ConsumeExcludeTopics(strings.Split(*excludeTopicsRegex, ",")...),
 		kafka.WithMaxPollRecords(maxPollRecords),
-		kgo.SeedBrokers(strings.Split(*brokers, ",")...),
-		kgo.ConsumeTopics(strings.Split(*topics, ",")...),
 		kafka.WithConsumeOldestOffset(),
+		kafka.WithTracer(nil), // do not record traces
 		kgo.ConsumerGroup(*groupID),
 		kgo.DisableAutoCommit(),    // We will commit manually
 		kgo.BlockRebalanceOnPoll(), // block rebalance while processing records
@@ -96,6 +96,11 @@ func main() {
 		kgo.OnPartitionsLost(func(ctx context.Context, c *kgo.Client, p map[string][]int32) {
 			mgr.OnPartitionLost(p)
 		}),
+	}
+	if *brokersDNSSrv != "" {
+		opts = append(opts, kafka.SeedBrokersFromDNS(*brokersDNSSrv))
+	} else {
+		opts = append(opts, kgo.SeedBrokers(*brokers))
 	}
 	client, err := kafka.NewClient(opts...)
 	if err != nil {
