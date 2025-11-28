@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -28,6 +29,8 @@ type BackupAppConfig struct {
 	Bucket             string
 	FileSize           int64
 	WorkingDir         string
+	S3Endpoint         string
+	S3Region           string
 }
 
 func loadBackupAppConfig() BackupAppConfig {
@@ -86,6 +89,18 @@ func loadBackupAppConfig() BackupAppConfig {
 		getEnv("WORKING_DIR", "kafka-backup-data"),
 		"Working directory for local files",
 	)
+	flag.StringVar(
+		&cfg.S3Endpoint,
+		"s3-endpoint",
+		getEnv("AWS_ENDPOINT_URL", ""),
+		"S3 endpoint URL (for LocalStack or custom S3-compatible storage)",
+	)
+	flag.StringVar(
+		&cfg.S3Region,
+		"s3-region",
+		getEnv("AWS_REGION", "eu-west-1"),
+		"S3 region ",
+	)
 
 	flag.Parse()
 	return cfg
@@ -104,12 +119,22 @@ func main() {
 	defer cancel()
 
 	// Initialize S3 client and uploader
-	awsCfg, err := config.LoadDefaultConfig(ctx)
+	awsCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(cfg.S3Region))
 	if err != nil {
 		slog.Error("unable to load SDK config", "error", err)
 		os.Exit(1)
 	}
-	s3Client := s3.NewFromConfig(awsCfg)
+
+	// Create S3 client with path-style addressing if using custom endpoint
+	var s3ClientOpts []func(*s3.Options)
+	if cfg.S3Endpoint != "" {
+		s3ClientOpts = append(s3ClientOpts, func(o *s3.Options) {
+			o.BaseEndpoint = aws.String(cfg.S3Endpoint)
+			o.UsePathStyle = true
+		})
+	}
+
+	s3Client := s3.NewFromConfig(awsCfg, s3ClientOpts...)
 	uploader := backup.NewUploader(s3Client, cfg.Bucket)
 
 	// Create working dir for local files
