@@ -5,6 +5,7 @@ import (
 	"flag"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 
 	"os/signal"
@@ -18,19 +19,33 @@ import (
 	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
 )
 
-func main() {
-	var (
-		brokers            = flag.String("brokers", "localhost:9092", "Kafka brokers (comma separated)")
-		brokersDNSSrv      = flag.String("brokersDNSSrv", "", "DNS SRV record with the kafka seed brokers")
-		topicsRegex        = flag.String("topics-regex", "*", "List of kafka topics regex to consume (comma separated)")
-		excludeTopicsRegex = flag.String("exclude-topics-regex", "", "List of kafka topics regex to exclude from consuming (comma separated)")
-		groupID            = flag.String("group-id", "kafka-data-keep", "Kafka consumer group ID")
-		bucket             = flag.String("bucket", "", "S3 bucket name where to store the backups")
-		fileSize           = flag.Int64("file-size", 5*1024*1024, "File size in bytes")
-	)
-	flag.Parse()
+type BackupAppConfig struct {
+	Brokers            string
+	BrokersDNSSrv      string
+	TopicsRegex        string
+	ExcludeTopicsRegex string
+	GroupID            string
+	Bucket             string
+	FileSize           int64
+}
 
-	if *bucket == "" {
+func loadBackupAppConfig() BackupAppConfig {
+	var cfg BackupAppConfig
+	flag.StringVar(&cfg.Brokers, "brokers", getEnv("KAFKA_BROKERS", "localhost:9092"), "Kafka brokers (comma separated)")
+	flag.StringVar(&cfg.BrokersDNSSrv, "brokersDNSSrv", getEnv("KAFKA_BROKERS_DNS_SRV", ""), "DNS SRV record with the kafka seed brokers")
+	flag.StringVar(&cfg.TopicsRegex, "topics-regex", getEnv("KAFKA_TOPICS_REGEX", "*"), "List of kafka topics regex to consume (comma separated)")
+	flag.StringVar(&cfg.ExcludeTopicsRegex, "exclude-topics-regex", getEnv("KAFKA_EXCLUDE_TOPICS_REGEX", ""), "List of kafka topics regex to exclude from consuming (comma separated)")
+	flag.StringVar(&cfg.GroupID, "group-id", getEnv("KAFKA_GROUP_ID", "kafka-data-keep"), "Kafka consumer group ID")
+	flag.StringVar(&cfg.Bucket, "bucket", getEnv("S3_BUCKET", ""), "S3 bucket name where to store the backups")
+	flag.Int64Var(&cfg.FileSize, "file-size", getEnvInt64("FILE_SIZE", 5*1024*1024), "File size in bytes")
+	flag.Parse()
+	return cfg
+}
+
+func main() {
+	cfg := loadBackupAppConfig()
+
+	if cfg.Bucket == "" {
 		slog.Error("bucket must be provided")
 		os.Exit(1)
 	}
@@ -40,13 +55,13 @@ func main() {
 	defer cancel()
 
 	// Initialize S3 client and uploader
-	cfg, err := config.LoadDefaultConfig(ctx)
+	awsCfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		slog.Error("unable to load SDK config", "error", err)
 		os.Exit(1)
 	}
-	s3Client := s3.NewFromConfig(cfg)
-	uploader := backup.NewUploader(s3Client, *bucket)
+	s3Client := s3.NewFromConfig(awsCfg)
+	uploader := backup.NewUploader(s3Client, cfg.Bucket)
 
 	// Create a temp dir for local files
 	tmpDir, err := os.MkdirTemp("", "kafka-backup")
@@ -58,7 +73,7 @@ func main() {
 	// Note: we should probably clean up this temp dir on exit, but the files are deleted after upload anyway.
 
 	wConfig := backup.Config{
-		FileSize: *fileSize,
+		FileSize: cfg.FileSize,
 		RootPath: tmpDir,
 	}
 
@@ -79,12 +94,12 @@ func main() {
 	const maxPollRecords = 10000 // this affects how many records are processed per poll, not how many are fetched from Kafka
 	opts := []kgo.Opt{
 		kgo.ConsumeRegex(), // use regex to consume topics
-		kgo.ConsumeTopics(strings.Split(*topicsRegex, ",")...),
-		kgo.ConsumeExcludeTopics(strings.Split(*excludeTopicsRegex, ",")...),
+		kgo.ConsumeTopics(strings.Split(cfg.TopicsRegex, ",")...),
+		kgo.ConsumeExcludeTopics(strings.Split(cfg.ExcludeTopicsRegex, ",")...),
 		kafka.WithMaxPollRecords(maxPollRecords),
 		kafka.WithConsumeOldestOffset(),
 		kafka.WithTracer(nil), // do not record traces
-		kgo.ConsumerGroup(*groupID),
+		kgo.ConsumerGroup(cfg.GroupID),
 		kgo.DisableAutoCommit(),    // We will commit manually
 		kgo.BlockRebalanceOnPoll(), // block rebalance while processing records
 		kgo.OnPartitionsAssigned(func(ctx context.Context, c *kgo.Client, p map[string][]int32) {
@@ -97,10 +112,10 @@ func main() {
 			mgr.OnPartitionLost(p)
 		}),
 	}
-	if *brokersDNSSrv != "" {
-		opts = append(opts, kafka.SeedBrokersFromDNS(*brokersDNSSrv))
+	if cfg.BrokersDNSSrv != "" {
+		opts = append(opts, kafka.SeedBrokersFromDNS(cfg.BrokersDNSSrv))
 	} else {
-		opts = append(opts, kgo.SeedBrokers(*brokers))
+		opts = append(opts, kgo.SeedBrokers(cfg.Brokers))
 	}
 	client, err := kafka.NewClient(opts...)
 	if err != nil {
@@ -114,4 +129,22 @@ func main() {
 		slog.Error("consumer error", "error", err)
 	}
 
+}
+
+func getEnv(key, fallback string) string {
+	if value, ok := os.LookupEnv(key); ok {
+		return value
+	}
+	return fallback
+}
+
+func getEnvInt64(key string, fallback int64) int64 {
+	if value, ok := os.LookupEnv(key); ok {
+		i, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return fallback
+		}
+		return i
+	}
+	return fallback
 }
