@@ -27,6 +27,7 @@ type BackupAppConfig struct {
 	GroupID            string
 	Bucket             string
 	FileSize           int64
+	WorkingDir         string
 }
 
 func loadBackupAppConfig() BackupAppConfig {
@@ -79,6 +80,12 @@ func loadBackupAppConfig() BackupAppConfig {
 		getEnvInt64("FILE_SIZE", 5*1024*1024),
 		"File size in bytes",
 	)
+	flag.StringVar(
+		&cfg.WorkingDir,
+		"working-dir",
+		getEnv("WORKING_DIR", "kafka-backup-data"),
+		"Working directory for local files",
+	)
 
 	flag.Parse()
 	return cfg
@@ -105,22 +112,19 @@ func main() {
 	s3Client := s3.NewFromConfig(awsCfg)
 	uploader := backup.NewUploader(s3Client, cfg.Bucket)
 
-	// Create a temp dir for local files
-	tmpDir, err := os.MkdirTemp("", "kafka-backup")
-	if err != nil {
-		slog.Error("failed to create temp dir", "error", err)
+	// Create working dir for local files
+	if err := os.MkdirAll(cfg.WorkingDir, 0755); err != nil {
+		slog.Error("failed to create working dir", "error", err)
 		os.Exit(1)
 	}
-	slog.Info("Using temp dir for local files", "path", tmpDir)
-	// Note: we should probably clean up this temp dir on exit, but the files are deleted after upload anyway.
+	slog.Info("Using working dir for local files", "path", cfg.WorkingDir)
 
 	wConfig := backup.Config{
 		FileSize: cfg.FileSize,
-		RootPath: tmpDir,
+		RootPath: cfg.WorkingDir,
 	}
 
 	// Create manager first
-
 	mgr, err := backup.NewPartitionsWriterManager(uploader, &avro.RecordEncoderFactory{}, wConfig)
 	if err != nil {
 		slog.Error("failed to create writer manager", "error", err)

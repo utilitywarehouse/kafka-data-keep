@@ -3,13 +3,14 @@ package backup
 import (
 	"context"
 	"fmt"
-	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/twmb/franz-go/pkg/kmsg"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
 // OffsetCommitter defines the interface for committing offsets.
