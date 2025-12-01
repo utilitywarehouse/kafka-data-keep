@@ -11,6 +11,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	"fmt"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -108,21 +110,24 @@ func loadBackupAppConfig() BackupAppConfig {
 
 func main() {
 	cfg := loadBackupAppConfig()
-
-	if cfg.Bucket == "" {
-		slog.Error("bucket must be provided")
-		os.Exit(1)
-	}
-
 	// Handle signals for graceful shutdown
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
+	if err := runBackup(ctx, cfg); err != nil {
+		slog.Error("error running backup", "error", err)
+	}
+}
+
+func runBackup(ctx context.Context, cfg BackupAppConfig) error {
+	if cfg.Bucket == "" {
+		return fmt.Errorf("bucket must be provided")
+	}
+
 	// Initialize S3 client and uploader
 	awsCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(cfg.S3Region))
 	if err != nil {
-		slog.Error("unable to load SDK config", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("unable to load SDK config: %w", err)
 	}
 
 	// Create S3 client with path-style addressing if using custom endpoint
@@ -139,8 +144,7 @@ func main() {
 
 	// Create working dir for local files
 	if err := os.MkdirAll(cfg.WorkingDir, 0755); err != nil {
-		slog.Error("failed to create working dir", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to create working dir: %w", err)
 	}
 	slog.Info("Using working dir for local files", "path", cfg.WorkingDir)
 
@@ -152,8 +156,7 @@ func main() {
 	// Create manager first
 	mgr, err := backup.NewPartitionsWriterManager(uploader, &avro.RecordEncoderFactory{}, wConfig)
 	if err != nil {
-		slog.Error("failed to create writer manager", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to create writer manager: %w", err)
 	}
 	defer func() {
 		if err := mgr.Close(); err != nil {
@@ -163,16 +166,12 @@ func main() {
 
 	client, err := initKafkaClient(cfg, mgr)
 	if err != nil {
-		slog.Error("failed to create kafka client", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to create kafka client: %w", err)
 	}
 	defer client.CloseAllowingRebalance()
 
 	slog.Info("Starting backup application...")
-	if err := backup.Run(ctx, client, mgr); err != nil {
-		slog.Error("consumer error", "error", err)
-	}
-
+	return backup.Run(ctx, client, mgr)
 }
 
 const maxPollRecords = 10000 // this affects how many records are processed per poll, not how many are fetched from Kafka
@@ -180,7 +179,6 @@ func initKafkaClient(cfg BackupAppConfig, mgr *backup.PartitionsWriterManager) (
 	opts := []kgo.Opt{
 		kgo.ConsumeRegex(), // use regex to consume topics
 		kgo.ConsumeTopics(strings.Split(cfg.TopicsRegex, ",")...),
-		kgo.ConsumeExcludeTopics(strings.Split(cfg.ExcludeTopicsRegex, ",")...),
 		kafka.WithMaxPollRecords(maxPollRecords),
 		kafka.WithConsumeOldestOffset(),
 		kafka.WithTracer(nil), // do not record traces
@@ -202,6 +200,10 @@ func initKafkaClient(cfg BackupAppConfig, mgr *backup.PartitionsWriterManager) (
 	} else {
 		opts = append(opts, kgo.SeedBrokers(cfg.Brokers))
 	}
+	if cfg.ExcludeTopicsRegex != "" {
+		opts = append(opts, kgo.ConsumeExcludeTopics(strings.Split(cfg.ExcludeTopicsRegex, ",")...))
+	}
+
 	return kafka.NewClient(opts...)
 }
 
