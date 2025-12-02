@@ -83,8 +83,9 @@ func (p *PartitionWriter) WriteRecords(ctx context.Context, records []*kgo.Recor
 }
 
 func (p *PartitionWriter) open(offset int64) error {
-	// Simple masking with 0 padding so that we get the file names in alphabetical order
-	maskedOffset := fmt.Sprintf("%040d", offset)
+	// Simple masking with 0 padding so that we get the file names in alphabetical order. 19 digits is the maximum we can have in kafka offsets.
+	// Using the first offset in the file name to ensure idempotence when something fails during execution until we commit the offsets after file upload.
+	maskedOffset := fmt.Sprintf("%019d", offset)
 	filename := fmt.Sprintf("%s-%d-%s.avro", p.topic, p.partition, maskedOffset)
 
 	// Key for S3 (relative path)
