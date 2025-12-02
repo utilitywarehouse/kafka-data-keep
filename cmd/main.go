@@ -35,17 +35,18 @@ type BackupAppConfig struct {
 	S3Region           string
 }
 
-func loadBackupAppConfig() BackupAppConfig {
+func loadBackupAppConfig(args []string) (BackupAppConfig, error) {
 	var cfg BackupAppConfig
+	fs := flag.NewFlagSet("backup", flag.ExitOnError)
 
 	// Kafka Connection
-	flag.StringVar(
+	fs.StringVar(
 		&cfg.Brokers,
 		"brokers",
 		getEnv("KAFKA_BROKERS", "localhost:9092"),
 		"Kafka brokers (comma separated)",
 	)
-	flag.StringVar(
+	fs.StringVar(
 		&cfg.BrokersDNSSrv,
 		"brokersDNSSrv",
 		getEnv("KAFKA_BROKERS_DNS_SRV", ""),
@@ -53,19 +54,19 @@ func loadBackupAppConfig() BackupAppConfig {
 	)
 
 	// Kafka Consumer
-	flag.StringVar(
+	fs.StringVar(
 		&cfg.TopicsRegex,
 		"topics-regex",
 		getEnv("KAFKA_TOPICS_REGEX", ".*"),
 		"List of kafka topics regex to consume (comma separated)",
 	)
-	flag.StringVar(
+	fs.StringVar(
 		&cfg.ExcludeTopicsRegex,
 		"exclude-topics-regex",
 		getEnv("KAFKA_EXCLUDE_TOPICS_REGEX", ""),
 		"List of kafka topics regex to exclude from consuming (comma separated)",
 	)
-	flag.StringVar(
+	fs.StringVar(
 		&cfg.GroupID,
 		"group-id",
 		getEnv("KAFKA_GROUP_ID", "kafka-data-keep"),
@@ -73,50 +74,75 @@ func loadBackupAppConfig() BackupAppConfig {
 	)
 
 	// Storage
-	flag.StringVar(
+	fs.StringVar(
 		&cfg.Bucket,
 		"bucket",
 		getEnv("S3_BUCKET", ""),
 		"S3 bucket name where to store the backups",
 	)
-	flag.Int64Var(
+	fs.Int64Var(
 		&cfg.FileSize,
 		"file-size",
 		getEnvInt64("FILE_SIZE", 5*1024*1024),
-		"File size in bytes",
+		"File size in bytes for each partition backup file",
 	)
-	flag.StringVar(
+	fs.StringVar(
 		&cfg.WorkingDir,
 		"working-dir",
 		getEnv("WORKING_DIR", "kafka-backup-data"),
 		"Working directory for local files",
 	)
-	flag.StringVar(
+	fs.StringVar(
 		&cfg.S3Endpoint,
 		"s3-endpoint",
 		getEnv("AWS_ENDPOINT_URL", ""),
 		"S3 endpoint URL (for LocalStack or custom S3-compatible storage)",
 	)
-	flag.StringVar(
+	fs.StringVar(
 		&cfg.S3Region,
 		"s3-region",
 		getEnv("AWS_REGION", "eu-west-1"),
 		"S3 region ",
 	)
 
-	flag.Parse()
-	return cfg
+	if err := fs.Parse(args); err != nil {
+		return cfg, err
+	}
+	return cfg, nil
 }
 
 func main() {
-	cfg := loadBackupAppConfig()
 	// Handle signals for graceful shutdown
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	if err := runBackup(ctx, cfg); err != nil {
-		slog.Error("error running backup", "error", err)
+	if len(os.Args) < 2 {
+		fmt.Println("expected 'backup' subcommand")
+		os.Exit(1)
 	}
+
+	switch os.Args[1] {
+	case "backup":
+		if err := backupCmd(ctx, os.Args[2:]); err != nil {
+			slog.Error("backup command failed", "error", err)
+			os.Exit(1)
+		}
+	default:
+		fmt.Println("expected 'backup' subcommand")
+		os.Exit(1)
+	}
+}
+
+func backupCmd(ctx context.Context, args []string) error {
+	cfg, err := loadBackupAppConfig(args)
+	if err != nil {
+		return err
+	}
+
+	if err := runBackup(ctx, cfg); err != nil {
+		return fmt.Errorf("error running backup: %w", err)
+	}
+	return nil
 }
 
 func runBackup(ctx context.Context, cfg BackupAppConfig) error {
