@@ -132,7 +132,7 @@ func (p *PartitionWriter) shouldFlush() bool {
 	if !p.isOpen {
 		return false
 	}
-	if p.config.FileSize > 0 && p.currentCountingWriter != nil && p.currentCountingWriter.count >= p.config.FileSize {
+	if p.currentCountingWriter.count >= p.config.FileSize {
 		return true
 	}
 	return false
