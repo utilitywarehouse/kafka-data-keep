@@ -11,7 +11,7 @@ import (
 	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
 )
 
-func Run(ctx context.Context, client *kafka.Client, pwManager *PartitionsWriterManager) error {
+func runConsumer(ctx context.Context, client *kafka.Client, pwManager *PartitionsWriterManager) error {
 	for {
 		fetches := client.PollMaxRecords(ctx)
 		err, stopProcessing := handleFetches(ctx, &fetches)

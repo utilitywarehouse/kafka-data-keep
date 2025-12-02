@@ -1,4 +1,4 @@
-package main
+package backup
 
 import (
 	"bytes"
@@ -21,7 +21,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
-	"github.com/utilitywarehouse/kafka-data-keep/internal/avro"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/codec/avro"
 )
 
 func TestE2E(t *testing.T) {
@@ -60,7 +60,7 @@ func TestE2E(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	// Setup S3 client for test setup and verification
-	// Also set env credentials for the app under test (runBackup uses default AWS config chain)
+	// Also set env credentials for the app under test (Run uses default AWS config chain)
 	_ = os.Setenv("AWS_ACCESS_KEY_ID", "minioadmin")
 	_ = os.Setenv("AWS_SECRET_ACCESS_KEY", "minioadmin")
 	awsCfg, err := config.LoadDefaultConfig(ctx,
@@ -114,7 +114,7 @@ func TestE2E(t *testing.T) {
 	// Setup backup application config
 	workingDir := t.TempDir()
 
-	cfg := BackupAppConfig{
+	cfg := AppConfig{
 		Brokers:     kafkaBrokers,
 		TopicsRegex: ".*",
 		GroupID:     "test-backup-group",
@@ -135,10 +135,10 @@ func TestE2E(t *testing.T) {
 	backupCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// Run backup in a goroutine using the main app's runBackup
+	// Run backup in a goroutine using the main app's Run
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- runBackup(backupCtx, cfg)
+		errCh <- Run(backupCtx, cfg)
 	}()
 
 	// Write test records to Kafka

@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"errors"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/codec"
 )
 
 type Config struct {
@@ -16,13 +17,13 @@ type Config struct {
 type PartitionsWriterManager struct {
 	uploader       *Uploader
 	config         Config
-	encoderFactory RecordEncoderFactory
+	encoderFactory codec.RecordEncoderFactory
 
 	mu      sync.Mutex
 	writers map[string]*PartitionWriter
 }
 
-func NewPartitionsWriterManager(uploader *Uploader, encoderFactory RecordEncoderFactory, config Config) (*PartitionsWriterManager, error) {
+func NewPartitionsWriterManager(uploader *Uploader, encoderFactory codec.RecordEncoderFactory, config Config) (*PartitionsWriterManager, error) {
 	m := &PartitionsWriterManager{
 		uploader:       uploader,
 		config:         config,

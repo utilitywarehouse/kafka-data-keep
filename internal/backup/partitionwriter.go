@@ -11,6 +11,7 @@ import (
 
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/codec"
 )
 
 // OffsetCommitter defines the interface for committing offsets.
@@ -22,12 +23,12 @@ type PartitionWriter struct {
 	uploader        *Uploader
 	offsetCommitter OffsetCommitter
 	config          Config
-	encoderFactory  RecordEncoderFactory
+	encoderFactory  codec.RecordEncoderFactory
 	topic           string
 	partition       int
 
 	mu                    sync.Mutex
-	currentEncoder        RecordEncoder
+	currentEncoder        codec.RecordEncoder
 	currentCountingWriter *countingWriter
 	currentFilePath       string // Full local path
 	currentKey            string // S3 key (relative path)
@@ -39,7 +40,7 @@ type PartitionWriter struct {
 	isOpen bool
 }
 
-func NewPartitionWriter(uploader *Uploader, offsetCommitter OffsetCommitter, config Config, encoderFactory RecordEncoderFactory, topic string, partition int) *PartitionWriter {
+func NewPartitionWriter(uploader *Uploader, offsetCommitter OffsetCommitter, config Config, encoderFactory codec.RecordEncoderFactory, topic string, partition int) *PartitionWriter {
 	return &PartitionWriter{
 		uploader:        uploader,
 		offsetCommitter: offsetCommitter,

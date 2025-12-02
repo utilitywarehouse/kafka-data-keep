@@ -1,4 +1,4 @@
-package backup
+package codec
 
 import (
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -13,4 +13,15 @@ type RecordEncoder interface {
 
 type RecordEncoderFactory interface {
 	New(w io.Writer) (RecordEncoder, error)
+}
+
+// RecordDecoder decodes kafka records from binary format
+type RecordDecoder interface {
+	Decode() (*kgo.Record, error)
+	HasNext() bool
+	Error() error
+}
+
+type RecordDecoderFactory interface {
+	New(r io.Reader) (RecordDecoder, error)
 }

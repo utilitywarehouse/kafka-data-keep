@@ -8,8 +8,7 @@ import (
 
 	"github.com/hamba/avro/v2/ocf"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/utilitywarehouse/kafka-data-keep/internal/backup"
-	"github.com/utilitywarehouse/kafka-data-keep/internal/restore"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/codec"
 )
 
 //go:embed schema.json
@@ -27,7 +26,7 @@ type kafkaRecord struct {
 
 type RecordEncoderFactory struct{}
 
-func (f *RecordEncoderFactory) New(w io.Writer) (backup.RecordEncoder, error) {
+func (f *RecordEncoderFactory) New(w io.Writer) (codec.RecordEncoder, error) {
 	encoder, err := ocf.NewEncoder(schema, w, ocf.WithCodec(ocf.ZStandard))
 	if err != nil {
 		return nil, fmt.Errorf("failed creating ocf encoder: %w", err)
@@ -70,7 +69,7 @@ func (e *recordEncoder) Close() error {
 
 type RecordDecoderFactory struct{}
 
-func (f *RecordDecoderFactory) New(r io.Reader) (restore.RecordDecoder, error) {
+func (f *RecordDecoderFactory) New(r io.Reader) (codec.RecordDecoder, error) {
 	decoder, err := ocf.NewDecoder(r)
 	if err != nil {
 		return nil, fmt.Errorf("failed creating ocf decoder: %w", err)
