@@ -114,10 +114,11 @@ func TestE2E(t *testing.T) {
 	// Setup backup application config
 	workingDir := t.TempDir()
 
+	const groupID = "test-backup-group"
 	cfg := AppConfig{
 		Brokers:     kafkaBrokers,
 		TopicsRegex: ".*",
-		GroupID:     "test-backup-group",
+		GroupID:     groupID,
 		Bucket:      bucketName,
 		FileSize:    1, // Small file size to force frequent flushes
 		WorkingDir:  workingDir,
@@ -144,26 +145,27 @@ func TestE2E(t *testing.T) {
 	// Write test records to Kafka
 	producerClient, err := kgo.NewClient(
 		kgo.SeedBrokers(kafkaBrokers),
+		kgo.RecordPartitioner(kgo.ManualPartitioner()), // set the partitions manually on produce
 	)
 	require.NoError(t, err)
 	defer producerClient.Close()
 
 	// First batch of records
 	writeRecords(t, ctx, producerClient, topic1, 0, 10)
-	writeRecords(t, ctx, producerClient, topic1, 1, 10)
-	writeRecords(t, ctx, producerClient, topic2, 0, 10)
-	writeRecords(t, ctx, producerClient, topic2, 1, 10)
+	writeRecords(t, ctx, producerClient, topic1, 1, 20)
+	writeRecords(t, ctx, producerClient, topic2, 0, 20)
+	writeRecords(t, ctx, producerClient, topic2, 1, 30)
 
 	// Wait until these records are consumed
-	waitForGroupOffsets(t, ctx, kadmClient, "test-backup-group", map[string]int{topic1: 20, topic2: 20})
+	waitForGroupOffsets(t, ctx, kadmClient, groupID, map[string]int{topic1: 30, topic2: 50})
 
 	// Second batch of records
-	writeRecords(t, ctx, producerClient, topic1, 0, 10)
+	writeRecords(t, ctx, producerClient, topic1, 0, 20)
 	writeRecords(t, ctx, producerClient, topic1, 1, 10)
-	writeRecords(t, ctx, producerClient, topic2, 0, 10)
-	writeRecords(t, ctx, producerClient, topic2, 1, 10)
+	writeRecords(t, ctx, producerClient, topic2, 0, 30)
+	writeRecords(t, ctx, producerClient, topic2, 1, 40)
 	// Wait until second batch is consumed
-	waitForGroupOffsets(t, ctx, kadmClient, "test-backup-group", map[string]int{topic1: 40, topic2: 40})
+	waitForGroupOffsets(t, ctx, kadmClient, groupID, map[string]int{topic1: 60, topic2: 120})
 
 	// Flush to ensure all records are sent
 	require.NoError(t, producerClient.Flush(ctx))
@@ -238,46 +240,63 @@ func TestE2E(t *testing.T) {
 
 // Helper to wait for consumer group offsets
 func waitForGroupOffsets(t *testing.T, ctx context.Context, client *kadm.Client, group string, expected map[string]int) {
-	deadline := time.Now().Add(30 * time.Second)
+	timeoutCtx, cancelFunc := context.WithTimeout(ctx, 30*time.Second)
+	defer cancelFunc()
 
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-timeoutCtx.Done():
+			t.Fatalf("consumer group %s did not reach expected offsets: %+v", group, expected)
+			return
+		case <-ticker.C:
+			if isGroupAt(t, timeoutCtx, client, group, expected) {
+				return
+			}
+		}
+	}
+}
+
+func isGroupAt(t *testing.T, ctx context.Context, client *kadm.Client, group string, expected map[string]int) bool {
 	topics := make([]string, 0, len(expected))
 	for t := range expected {
 		topics = append(topics, t)
 	}
 
-	for time.Now().Before(deadline) {
-		offsets, err := client.FetchOffsetsForTopics(ctx, group, topics...)
-		require.NoError(t, err)
-		allMet := true
-		for topic, exp := range expected {
-			if topicOffsets, ok := offsets[topic]; ok {
-				// Sum offsets for all partitions of the topic
-				currentOffsetSum := 0
-				for _, pOff := range topicOffsets {
-					if pOff.At > 0 {
-						currentOffsetSum += int(pOff.At)
-					}
-				}
-				t.Logf("Topic %s: current offset sum: %d, expected: %d", topic, currentOffsetSum, exp)
-				if currentOffsetSum < exp {
-					allMet = false
-					break
-				}
-			} else {
-				t.Logf("Topic %s: no offsets found", topic)
-				allMet = false
-				break
-			}
+	offsets, err := client.FetchOffsetsForTopics(ctx, group, topics...)
+	require.NoError(t, err)
+
+	for topic, exp := range expected {
+		topicOffsets, hasTopicOffset := offsets[topic]
+		if !hasTopicOffset {
+			t.Logf("Topic %s: no offsets found", topic)
+			return false
 		}
-		if allMet {
-			return
+
+		currentOffset := getOffsetForTopic(topicOffsets)
+		t.Logf("Topic %s: current offset sum: %d, expected: %d", topic, currentOffset, exp)
+		if currentOffset < exp {
+			return false
 		}
-		time.Sleep(1 * time.Second)
 	}
-	t.Fatalf("consumer group %s did not reach expected offsets: %+v", group, expected)
+
+	return true
+}
+
+func getOffsetForTopic(topicOffsets map[int32]kadm.OffsetResponse) int {
+	// Sum offsets for all partitions of the topic
+	currentOffsetSum := 0
+	for _, pOff := range topicOffsets {
+		if pOff.At > 0 {
+			currentOffsetSum += int(pOff.At)
+		}
+	}
+	return currentOffsetSum
 }
 
 func writeRecords(t *testing.T, ctx context.Context, client *kgo.Client, topic string, partition int32, count int) {
+	var recs []*kgo.Record
 	for i := 0; i < count; i++ {
 		rec := &kgo.Record{
 			Topic:     topic,
@@ -288,10 +307,9 @@ func writeRecords(t *testing.T, ctx context.Context, client *kgo.Client, topic s
 				{Key: "test-header", Value: []byte(fmt.Sprintf("header-value-%d", i))},
 			},
 		}
-		client.Produce(ctx, rec, func(r *kgo.Record, err error) {
-			require.NoError(t, err)
-		})
+		recs = append(recs, rec)
 	}
+	require.NoError(t, client.ProduceSync(ctx, recs...).FirstErr(), "failed to produce records")
 }
 
 func decodeAvroFile(content []byte) ([]*kgo.Record, error) {
