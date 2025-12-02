@@ -139,30 +139,6 @@ func (p *PartitionWriter) shouldFlush() bool {
 }
 
 func (p *PartitionWriter) flushLocked(ctx context.Context) error {
-	// Close the current file first
-	if err := p.closeLocalFile(); err != nil {
-		return fmt.Errorf("failed to close file during rotation: %w", err)
-	}
-
-	// Upload the closed file
-	if err := p.uploader.Upload(ctx, p.currentFilePath, p.currentKey); err != nil {
-		return fmt.Errorf("failed to upload file %s: %w", p.currentFilePath, err)
-	}
-
-	// Commit offset
-	if err := p.commitOffset(ctx); err != nil {
-		return fmt.Errorf("failed to commit offset: %w", err)
-	}
-
-	// Remove the local file after successful upload
-	if err := os.Remove(p.currentFilePath); err != nil {
-		return fmt.Errorf("failed to remove local file %s: %w", p.currentFilePath, err)
-	}
-
-	return nil
-}
-
-func (p *PartitionWriter) closeLocalFile() error {
 	if !p.isOpen {
 		return nil
 	}
@@ -175,9 +151,24 @@ func (p *PartitionWriter) closeLocalFile() error {
 		return fmt.Errorf("failed to close writer: %w", err)
 	}
 
+	// Upload the closed file
+	if err := p.uploader.Upload(ctx, p.currentFilePath, p.currentKey); err != nil {
+		return fmt.Errorf("failed to upload file %s: %w", p.currentFilePath, err)
+	}
+
+	// Commit offset
+	if err := p.commitOffset(ctx); err != nil {
+		return fmt.Errorf("failed to commit offset: %w", err)
+	}
+
 	p.isOpen = false
 	p.currentEncoder = nil
 	p.currentCountingWriter = nil
+
+	// Remove the local file after successful upload
+	if err := os.Remove(p.currentFilePath); err != nil {
+		return fmt.Errorf("failed to remove local file %s: %w", p.currentFilePath, err)
+	}
 
 	return nil
 }
