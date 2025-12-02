@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -20,8 +19,8 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/redpanda"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/codec/avro"
+	"os"
 )
 
 func TestE2E(t *testing.T) {
@@ -32,7 +31,9 @@ func TestE2E(t *testing.T) {
 	ctx := context.Background()
 
 	// Start MinIO container (S3-compatible storage)
-	minioContainer, err := minio.Run(ctx, "minio/minio:latest")
+	minioContainer, err := minio.Run(ctx, "minio/minio:latest")//minio.WithUsername("uwminio"),
+	//minio.WithPassword("minioadmin"),
+
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, minioContainer.Terminate(ctx))
@@ -42,22 +43,16 @@ func TestE2E(t *testing.T) {
 	redpandaContainer, err := redpanda.Run(ctx, "redpandadata/redpanda:v25.1.1")
 	require.NoError(t, err)
 	defer func() {
-		require.NoError(t, redpandaContainer.Terminate(ctx))
+		require.NoError(t, redpandaContainer.Terminate(context.Background()))
 	}()
 
 	// Get connection details for MinIO
-	// Get the mapped host and port (MinIO API on 9000)
-	host, err := minioContainer.Host(ctx)
+	connString, err := minioContainer.ConnectionString(ctx)
 	require.NoError(t, err)
-	port, err := minioContainer.MappedPort(ctx, "9000/tcp")
-	require.NoError(t, err)
-	s3Endpoint := fmt.Sprintf("http://%s:%s", host, port.Port())
+	s3Endpoint := fmt.Sprintf("http://%s", connString)
 
 	kafkaBrokers, err := redpandaContainer.KafkaSeedBroker(ctx)
 	require.NoError(t, err)
-
-	// Give Redpanda a moment to stabilize before creating topics
-	time.Sleep(2 * time.Second)
 
 	// Setup S3 client for test setup and verification
 	// Also set env credentials for the app under test (Run uses default AWS config chain)
@@ -90,26 +85,14 @@ func TestE2E(t *testing.T) {
 	require.NoError(t, err)
 	defer adminClient.Close()
 
-	createTopicsReq := kmsg.NewPtrCreateTopicsRequest()
-	createTopicsReq.Topics = []kmsg.CreateTopicsRequestTopic{
-		{
-			Topic:             topic1,
-			NumPartitions:     2,
-			ReplicationFactor: 1,
-		},
-		{
-			Topic:             topic2,
-			NumPartitions:     2,
-			ReplicationFactor: 1,
-		},
-	}
-	createTopicsResp, err := createTopicsReq.RequestWith(ctx, adminClient)
+	kadmClient := kadm.NewClient(adminClient)
+	defer kadmClient.Close()
+
+	_, err = kadmClient.CreateTopic(ctx, 2, 1, nil, topic1)
 	require.NoError(t, err)
-	for _, topicResp := range createTopicsResp.Topics {
-		if topicResp.ErrorCode != 0 {
-			t.Fatalf("failed to create topic %s: error code %d", topicResp.Topic, topicResp.ErrorCode)
-		}
-	}
+
+	_, err = kadmClient.CreateTopic(ctx, 2, 1, nil, topic2)
+	require.NoError(t, err)
 
 	// Setup backup application config
 	workingDir := t.TempDir()
@@ -130,7 +113,6 @@ func TestE2E(t *testing.T) {
 	admClient, err := kgo.NewClient(kgo.SeedBrokers(kafkaBrokers))
 	require.NoError(t, err)
 	defer admClient.Close()
-	kadmClient := kadm.NewClient(admClient)
 
 	// Run backup with a cancellable context (no timeout, we'll cancel after second batch)
 	backupCtx, cancel := context.WithCancel(ctx)
