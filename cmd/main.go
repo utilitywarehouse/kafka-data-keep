@@ -11,27 +11,40 @@ import (
 
 	"fmt"
 
+	"errors"
+	"github.com/utilitywarehouse/go-operational/op"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/backup"
+	"github.com/utilitywarehouse/uwos-go/telemetry"
+	"github.com/utilitywarehouse/uwos-go/telemetry/log"
+	"github.com/utilitywarehouse/uwos-go/x/build"
+	"golang.org/x/sync/errgroup"
+	"net/http"
+	"time"
 )
 
 func main() {
+	slog.Info(
+		"Running version",
+		slog.String("version", build.Version()),
+	)
+
 	// Handle signals for graceful shutdown
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
 	if len(os.Args) < 2 {
-		fmt.Println("expected 'backup' subcommand")
+		slog.ErrorContext(ctx, "expected subcommand")
 		os.Exit(1)
 	}
 
 	switch os.Args[1] {
 	case "backup":
-		if err := backupCmd(ctx, os.Args[2:]); err != nil {
-			slog.Error("backup command failed", "error", err)
+		if err := runCmd(ctx, os.Args[2:], backupCmd); err != nil {
+			slog.ErrorContext(ctx, "backup command failed", "error", err)
 			os.Exit(1)
 		}
 	default:
-		fmt.Println("expected 'backup' subcommand")
+		slog.ErrorContext(ctx, "expected 'backup' subcommand")
 		os.Exit(1)
 	}
 }
@@ -116,6 +129,64 @@ func loadBackupAppConfig(args []string) (backup.AppConfig, error) {
 		return cfg, err
 	}
 	return cfg, nil
+}
+
+const opsAddr = "0.0.0.0:8081"
+
+func runCmd(ctx context.Context, args []string, cmd func(context.Context, []string) error) error {
+	shutdown, err := telemetry.Register(ctx)
+	if err != nil {
+		return fmt.Errorf("failed registering telemetry services, err: %w", err)
+	}
+
+	defer func() {
+		_ = shutdown.Close()
+	}()
+
+	logger := log.New()
+	slog.SetDefault(logger)
+
+	eg, ctx := errgroup.WithContext(ctx)
+
+	eg.Go(func() error {
+		opStatus := op.NewStatus(build.ServiceName, "kafka data keep").
+			WithInstrumentedChecks().
+			ReadyAlways()
+
+		return runOpsServer(ctx, opsAddr, opStatus)
+	})
+
+	eg.Go(func() error {
+		return cmd(ctx, args)
+	})
+
+	return eg.Wait()
+}
+
+// Starts the operational server on the specified address expected in the format host:port and will stop it when the provided context is done.
+func runOpsServer(ctx context.Context, operationalAddr string, opStatus *op.Status) error {
+	opServer := &http.Server{
+		Addr:              operationalAddr,
+		Handler:           op.NewHandler(opStatus),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	eg, ctx := errgroup.WithContext(ctx)
+	eg.Go(func() error {
+		slog.InfoContext(ctx, "operational server listening", "addr", operationalAddr)
+		if err := opServer.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+			return fmt.Errorf("serving operational server: %w", err)
+		}
+		return nil
+	})
+	eg.Go(func() error {
+		<-ctx.Done()
+		slog.InfoContext(ctx, "stopping operational server")
+		sCtx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+		defer cancel()
+		return opServer.Shutdown(sCtx)
+	})
+	return eg.Wait()
 }
 
 func backupCmd(ctx context.Context, args []string) error {
