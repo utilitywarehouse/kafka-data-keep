@@ -1,7 +1,6 @@
 package backup
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -43,16 +42,19 @@ func TestE2E(t *testing.T) {
 
 	s3Client := createS3TestBucket(t, ctx, s3Endpoint)
 
-	// Create Kafka topics
-	topic1 := "test-topic-1"
-	topic2 := "test-topic-2"
-
-	adminClient, err := kgo.NewClient(kgo.SeedBrokers(kafkaBrokers))
+	adminClient, err := kgo.NewClient(
+		kgo.SeedBrokers(kafkaBrokers),
+		kgo.RecordPartitioner(kgo.ManualPartitioner()), // set the partitions manually on produce
+	)
 	require.NoError(t, err)
 	defer adminClient.Close()
 
 	kadmClient := kadm.NewClient(adminClient)
 	defer kadmClient.Close()
+
+	// Create Kafka topics
+	topic1 := "test-topic-1"
+	topic2 := "test-topic-2"
 
 	_, err = kadmClient.CreateTopic(ctx, 2, 1, nil, topic1)
 	require.NoError(t, err)
@@ -79,36 +81,28 @@ func TestE2E(t *testing.T) {
 	backupCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// Run backup in a goroutine using the main app's Run
+	// Run backup in a goroutine
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- Run(backupCtx, cfg)
 	}()
 
-	// Write test records to Kafka
-	producerClient, err := kgo.NewClient(
-		kgo.SeedBrokers(kafkaBrokers),
-		kgo.RecordPartitioner(kgo.ManualPartitioner()), // set the partitions manually on produce
-	)
-	require.NoError(t, err)
-	defer producerClient.Close()
-
 	// First batch of records
-	writeRecords(t, ctx, producerClient, topic1, 0, 10)
-	writeRecords(t, ctx, producerClient, topic1, 1, 20)
-	writeRecords(t, ctx, producerClient, topic2, 0, 20)
-	writeRecords(t, ctx, producerClient, topic2, 1, 30)
-	require.NoError(t, producerClient.Flush(ctx))
+	writeRecords(t, ctx, adminClient, topic1, 0, 10)
+	writeRecords(t, ctx, adminClient, topic1, 1, 20)
+	writeRecords(t, ctx, adminClient, topic2, 0, 20)
+	writeRecords(t, ctx, adminClient, topic2, 1, 30)
+	require.NoError(t, adminClient.Flush(ctx))
 
 	// Wait until these records are consumed
 	waitForGroupOffsets(t, ctx, kadmClient, groupID, map[string]int{topic1: 30, topic2: 50})
 
 	// Second batch of records
-	writeRecords(t, ctx, producerClient, topic1, 0, 20)
-	writeRecords(t, ctx, producerClient, topic1, 1, 10)
-	writeRecords(t, ctx, producerClient, topic2, 0, 30)
-	writeRecords(t, ctx, producerClient, topic2, 1, 40)
-	require.NoError(t, producerClient.Flush(ctx))
+	writeRecords(t, ctx, adminClient, topic1, 0, 20)
+	writeRecords(t, ctx, adminClient, topic1, 1, 10)
+	writeRecords(t, ctx, adminClient, topic2, 0, 30)
+	writeRecords(t, ctx, adminClient, topic2, 1, 40)
+	require.NoError(t, adminClient.Flush(ctx))
 
 	// Wait until the second batch is consumed
 	waitForGroupOffsets(t, ctx, kadmClient, groupID, map[string]int{topic1: 60, topic2: 120})
@@ -145,15 +139,8 @@ func TestE2E(t *testing.T) {
 			Key:    aws.String(key),
 		})
 		require.NoError(t, err)
-		defer getResp.Body.Close()
-
-		// Read file content
-		content, err := io.ReadAll(getResp.Body)
-		require.NoError(t, err)
-		require.NotEmpty(t, content, "file should not be empty")
-
 		// Decode Avro records
-		records, err := decodeAvroFile(content)
+		records, err := decodeAvroFile(getResp.Body)
 		require.NoError(t, err)
 		require.NotEmpty(t, records, "file should contain records")
 
@@ -298,10 +285,10 @@ func writeRecords(t *testing.T, ctx context.Context, client *kgo.Client, topic s
 	require.NoError(t, client.ProduceSync(ctx, recs...).FirstErr(), "failed to produce records")
 }
 
-func decodeAvroFile(content []byte) ([]*kgo.Record, error) {
+func decodeAvroFile(r io.ReadCloser) ([]*kgo.Record, error) {
+	defer r.Close()
 	decFactory := &avro.RecordDecoderFactory{}
-	reader := io.NopCloser(bytes.NewReader(content))
-	decoder, err := decFactory.New(reader)
+	decoder, err := decFactory.New(r)
 	if err != nil {
 		return nil, err
 	}
