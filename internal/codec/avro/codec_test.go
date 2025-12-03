@@ -65,7 +65,7 @@ func TestCodec(t *testing.T) {
 	decoder, err := decFactory.New(&buf)
 	require.NoError(t, err, "failed to create decoder")
 
-	var decodedRecords []*kgo.Record
+	decodedRecords := make([]*kgo.Record, 0, len(records))
 	for decoder.HasNext() {
 		rec, err := decoder.Decode()
 		require.NoError(t, err, "failed to decode record")
@@ -73,7 +73,7 @@ func TestCodec(t *testing.T) {
 	}
 
 	// 4. Compare
-	require.Equal(t, len(records), len(decodedRecords), "records count mismatch")
+	require.Len(t, decodedRecords, len(records), "records count mismatch")
 
 	for i, expected := range records {
 		actual := decodedRecords[i]

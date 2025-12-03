@@ -3,15 +3,16 @@ package backup
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"os"
+	"strings"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/codec/avro"
 	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
-	"log/slog"
-	"os"
-	"strings"
 )
 
 type AppConfig struct {
@@ -33,7 +34,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 		return fmt.Errorf("bucket must be provided")
 	}
 
-	// Initialize S3 client and uploader
+	// Initialise S3 client and uploader
 	awsCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(cfg.S3Region))
 	if err != nil {
 		return fmt.Errorf("unable to load SDK config: %w", err)
@@ -52,10 +53,10 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	uploader := NewUploader(s3Client, cfg.S3Bucket)
 
 	// Create working dir for local files
-	if err := os.MkdirAll(cfg.WorkingDir, 0755); err != nil {
+	if err := os.MkdirAll(cfg.WorkingDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create working dir: %w", err)
 	}
-	slog.Info("Using working dir for local files", "path", cfg.WorkingDir)
+	slog.InfoContext(ctx, "Using working dir for local files", "path", cfg.WorkingDir)
 
 	wConfig := Config{
 		MinFileSize: cfg.MinFileSize,
@@ -80,7 +81,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	}
 	defer client.CloseAllowingRebalance()
 
-	slog.Info("Starting backup application...")
+	slog.InfoContext(ctx, "Starting backup application...")
 	return runConsumer(ctx, client, mgr)
 }
 

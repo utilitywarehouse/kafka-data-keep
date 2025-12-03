@@ -102,7 +102,7 @@ func (p *PartitionWriter) open(offset int64) error {
 
 	// Ensure directory exists
 	dir := filepath.Dir(localPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("failed to create directory %s: %w", dir, err)
 	}
 
@@ -149,7 +149,7 @@ func (p *PartitionWriter) flushLocked(ctx context.Context) error {
 		return nil
 	}
 
-	slog.Debug("Flushing file for partition", "filename", p.currentKey, "size", p.currentCountingWriter.count)
+	slog.DebugContext(ctx, "Flushing file for partition", "filename", p.currentKey, "size", p.currentCountingWriter.count)
 
 	if err := p.currentEncoder.Close(); err != nil {
 		return fmt.Errorf("failed to flush writer: %w", err)

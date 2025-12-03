@@ -2,24 +2,23 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
+	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
 	"syscall"
+	"time"
 
-	"fmt"
-
-	"errors"
 	"github.com/utilitywarehouse/go-operational/op"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/backup"
 	"github.com/utilitywarehouse/uwos-go/telemetry"
 	"github.com/utilitywarehouse/uwos-go/telemetry/log"
 	"github.com/utilitywarehouse/uwos-go/x/build"
 	"golang.org/x/sync/errgroup"
-	"net/http"
-	"time"
 )
 
 func main() {

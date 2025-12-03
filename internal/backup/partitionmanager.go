@@ -1,11 +1,11 @@
 package backup
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
 
-	"errors"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/codec"
 )
 

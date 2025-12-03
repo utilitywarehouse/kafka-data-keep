@@ -1,8 +1,9 @@
 package codec
 
 import (
-	"github.com/twmb/franz-go/pkg/kgo"
 	"io"
+
+	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 // RecordEncoder encodes kafka records to binary format

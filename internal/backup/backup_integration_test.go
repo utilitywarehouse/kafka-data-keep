@@ -2,12 +2,14 @@ package backup
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"io"
+	"log/slog"
+	"os"
 	"testing"
 	"time"
 
-	"crypto/rand"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -18,8 +20,6 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/codec/avro"
-	"log/slog"
-	"os"
 )
 
 func init() {
@@ -29,17 +29,20 @@ func init() {
 	)
 }
 
-const minioRegion = "us-east-1"
-const bucketName = "test-backup-bucket"
-const s3User = "uwadmin"
-const s3pass = "uwadminpass"
+const (
+	minioRegion = "us-east-1"
+	bucketName  = "test-backup-bucket"
+	s3User      = "uwadmin"
+	s3pass      = "uwadminpass"
+)
 
 func TestBackupIntegration(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("Skipping e2e test in short mode")
 	}
 
-	t.Parallel()
 	ctx := context.Background()
 
 	kafkaBrokers, tkf := startKafkaService(t, ctx)
@@ -179,7 +182,7 @@ func TestBackupIntegration(t *testing.T) {
 
 		waitConsumerStart(ctx, t, kadmClient, groupID)
 		// write records continuously, but offsets won't be committed, since the file size limit is very high
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			writeRecords(t, ctx, adminClient, topic3, 0, 1000, 1000)
 			require.NoError(t, adminClient.Flush(ctx))
 			t.Logf("Wrote batch of %d records to topic %s", i, topic3)
@@ -199,6 +202,7 @@ func TestBackupIntegration(t *testing.T) {
 }
 
 func stopApp(ctx context.Context, t *testing.T, cancel context.CancelFunc, errCh chan error) {
+	t.Helper()
 	cancel()
 	select {
 	case <-ctx.Done():
@@ -211,6 +215,7 @@ func stopApp(ctx context.Context, t *testing.T, cancel context.CancelFunc, errCh
 }
 
 func waitConsumerStart(ctx context.Context, t *testing.T, client *kadm.Client, groupId string) {
+	t.Helper()
 	for {
 		select {
 		case <-ctx.Done():
@@ -233,6 +238,7 @@ func newRandomName(baseName string) string {
 }
 
 func listFilesOnBucket(ctx context.Context, t *testing.T, s3Client *s3.Client, s3prefix string) map[string]int {
+	t.Helper()
 	filesFound := make(map[string]int)
 	// List files in S3
 	listResp, err := s3Client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: aws.String(bucketName), Prefix: aws.String(s3prefix)})
@@ -254,12 +260,12 @@ func listFilesOnBucket(ctx context.Context, t *testing.T, s3Client *s3.Client, s
 		records := decodeAvroFile(t, getResp.Body)
 		filesFound[key] = len(records)
 		t.Logf("Found file: %s (size: %d), recs: %d", key, obj.Size, len(records))
-
 	}
 	return filesFound
 }
 
 func startKafkaService(t *testing.T, ctx context.Context) (string, func()) {
+	t.Helper()
 	redpandaContainer, err := redpanda.Run(ctx, "redpandadata/redpanda:v25.1.1")
 	require.NoError(t, err)
 	terminateFunc := func() {
@@ -274,6 +280,7 @@ func startKafkaService(t *testing.T, ctx context.Context) (string, func()) {
 }
 
 func startS3Service(t *testing.T, ctx context.Context) (string, func()) {
+	t.Helper()
 	minioContainer, err := minio.Run(ctx, "minio/minio:latest", minio.WithUsername(s3User), minio.WithPassword(s3pass))
 	require.NoError(t, err)
 
@@ -290,6 +297,7 @@ func startS3Service(t *testing.T, ctx context.Context) (string, func()) {
 }
 
 func newS3Client(t *testing.T, ctx context.Context, s3Endpoint string) *s3.Client {
+	t.Helper()
 	awsCfg, err := config.LoadDefaultConfig(ctx)
 	require.NoError(t, err)
 
@@ -360,15 +368,15 @@ func getOffsetForTopic(topicOffsets map[int32]kadm.OffsetResponse) int {
 }
 
 func writeRecords(t *testing.T, ctx context.Context, client *kgo.Client, topic string, partition int32, count int, totalBytes int64) {
-	var recs []*kgo.Record
-	for i := 0; i < count; i++ {
+	recs := make([]*kgo.Record, 0, count)
+	for i := range count {
 		rec := &kgo.Record{
 			Topic:     topic,
 			Partition: partition,
-			Key:       []byte(fmt.Sprintf("key-%s-p%d-%d", topic, partition, i)),
+			Key:       fmt.Appendf(nil, "key-%s-p%d-%d", topic, partition, i),
 			Value:     genBytes(t, totalBytes/int64(count)),
 			Headers: []kgo.RecordHeader{
-				{Key: "test-header", Value: []byte(fmt.Sprintf("header-value-%d", i))},
+				{Key: "test-header", Value: fmt.Appendf(nil, "header-value-%d", i)},
 			},
 		}
 		recs = append(recs, rec)
@@ -394,7 +402,7 @@ func decodeAvroFile(t *testing.T, r io.ReadCloser) []*kgo.Record {
 	decoder, err := decFactory.New(r)
 	require.NoError(t, err)
 
-	var records []*kgo.Record
+	records := make([]*kgo.Record, 0, 1000)
 	for decoder.HasNext() {
 		rec, err := decoder.Decode()
 		if err != nil {
