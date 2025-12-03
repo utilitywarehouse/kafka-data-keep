@@ -73,7 +73,11 @@ func (p *PartitionWriter) WriteRecords(ctx context.Context, records []*kgo.Recor
 		p.lastOffset = record.Offset
 	}
 
-	if p.shouldFlush() {
+	shouldFlush, err := p.shouldFlush()
+	if err != nil {
+		return fmt.Errorf("failed to check if file should be flushed for partition %s-%d: %w", p.topic, p.partition, err)
+	}
+	if shouldFlush {
 		if err := p.flushLocked(ctx); err != nil {
 			return fmt.Errorf("failed to flush file for partition %s-%d: %w", p.topic, p.partition, err)
 		}
@@ -129,11 +133,15 @@ func (p *PartitionWriter) open(offset int64) error {
 	return nil
 }
 
-func (p *PartitionWriter) shouldFlush() bool {
+func (p *PartitionWriter) shouldFlush() (bool, error) {
 	if !p.isOpen {
-		return false
+		return false, nil
 	}
-	return p.currentCountingWriter.count >= p.config.MinFileSize
+	if err := p.currentEncoder.Flush(); err != nil {
+		return false, fmt.Errorf("failed to flush encoder: %w", err)
+	}
+
+	return p.currentCountingWriter.count >= p.config.MinFileSize, nil
 }
 
 func (p *PartitionWriter) flushLocked(ctx context.Context) error {

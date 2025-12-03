@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"crypto/rand"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -17,8 +18,16 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/codec/avro"
+	"log/slog"
 	"os"
 )
+
+func init() {
+	// Enable debug logging for slog
+	slog.SetDefault(
+		slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})),
+	)
+}
 
 const minioRegion = "us-east-1"
 const bucketName = "test-backup-bucket"
@@ -75,7 +84,7 @@ func TestBackupIntegration(t *testing.T) {
 			Brokers:     kafkaBrokers,
 			TopicsRegex: "multiple-.*",
 			GroupID:     groupID,
-			MinFileSize: 400, // This is the current min file size in this test, to obtain a single file per batch written
+			MinFileSize: 5000,
 			WorkingDir:  workingDir,
 			S3Bucket:    bucketName,
 			S3Prefix:    s3Prefix,
@@ -96,20 +105,20 @@ func TestBackupIntegration(t *testing.T) {
 		waitConsumerStart(ctx, t, kadmClient, groupID)
 
 		// First batch of records
-		writeRecords(t, ctx, adminClient, topic1, 0, 10)
-		writeRecords(t, ctx, adminClient, topic1, 1, 20)
-		writeRecords(t, ctx, adminClient, topic2, 0, 20)
-		writeRecords(t, ctx, adminClient, topic2, 1, 30)
+		writeRecords(t, ctx, adminClient, topic1, 0, 10, cfg.MinFileSize)
+		writeRecords(t, ctx, adminClient, topic1, 1, 20, cfg.MinFileSize)
+		writeRecords(t, ctx, adminClient, topic2, 0, 20, cfg.MinFileSize)
+		writeRecords(t, ctx, adminClient, topic2, 1, 30, cfg.MinFileSize)
 		require.NoError(t, adminClient.Flush(ctx))
 
 		// Wait until these records are consumed
 		waitForGroupOffsets(t, ctx, kadmClient, groupID, map[string]int{topic1: 30, topic2: 50})
 
 		// Second batch of records
-		writeRecords(t, ctx, adminClient, topic1, 0, 20)
-		writeRecords(t, ctx, adminClient, topic1, 1, 10)
-		writeRecords(t, ctx, adminClient, topic2, 0, 30)
-		writeRecords(t, ctx, adminClient, topic2, 1, 40)
+		writeRecords(t, ctx, adminClient, topic1, 0, 20, cfg.MinFileSize)
+		writeRecords(t, ctx, adminClient, topic1, 1, 10, cfg.MinFileSize)
+		writeRecords(t, ctx, adminClient, topic2, 0, 30, cfg.MinFileSize)
+		writeRecords(t, ctx, adminClient, topic2, 1, 40, cfg.MinFileSize)
 		require.NoError(t, adminClient.Flush(ctx))
 
 		// Wait until the second batch is consumed
@@ -171,7 +180,7 @@ func TestBackupIntegration(t *testing.T) {
 		waitConsumerStart(ctx, t, kadmClient, groupID)
 		// write records continuously, but offsets won't be committed, since the file size limit is very high
 		for i := 0; i < 10; i++ {
-			writeRecords(t, ctx, adminClient, topic3, 0, 1000)
+			writeRecords(t, ctx, adminClient, topic3, 0, 1000, 1000)
 			require.NoError(t, adminClient.Flush(ctx))
 			t.Logf("Wrote batch of %d records to topic %s", i, topic3)
 			time.Sleep(time.Millisecond * 100)
@@ -350,14 +359,14 @@ func getOffsetForTopic(topicOffsets map[int32]kadm.OffsetResponse) int {
 	return currentOffsetSum
 }
 
-func writeRecords(t *testing.T, ctx context.Context, client *kgo.Client, topic string, partition int32, count int) {
+func writeRecords(t *testing.T, ctx context.Context, client *kgo.Client, topic string, partition int32, count int, totalBytes int64) {
 	var recs []*kgo.Record
 	for i := 0; i < count; i++ {
 		rec := &kgo.Record{
 			Topic:     topic,
 			Partition: partition,
 			Key:       []byte(fmt.Sprintf("key-%s-p%d-%d", topic, partition, i)),
-			Value:     []byte(fmt.Sprintf("value-%s-p%d-%d", topic, partition, i)),
+			Value:     genBytes(t, totalBytes/int64(count)),
 			Headers: []kgo.RecordHeader{
 				{Key: "test-header", Value: []byte(fmt.Sprintf("header-value-%d", i))},
 			},
@@ -365,6 +374,14 @@ func writeRecords(t *testing.T, ctx context.Context, client *kgo.Client, topic s
 		recs = append(recs, rec)
 	}
 	require.NoError(t, client.ProduceSync(ctx, recs...).FirstErr(), "failed to produce records")
+}
+
+func genBytes(t *testing.T, size int64) []byte {
+	data := make([]byte, size)
+	// This fills the slice with high-entropy random bits that should not be very compressable
+	_, err := rand.Read(data)
+	require.NoError(t, err)
+	return data
 }
 
 func decodeAvroFile(t *testing.T, r io.ReadCloser) []*kgo.Record {

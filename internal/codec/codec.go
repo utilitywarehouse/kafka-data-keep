@@ -9,6 +9,7 @@ import (
 type RecordEncoder interface {
 	io.Closer
 	Encode(r *kgo.Record) error
+	Flush() error
 }
 
 type RecordEncoderFactory interface {

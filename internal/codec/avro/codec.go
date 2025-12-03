@@ -46,6 +46,10 @@ func (e *recordEncoder) Encode(record *kgo.Record) error {
 	return nil
 }
 
+func (e *recordEncoder) Flush() error {
+	return e.avroEncoder.Flush()
+}
+
 func toAvro(r *kgo.Record) kafkaRecord {
 	headers := make(map[string][]byte, len(r.Headers))
 	for _, h := range r.Headers {
