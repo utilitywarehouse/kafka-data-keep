@@ -39,8 +39,10 @@ func TestBackupIntegration(t *testing.T) {
 	defer ts3f()
 
 	setupEnvS3Access()
+	s3Client := newS3Client(t, ctx, s3Endpoint)
 
-	s3Client := createS3TestBucket(t, ctx, s3Endpoint)
+	_, err := s3Client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucketName)})
+	require.NoError(t, err)
 
 	adminClient, err := kgo.NewClient(
 		kgo.SeedBrokers(kafkaBrokers),
@@ -187,19 +189,14 @@ func startS3Service(t *testing.T, ctx context.Context) (string, func()) {
 	return fmt.Sprintf("http://%s", connString), terminateFunc
 }
 
-func createS3TestBucket(t *testing.T, ctx context.Context, s3Endpoint string) *s3.Client {
+func newS3Client(t *testing.T, ctx context.Context, s3Endpoint string) *s3.Client {
 	awsCfg, err := config.LoadDefaultConfig(ctx)
 	require.NoError(t, err)
 
-	s3Client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
+	return s3.NewFromConfig(awsCfg, func(o *s3.Options) {
 		o.BaseEndpoint = aws.String(s3Endpoint)
 		o.UsePathStyle = true
 	})
-
-	// Create S3 bucket
-	_, err = s3Client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucketName)})
-	require.NoError(t, err)
-	return s3Client
 }
 
 func setupEnvS3Access() {
