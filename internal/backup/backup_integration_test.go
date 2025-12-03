@@ -137,7 +137,7 @@ func TestBackupIntegration(t *testing.T) {
 			"multiple-batches/multiple-2/1/multiple-2-1-0000000000000000030.avro": 40,
 		}
 
-		filesFound := listFilesOnBucket(ctx, t, err, s3Client, s3Prefix)
+		filesFound := listFilesOnBucket(ctx, t, s3Client, s3Prefix)
 
 		require.Equal(t, expectedFiles, filesFound)
 	})
@@ -191,7 +191,7 @@ func TestBackupIntegration(t *testing.T) {
 		// stop consuming & trigger the flush
 		stopApp(ctx, t, cancel, errCh)
 
-		filesFound := listFilesOnBucket(ctx, t, err, s3Client, s3Prefix)
+		filesFound := listFilesOnBucket(ctx, t, s3Client, s3Prefix)
 		require.Len(t, filesFound, 1)
 		// we expect the file to have records, but it might not have consumed all
 		require.LessOrEqual(t, filesFound["flush-on-stop/flush-stop-1/0/flush-stop-1-0-0000000000000000000.avro"], 10000)
@@ -232,7 +232,7 @@ func newRandomName(baseName string) string {
 	return baseName + "-" + uuid.NewString()
 }
 
-func listFilesOnBucket(ctx context.Context, t *testing.T, err error, s3Client *s3.Client, s3prefix string) map[string]int {
+func listFilesOnBucket(ctx context.Context, t *testing.T, s3Client *s3.Client, s3prefix string) map[string]int {
 	filesFound := make(map[string]int)
 	// List files in S3
 	listResp, err := s3Client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: aws.String(bucketName), Prefix: aws.String(s3prefix)})
