@@ -141,6 +141,8 @@ func (p *PartitionWriter) flushLocked(ctx context.Context) error {
 		return nil
 	}
 
+	slog.Debug("Flushing file for partition", "filename", p.currentKey, "size", p.currentCountingWriter.count)
+
 	if err := p.currentEncoder.Close(); err != nil {
 		return fmt.Errorf("failed to flush writer: %w", err)
 	}

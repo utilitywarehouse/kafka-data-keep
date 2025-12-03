@@ -69,7 +69,7 @@ func TestE2E(t *testing.T) {
 		TopicsRegex: ".*",
 		GroupID:     groupID,
 		Bucket:      bucketName,
-		FileSize:    1, // Small file size to force frequent flushes
+		FileSize:    400, // This is the current min file size in this test, to obtain a single file per batch written
 		WorkingDir:  workingDir,
 		S3Endpoint:  s3Endpoint,
 		S3Region:    minioRegion,
