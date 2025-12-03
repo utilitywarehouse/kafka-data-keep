@@ -3,16 +3,13 @@ package backup
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go/modules/minio"
@@ -23,6 +20,11 @@ import (
 	"os"
 )
 
+const minioRegion = "us-east-1"
+const bucketName = "test-backup-bucket"
+const s3User = "uwadmin"
+const s3pass = "uwadminpass"
+
 func TestE2E(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping e2e test in short mode")
@@ -30,52 +32,16 @@ func TestE2E(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Start MinIO container (S3-compatible storage)
-	minioContainer, err := minio.Run(ctx, "minio/minio:latest")//minio.WithUsername("uwminio"),
-	//minio.WithPassword("minioadmin"),
-
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, minioContainer.Terminate(ctx))
-	}()
-
 	// Start Redpanda container
-	redpandaContainer, err := redpanda.Run(ctx, "redpandadata/redpanda:v25.1.1")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, redpandaContainer.Terminate(context.Background()))
-	}()
+	kafkaBrokers, tkf := startKafkaService(t, ctx)
+	defer tkf()
 
-	// Get connection details for MinIO
-	connString, err := minioContainer.ConnectionString(ctx)
-	require.NoError(t, err)
-	s3Endpoint := fmt.Sprintf("http://%s", connString)
+	s3Endpoint, ts3f := startS3Service(t, ctx)
+	defer ts3f()
 
-	kafkaBrokers, err := redpandaContainer.KafkaSeedBroker(ctx)
-	require.NoError(t, err)
+	setupEnvS3Access()
 
-	// Setup S3 client for test setup and verification
-	// Also set env credentials for the app under test (Run uses default AWS config chain)
-	_ = os.Setenv("AWS_ACCESS_KEY_ID", "minioadmin")
-	_ = os.Setenv("AWS_SECRET_ACCESS_KEY", "minioadmin")
-	awsCfg, err := config.LoadDefaultConfig(ctx,
-		config.WithRegion("us-east-1"),
-		// MinIO default credentials
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider("minioadmin", "minioadmin", "")),
-	)
-	require.NoError(t, err)
-
-	s3Client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
-		o.BaseEndpoint = aws.String(s3Endpoint)
-		o.UsePathStyle = true
-	})
-
-	// Create S3 bucket
-	bucketName := "test-backup-bucket"
-	_, err = s3Client.CreateBucket(ctx, &s3.CreateBucketInput{
-		Bucket: aws.String(bucketName),
-	})
-	require.NoError(t, err)
+	s3Client := createS3TestBucket(t, ctx, s3Endpoint)
 
 	// Create Kafka topics
 	topic1 := "test-topic-1"
@@ -106,13 +72,8 @@ func TestE2E(t *testing.T) {
 		FileSize:    1, // Small file size to force frequent flushes
 		WorkingDir:  workingDir,
 		S3Endpoint:  s3Endpoint,
-		S3Region:    "us-east-1",
+		S3Region:    minioRegion,
 	}
-
-	// Create kadm client for offset checking
-	admClient, err := kgo.NewClient(kgo.SeedBrokers(kafkaBrokers))
-	require.NoError(t, err)
-	defer admClient.Close()
 
 	// Run backup with a cancellable context (no timeout, we'll cancel after second batch)
 	backupCtx, cancel := context.WithCancel(ctx)
@@ -137,6 +98,7 @@ func TestE2E(t *testing.T) {
 	writeRecords(t, ctx, producerClient, topic1, 1, 20)
 	writeRecords(t, ctx, producerClient, topic2, 0, 20)
 	writeRecords(t, ctx, producerClient, topic2, 1, 30)
+	require.NoError(t, producerClient.Flush(ctx))
 
 	// Wait until these records are consumed
 	waitForGroupOffsets(t, ctx, kadmClient, groupID, map[string]int{topic1: 30, topic2: 50})
@@ -146,33 +108,24 @@ func TestE2E(t *testing.T) {
 	writeRecords(t, ctx, producerClient, topic1, 1, 10)
 	writeRecords(t, ctx, producerClient, topic2, 0, 30)
 	writeRecords(t, ctx, producerClient, topic2, 1, 40)
-	// Wait until second batch is consumed
-	waitForGroupOffsets(t, ctx, kadmClient, groupID, map[string]int{topic1: 60, topic2: 120})
-
-	// Flush to ensure all records are sent
 	require.NoError(t, producerClient.Flush(ctx))
 
+	// Wait until the second batch is consumed
+	waitForGroupOffsets(t, ctx, kadmClient, groupID, map[string]int{topic1: 60, topic2: 120})
+
+	cancel() // cancel the backup context after the second batch is consumed
 	// Wait for backup to finish after cancellation
-	cancel() // cancel the backup context after second batch is consumed
 	select {
 	case err := <-errCh:
-		if err != nil &&
-			!errors.Is(err, context.Canceled) &&
-			!strings.Contains(err.Error(), "context canceled") {
+		if err != nil {
 			t.Fatalf("backup returned unexpected error: %v", err)
 		}
-		// Expected graceful shutdown
 	case <-time.After(10 * time.Second):
 		t.Fatal("backup did not finish after cancellation")
 	}
 
-	// Wait a bit for S3 uploads to settle
-	time.Sleep(2 * time.Second)
-
 	// List files in S3
-	listResp, err := s3Client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
-		Bucket: aws.String(bucketName),
-	})
+	listResp, err := s3Client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: aws.String(bucketName)})
 	require.NoError(t, err)
 	require.NotEmpty(t, listResp.Contents, "expected files in S3 bucket")
 
@@ -218,6 +171,57 @@ func TestE2E(t *testing.T) {
 	for topic := range expectedTopics {
 		require.True(t, topicsFound[topic], "expected to find files for topic %s", topic)
 	}
+}
+
+func startKafkaService(t *testing.T, ctx context.Context) (string, func()) {
+	redpandaContainer, err := redpanda.Run(ctx, "redpandadata/redpanda:v25.1.1")
+	require.NoError(t, err)
+	terminateFunc := func() {
+		if err := redpandaContainer.Terminate(ctx); err != nil {
+			t.Logf("Failed to terminate Redpanda container: %v", err)
+		}
+	}
+
+	kafkaBrokers, err := redpandaContainer.KafkaSeedBroker(ctx)
+	require.NoError(t, err)
+	return kafkaBrokers, terminateFunc
+}
+
+func startS3Service(t *testing.T, ctx context.Context) (string, func()) {
+	minioContainer, err := minio.Run(ctx, "minio/minio:latest", minio.WithUsername(s3User), minio.WithPassword(s3pass))
+	require.NoError(t, err)
+
+	terminateFunc := func() {
+		if err := minioContainer.Terminate(ctx); err != nil {
+			t.Logf("Failed to terminate MinIO container: %v", err)
+		}
+	}
+
+	// Get connection details for MinIO
+	connString, err := minioContainer.ConnectionString(ctx)
+	require.NoError(t, err)
+	return fmt.Sprintf("http://%s", connString), terminateFunc
+}
+
+func createS3TestBucket(t *testing.T, ctx context.Context, s3Endpoint string) *s3.Client {
+	awsCfg, err := config.LoadDefaultConfig(ctx)
+	require.NoError(t, err)
+
+	s3Client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
+		o.BaseEndpoint = aws.String(s3Endpoint)
+		o.UsePathStyle = true
+	})
+
+	// Create S3 bucket
+	_, err = s3Client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucketName)})
+	require.NoError(t, err)
+	return s3Client
+}
+
+func setupEnvS3Access() {
+	_ = os.Setenv("AWS_ACCESS_KEY_ID", s3User)
+	_ = os.Setenv("AWS_SECRET_ACCESS_KEY", s3pass)
+	_ = os.Setenv("AWS_REGION", minioRegion)
 }
 
 // Helper to wait for consumer group offsets
