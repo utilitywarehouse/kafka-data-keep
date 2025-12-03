@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go/modules/minio"
 	"github.com/testcontainers/testcontainers-go/modules/redpanda"
@@ -29,14 +30,14 @@ func TestBackupIntegration(t *testing.T) {
 		t.Skip("Skipping e2e test in short mode")
 	}
 
+	t.Parallel()
 	ctx := context.Background()
 
-	// Start Redpanda container
 	kafkaBrokers, tkf := startKafkaService(t, ctx)
-	defer tkf()
+	t.Cleanup(tkf)
 
 	s3Endpoint, ts3f := startS3Service(t, ctx)
-	defer ts3f()
+	t.Cleanup(ts3f)
 
 	setupEnvS3Access()
 	s3Client := newS3Client(t, ctx, s3Endpoint)
@@ -49,97 +50,185 @@ func TestBackupIntegration(t *testing.T) {
 		kgo.RecordPartitioner(kgo.ManualPartitioner()), // set the partitions manually on produce
 	)
 	require.NoError(t, err)
-	defer adminClient.Close()
+	t.Cleanup(adminClient.Close)
 
 	kadmClient := kadm.NewClient(adminClient)
-	defer kadmClient.Close()
+	t.Cleanup(kadmClient.Close)
 
-	// Create Kafka topics
-	topic1 := "test-topic-1"
-	topic2 := "test-topic-2"
-	_, err = kadmClient.CreateTopic(ctx, 2, 1, nil, topic1)
-	require.NoError(t, err)
+	t.Run("multiple batches per partitions", func(t *testing.T) {
+		t.Parallel()
 
-	_, err = kadmClient.CreateTopic(ctx, 2, 1, nil, topic2)
-	require.NoError(t, err)
+		topic1 := "multiple-1"
+		topic2 := "multiple-2"
+		_, err = kadmClient.CreateTopic(ctx, 2, 1, nil, topic1)
+		require.NoError(t, err)
 
-	// Setup backup application config
-	workingDir := t.TempDir()
+		_, err = kadmClient.CreateTopic(ctx, 2, 1, nil, topic2)
+		require.NoError(t, err)
 
-	const groupID = "test-backup-group"
-	cfg := AppConfig{
-		Brokers:     kafkaBrokers,
-		TopicsRegex: ".*",
-		GroupID:     groupID,
-		MinFileSize: 400, // This is the current min file size in this test, to obtain a single file per batch written
-		WorkingDir:  workingDir,
-		S3Bucket:    bucketName,
-		S3Prefix:    "integ-test/",
-		S3Endpoint:  s3Endpoint,
-		S3Region:    minioRegion,
-	}
+		// Setup backup application config
+		workingDir := t.TempDir()
 
-	// Run backup with a cancellable context (no timeout, we'll cancel after second batch)
-	backupCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	// Run backup in a goroutine
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- Run(backupCtx, cfg)
-	}()
-
-	// First batch of records
-	writeRecords(t, ctx, adminClient, topic1, 0, 10)
-	writeRecords(t, ctx, adminClient, topic1, 1, 20)
-	writeRecords(t, ctx, adminClient, topic2, 0, 20)
-	writeRecords(t, ctx, adminClient, topic2, 1, 30)
-	require.NoError(t, adminClient.Flush(ctx))
-
-	// Wait until these records are consumed
-	waitForGroupOffsets(t, ctx, kadmClient, groupID, map[string]int{topic1: 30, topic2: 50})
-
-	// Second batch of records
-	writeRecords(t, ctx, adminClient, topic1, 0, 20)
-	writeRecords(t, ctx, adminClient, topic1, 1, 10)
-	writeRecords(t, ctx, adminClient, topic2, 0, 30)
-	writeRecords(t, ctx, adminClient, topic2, 1, 40)
-	require.NoError(t, adminClient.Flush(ctx))
-
-	// Wait until the second batch is consumed
-	waitForGroupOffsets(t, ctx, kadmClient, groupID, map[string]int{topic1: 60, topic2: 120})
-
-	cancel() // cancel the backup context after the second batch is consumed
-	// Wait for backup to finish after cancellation
-	select {
-	case err := <-errCh:
-		if err != nil {
-			t.Fatalf("backup returned unexpected error: %v", err)
+		groupID := newRandomName("test-backup-group")
+		s3Prefix := "multiple-batches/"
+		cfg := AppConfig{
+			Brokers:     kafkaBrokers,
+			TopicsRegex: "multiple-.*",
+			GroupID:     groupID,
+			MinFileSize: 400, // This is the current min file size in this test, to obtain a single file per batch written
+			WorkingDir:  workingDir,
+			S3Bucket:    bucketName,
+			S3Prefix:    s3Prefix,
+			S3Endpoint:  s3Endpoint,
+			S3Region:    minioRegion,
 		}
+
+		// Run backup with a cancellable context (no timeout, we'll cancel after second batch)
+		backupCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		// Run backup in a goroutine
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- Run(backupCtx, cfg)
+		}()
+
+		waitConsumerStart(ctx, t, kadmClient, groupID)
+
+		// First batch of records
+		writeRecords(t, ctx, adminClient, topic1, 0, 10)
+		writeRecords(t, ctx, adminClient, topic1, 1, 20)
+		writeRecords(t, ctx, adminClient, topic2, 0, 20)
+		writeRecords(t, ctx, adminClient, topic2, 1, 30)
+		require.NoError(t, adminClient.Flush(ctx))
+
+		// Wait until these records are consumed
+		waitForGroupOffsets(t, ctx, kadmClient, groupID, map[string]int{topic1: 30, topic2: 50})
+
+		// Second batch of records
+		writeRecords(t, ctx, adminClient, topic1, 0, 20)
+		writeRecords(t, ctx, adminClient, topic1, 1, 10)
+		writeRecords(t, ctx, adminClient, topic2, 0, 30)
+		writeRecords(t, ctx, adminClient, topic2, 1, 40)
+		require.NoError(t, adminClient.Flush(ctx))
+
+		// Wait until the second batch is consumed
+		waitForGroupOffsets(t, ctx, kadmClient, groupID, map[string]int{topic1: 60, topic2: 120})
+
+		stopApp(ctx, t, cancel, errCh)
+
+		expectedFiles := map[string]int{
+			"multiple-batches/multiple-1/0/multiple-1-0-0000000000000000000.avro": 10,
+			"multiple-batches/multiple-1/0/multiple-1-0-0000000000000000010.avro": 20,
+			"multiple-batches/multiple-1/1/multiple-1-1-0000000000000000000.avro": 20,
+			"multiple-batches/multiple-1/1/multiple-1-1-0000000000000000020.avro": 10,
+			"multiple-batches/multiple-2/0/multiple-2-0-0000000000000000000.avro": 20,
+			"multiple-batches/multiple-2/0/multiple-2-0-0000000000000000020.avro": 30,
+			"multiple-batches/multiple-2/1/multiple-2-1-0000000000000000000.avro": 30,
+			"multiple-batches/multiple-2/1/multiple-2-1-0000000000000000030.avro": 40,
+		}
+
+		filesFound := listFilesOnBucket(ctx, t, err, s3Client, s3Prefix)
+
+		require.Equal(t, expectedFiles, filesFound)
+	})
+
+	t.Run("flush on stopping the app", func(t *testing.T) {
+		t.Parallel()
+
+		topic3 := "flush-stop-1"
+		_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, topic3)
+		require.NoError(t, err)
+
+		// Setup backup application config
+		workingDir := t.TempDir()
+
+		groupID := newRandomName("test-backup-group")
+		s3Prefix := "flush-on-stop/"
+		cfg := AppConfig{
+			Brokers:            kafkaBrokers,
+			TopicsRegex:        "flush-stop-.*",
+			ExcludeTopicsRegex: "multiple-.*", // eclude the topics from the previous test
+			GroupID:            groupID,
+			MinFileSize:        100 * 1024 * 1024, // use a big limit, so we make sure we flush only on stopping the app
+			WorkingDir:         workingDir,
+			S3Bucket:           bucketName,
+			S3Prefix:           s3Prefix,
+			S3Endpoint:         s3Endpoint,
+			S3Region:           minioRegion,
+		}
+
+		// Run backup with a cancellable context (no timeout, we'll cancel after second batch)
+		backupCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		// Run backup in a goroutine
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- Run(backupCtx, cfg)
+		}()
+
+		waitConsumerStart(ctx, t, kadmClient, groupID)
+		// write records continuously, but offsets won't be committed, since the file size limit is very high
+		for i := 0; i < 10; i++ {
+			writeRecords(t, ctx, adminClient, topic3, 0, 1000)
+			require.NoError(t, adminClient.Flush(ctx))
+			t.Logf("Wrote batch of %d records to topic %s", i, topic3)
+			time.Sleep(time.Millisecond * 100)
+		}
+
+		time.Sleep(1 * time.Second) // give it some time to consume the records
+
+		// stop consuming & trigger the flush
+		stopApp(ctx, t, cancel, errCh)
+
+		filesFound := listFilesOnBucket(ctx, t, err, s3Client, s3Prefix)
+		require.Len(t, filesFound, 1)
+		// we expect the file to have records, but it might not have consumed all
+		require.LessOrEqual(t, filesFound["flush-on-stop/flush-stop-1/0/flush-stop-1-0-0000000000000000000.avro"], 10000)
+	})
+}
+
+func stopApp(ctx context.Context, t *testing.T, cancel context.CancelFunc, errCh chan error) {
+	cancel()
+	select {
+	case <-ctx.Done():
+		return
+	case err := <-errCh:
+		require.NoError(t, err, "backup returned unexpected error")
 	case <-time.After(10 * time.Second):
 		t.Fatal("backup did not finish after cancellation")
 	}
-
-	expectedFiles := map[string]int{
-		"integ-test/test-topic-1/0/test-topic-1-0-0000000000000000000.avro": 10,
-		"integ-test/test-topic-1/0/test-topic-1-0-0000000000000000010.avro": 20,
-		"integ-test/test-topic-1/1/test-topic-1-1-0000000000000000000.avro": 20,
-		"integ-test/test-topic-1/1/test-topic-1-1-0000000000000000020.avro": 10,
-		"integ-test/test-topic-2/0/test-topic-2-0-0000000000000000000.avro": 20,
-		"integ-test/test-topic-2/0/test-topic-2-0-0000000000000000020.avro": 30,
-		"integ-test/test-topic-2/1/test-topic-2-1-0000000000000000000.avro": 30,
-		"integ-test/test-topic-2/1/test-topic-2-1-0000000000000000030.avro": 40,
-	}
-
-	filesFound := listFilesOnBucket(ctx, t, err, s3Client)
-
-	require.Equal(t, expectedFiles, filesFound)
 }
 
-func listFilesOnBucket(ctx context.Context, t *testing.T, err error, s3Client *s3.Client) map[string]int {
+func waitConsumerStart(ctx context.Context, t *testing.T, client *kadm.Client, groupId string) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(10 * time.Second):
+			t.Fatalf("consumer group %s did not start in 10 seconds", groupId)
+		case <-time.Tick(100 * time.Millisecond):
+			dg, err := client.DescribeGroups(ctx, groupId)
+			require.NoError(t, err)
+			if dg[groupId].State == "Stable" {
+				t.Logf("consumer group %s started consuming", groupId)
+				return
+			}
+		}
+	}
+}
+
+func newRandomName(baseName string) string {
+	return baseName + "-" + uuid.NewString()
+}
+
+func listFilesOnBucket(ctx context.Context, t *testing.T, err error, s3Client *s3.Client, s3prefix string) map[string]int {
 	filesFound := make(map[string]int)
 	// List files in S3
-	listResp, err := s3Client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: aws.String(bucketName)})
+	listResp, err := s3Client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: aws.String(bucketName), Prefix: aws.String(s3prefix)})
+	require.NoError(t, err)
+	require.NotEmpty(t, listResp.Contents, "expected files in S3 bucket")
 	require.NoError(t, err)
 	require.NotEmpty(t, listResp.Contents, "expected files in S3 bucket")
 
@@ -147,7 +236,6 @@ func listFilesOnBucket(ctx context.Context, t *testing.T, err error, s3Client *s
 
 	for _, obj := range listResp.Contents {
 		key := *obj.Key
-		t.Logf("Found file: %s (size: %d)", key, obj.Size)
 
 		getResp, err := s3Client.GetObject(ctx, &s3.GetObjectInput{
 			Bucket: aws.String(bucketName),
@@ -156,6 +244,8 @@ func listFilesOnBucket(ctx context.Context, t *testing.T, err error, s3Client *s
 		require.NoError(t, err)
 		records := decodeAvroFile(t, getResp.Body)
 		filesFound[key] = len(records)
+		t.Logf("Found file: %s (size: %d), recs: %d", key, obj.Size, len(records))
+
 	}
 	return filesFound
 }
@@ -208,18 +298,15 @@ func setupEnvS3Access() {
 
 // Helper to wait for consumer group offsets
 func waitForGroupOffsets(t *testing.T, ctx context.Context, client *kadm.Client, group string, expected map[string]int) {
-	timeoutCtx, cancelFunc := context.WithTimeout(ctx, 30*time.Second)
-	defer cancelFunc()
-
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
 	for {
 		select {
-		case <-timeoutCtx.Done():
+		case <-ctx.Done():
+			return
+		case <-time.After(30 * time.Second):
 			t.Fatalf("consumer group %s did not reach expected offsets: %+v", group, expected)
 			return
-		case <-ticker.C:
-			if isGroupAt(t, timeoutCtx, client, group, expected) {
+		case <-time.Tick(100 * time.Millisecond):
+			if isGroupAt(t, ctx, client, group, expected) {
 				return
 			}
 		}
