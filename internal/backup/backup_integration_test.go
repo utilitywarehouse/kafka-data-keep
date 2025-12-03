@@ -24,7 +24,7 @@ const bucketName = "test-backup-bucket"
 const s3User = "uwadmin"
 const s3pass = "uwadminpass"
 
-func TestE2E(t *testing.T) {
+func TestBackupIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping e2e test in short mode")
 	}
