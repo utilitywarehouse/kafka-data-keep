@@ -89,7 +89,7 @@ func (p *PartitionWriter) open(offset int64) error {
 	filename := fmt.Sprintf("%s-%d-%s.avro", p.topic, p.partition, maskedOffset)
 
 	// Key for S3 (relative path)
-	key := filepath.Join(p.topic, fmt.Sprintf("%d", p.partition), filename)
+	key := filepath.Join(p.config.S3Prefix, p.topic, fmt.Sprintf("%d", p.partition), filename)
 	p.currentKey = key
 
 	// Full local path

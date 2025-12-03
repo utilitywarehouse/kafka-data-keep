@@ -12,6 +12,7 @@ import (
 type Config struct {
 	MinFileSize int64
 	RootPath    string
+	S3Prefix    string
 }
 
 type PartitionsWriterManager struct {

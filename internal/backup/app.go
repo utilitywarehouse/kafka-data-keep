@@ -20,15 +20,16 @@ type AppConfig struct {
 	TopicsRegex        string
 	ExcludeTopicsRegex string
 	GroupID            string
-	Bucket             string
 	MinFileSize        int64
 	WorkingDir         string
+	S3Bucket           string
 	S3Endpoint         string
 	S3Region           string
+	S3Prefix           string
 }
 
 func Run(ctx context.Context, cfg AppConfig) error {
-	if cfg.Bucket == "" {
+	if cfg.S3Bucket == "" {
 		return fmt.Errorf("bucket must be provided")
 	}
 
@@ -48,7 +49,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	}
 
 	s3Client := s3.NewFromConfig(awsCfg, s3ClientOpts...)
-	uploader := NewUploader(s3Client, cfg.Bucket)
+	uploader := NewUploader(s3Client, cfg.S3Bucket)
 
 	// Create working dir for local files
 	if err := os.MkdirAll(cfg.WorkingDir, 0755); err != nil {
@@ -59,6 +60,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	wConfig := Config{
 		MinFileSize: cfg.MinFileSize,
 		RootPath:    cfg.WorkingDir,
+		S3Prefix:    cfg.S3Prefix,
 	}
 
 	// Create manager first

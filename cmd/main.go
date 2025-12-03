@@ -76,10 +76,16 @@ func loadBackupAppConfig(args []string) (backup.AppConfig, error) {
 
 	// Storage
 	fs.StringVar(
-		&cfg.Bucket,
-		"bucket",
+		&cfg.S3Bucket,
+		"s3-bucket",
 		getEnv("S3_BUCKET", ""),
 		"S3 bucket name where to store the backups",
+	)
+	fs.StringVar(
+		&cfg.S3Prefix,
+		"s3-prefix",
+		getEnv("S3_PREFIX", ""),
+		"The prefix to use for the backup files in S3",
 	)
 	fs.Int64Var(
 		&cfg.MinFileSize,

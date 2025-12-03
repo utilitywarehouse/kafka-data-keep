@@ -71,9 +71,10 @@ func TestBackupIntegration(t *testing.T) {
 		Brokers:     kafkaBrokers,
 		TopicsRegex: ".*",
 		GroupID:     groupID,
-		Bucket:      bucketName,
 		MinFileSize: 400, // This is the current min file size in this test, to obtain a single file per batch written
 		WorkingDir:  workingDir,
+		S3Bucket:    bucketName,
+		S3Prefix:    "integ-test/",
 		S3Endpoint:  s3Endpoint,
 		S3Region:    minioRegion,
 	}
@@ -120,14 +121,14 @@ func TestBackupIntegration(t *testing.T) {
 	}
 
 	expectedFiles := map[string]int{
-		"test-topic-1/0/test-topic-1-0-0000000000000000000.avro": 10,
-		"test-topic-1/0/test-topic-1-0-0000000000000000010.avro": 20,
-		"test-topic-1/1/test-topic-1-1-0000000000000000000.avro": 20,
-		"test-topic-1/1/test-topic-1-1-0000000000000000020.avro": 10,
-		"test-topic-2/0/test-topic-2-0-0000000000000000000.avro": 20,
-		"test-topic-2/0/test-topic-2-0-0000000000000000020.avro": 30,
-		"test-topic-2/1/test-topic-2-1-0000000000000000000.avro": 30,
-		"test-topic-2/1/test-topic-2-1-0000000000000000030.avro": 40,
+		"integ-test/test-topic-1/0/test-topic-1-0-0000000000000000000.avro": 10,
+		"integ-test/test-topic-1/0/test-topic-1-0-0000000000000000010.avro": 20,
+		"integ-test/test-topic-1/1/test-topic-1-1-0000000000000000000.avro": 20,
+		"integ-test/test-topic-1/1/test-topic-1-1-0000000000000000020.avro": 10,
+		"integ-test/test-topic-2/0/test-topic-2-0-0000000000000000000.avro": 20,
+		"integ-test/test-topic-2/0/test-topic-2-0-0000000000000000020.avro": 30,
+		"integ-test/test-topic-2/1/test-topic-2-1-0000000000000000000.avro": 30,
+		"integ-test/test-topic-2/1/test-topic-2-1-0000000000000000030.avro": 40,
 	}
 
 	filesFound := listFilesOnBucket(ctx, t, err, s3Client)
