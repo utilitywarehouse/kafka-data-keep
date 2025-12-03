@@ -55,7 +55,6 @@ func TestE2E(t *testing.T) {
 	// Create Kafka topics
 	topic1 := "test-topic-1"
 	topic2 := "test-topic-2"
-
 	_, err = kadmClient.CreateTopic(ctx, 2, 1, nil, topic1)
 	require.NoError(t, err)
 
@@ -118,6 +117,24 @@ func TestE2E(t *testing.T) {
 		t.Fatal("backup did not finish after cancellation")
 	}
 
+	expectedFiles := map[string]int{
+		"test-topic-1/0/test-topic-1-0-0000000000000000000.avro": 10,
+		"test-topic-1/0/test-topic-1-0-0000000000000000010.avro": 20,
+		"test-topic-1/1/test-topic-1-1-0000000000000000000.avro": 20,
+		"test-topic-1/1/test-topic-1-1-0000000000000000020.avro": 10,
+		"test-topic-2/0/test-topic-2-0-0000000000000000000.avro": 20,
+		"test-topic-2/0/test-topic-2-0-0000000000000000020.avro": 30,
+		"test-topic-2/1/test-topic-2-1-0000000000000000000.avro": 30,
+		"test-topic-2/1/test-topic-2-1-0000000000000000030.avro": 40,
+	}
+
+	filesFound := listFilesOnBucket(ctx, t, err, s3Client)
+
+	require.Equal(t, expectedFiles, filesFound)
+}
+
+func listFilesOnBucket(ctx context.Context, t *testing.T, err error, s3Client *s3.Client) map[string]int {
+	filesFound := make(map[string]int)
 	// List files in S3
 	listResp, err := s3Client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: aws.String(bucketName)})
 	require.NoError(t, err)
@@ -125,39 +142,19 @@ func TestE2E(t *testing.T) {
 
 	t.Logf("Found %d files in S3", len(listResp.Contents))
 
-	// Verify files
-	expectedTopics := map[string]bool{topic1: true, topic2: true}
-	topicsFound := make(map[string]bool)
-
 	for _, obj := range listResp.Contents {
 		key := *obj.Key
 		t.Logf("Found file: %s (size: %d)", key, obj.Size)
 
-		// Download and verify file
 		getResp, err := s3Client.GetObject(ctx, &s3.GetObjectInput{
 			Bucket: aws.String(bucketName),
 			Key:    aws.String(key),
 		})
 		require.NoError(t, err)
-		// Decode Avro records
-		records, err := decodeAvroFile(getResp.Body)
-		require.NoError(t, err)
-		require.NotEmpty(t, records, "file should contain records")
-
-		// Verify records belong to expected topics
-		for _, rec := range records {
-			if expectedTopics[rec.Topic] {
-				topicsFound[rec.Topic] = true
-			}
-		}
-
-		t.Logf("  Contains %d records", len(records))
+		records := decodeAvroFile(t, getResp.Body)
+		filesFound[key] = len(records)
 	}
-
-	// Verify we have files for all expected topics
-	for topic := range expectedTopics {
-		require.True(t, topicsFound[topic], "expected to find files for topic %s", topic)
-	}
+	return filesFound
 }
 
 func startKafkaService(t *testing.T, ctx context.Context) (string, func()) {
@@ -285,22 +282,24 @@ func writeRecords(t *testing.T, ctx context.Context, client *kgo.Client, topic s
 	require.NoError(t, client.ProduceSync(ctx, recs...).FirstErr(), "failed to produce records")
 }
 
-func decodeAvroFile(r io.ReadCloser) ([]*kgo.Record, error) {
-	defer r.Close()
+func decodeAvroFile(t *testing.T, r io.ReadCloser) []*kgo.Record {
+	defer func() {
+		if err := r.Close(); err != nil {
+			t.Logf("Failed to close Avro file reader: %v", err)
+		}
+	}()
 	decFactory := &avro.RecordDecoderFactory{}
 	decoder, err := decFactory.New(r)
-	if err != nil {
-		return nil, err
-	}
+	require.NoError(t, err)
 
 	var records []*kgo.Record
 	for decoder.HasNext() {
 		rec, err := decoder.Decode()
 		if err != nil {
-			return nil, err
+			return nil
 		}
 		records = append(records, rec)
 	}
 
-	return records, nil
+	return records
 }
