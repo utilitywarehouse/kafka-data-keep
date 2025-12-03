@@ -21,7 +21,7 @@ type AppConfig struct {
 	ExcludeTopicsRegex string
 	GroupID            string
 	Bucket             string
-	FileSize           int64
+	MinFileSize        int64
 	WorkingDir         string
 	S3Endpoint         string
 	S3Region           string
@@ -57,8 +57,8 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	slog.Info("Using working dir for local files", "path", cfg.WorkingDir)
 
 	wConfig := Config{
-		FileSize: cfg.FileSize,
-		RootPath: cfg.WorkingDir,
+		MinFileSize: cfg.MinFileSize,
+		RootPath:    cfg.WorkingDir,
 	}
 
 	// Create manager first

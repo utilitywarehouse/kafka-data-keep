@@ -72,7 +72,7 @@ func TestBackupIntegration(t *testing.T) {
 		TopicsRegex: ".*",
 		GroupID:     groupID,
 		Bucket:      bucketName,
-		FileSize:    400, // This is the current min file size in this test, to obtain a single file per batch written
+		MinFileSize: 400, // This is the current min file size in this test, to obtain a single file per batch written
 		WorkingDir:  workingDir,
 		S3Endpoint:  s3Endpoint,
 		S3Region:    minioRegion,

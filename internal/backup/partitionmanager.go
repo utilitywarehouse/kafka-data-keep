@@ -10,8 +10,8 @@ import (
 )
 
 type Config struct {
-	FileSize int64
-	RootPath string
+	MinFileSize int64
+	RootPath    string
 }
 
 type PartitionsWriterManager struct {

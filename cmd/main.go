@@ -82,10 +82,10 @@ func loadBackupAppConfig(args []string) (backup.AppConfig, error) {
 		"S3 bucket name where to store the backups",
 	)
 	fs.Int64Var(
-		&cfg.FileSize,
-		"file-size",
-		getEnvInt64("FILE_SIZE", 5*1024*1024),
-		"File size in bytes for each partition backup file",
+		&cfg.MinFileSize,
+		"min-file-size",
+		getEnvInt64("MIN_FILE_SIZE", 5*1024*1024),
+		"The minimum file size in bytes for each partition backup file",
 	)
 	fs.StringVar(
 		&cfg.WorkingDir,

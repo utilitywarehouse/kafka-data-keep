@@ -133,7 +133,7 @@ func (p *PartitionWriter) shouldFlush() bool {
 	if !p.isOpen {
 		return false
 	}
-	return p.currentCountingWriter.count >= p.config.FileSize
+	return p.currentCountingWriter.count >= p.config.MinFileSize
 }
 
 func (p *PartitionWriter) flushLocked(ctx context.Context) error {
