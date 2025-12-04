@@ -22,6 +22,13 @@ import (
 )
 
 func main() {
+	if err := mainWrap(); err != nil {
+		slog.Error("app error", "error", err)
+		os.Exit(1)
+	}
+}
+
+func mainWrap() error {
 	slog.Info(
 		"Running version",
 		slog.String("version", build.Version()),
@@ -32,19 +39,14 @@ func main() {
 	defer cancel()
 
 	if len(os.Args) < 2 {
-		slog.ErrorContext(ctx, "expected subcommand")
-		os.Exit(1)
+		return fmt.Errorf("expected subcommand")
 	}
 
 	switch os.Args[1] {
 	case "backup":
-		if err := runCmd(ctx, os.Args[2:], backupCmd); err != nil {
-			slog.ErrorContext(ctx, "backup command failed", "error", err)
-			os.Exit(1)
-		}
+		return runCmd(ctx, os.Args[2:], backupCmd)
 	default:
-		slog.ErrorContext(ctx, "expected 'backup' subcommand")
-		os.Exit(1)
+		return fmt.Errorf("expected 'backup' subcommand")
 	}
 }
 
@@ -191,7 +193,7 @@ func runOpsServer(ctx context.Context, operationalAddr string, opStatus *op.Stat
 func backupCmd(ctx context.Context, args []string) error {
 	cfg, err := loadBackupAppConfig(args)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed parsing backup config: %w", err)
 	}
 
 	if err := backup.Run(ctx, cfg); err != nil {
