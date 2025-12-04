@@ -10,12 +10,12 @@ lint: $(LINTER)
 
 .PHONY: clean
 clean:
-	rm -f sys-rds-example-app
+	rm -f kafka-data-keep
 
 # builds our binary
 .PHONY: build
 build: clean
-	CGO_ENABLED=0 go build -o sys-rds-example-app -a .
+	CGO_ENABLED=0 go build -o kafka-data-keep -a ./cmd/main.go
 
 .PHONY: test
 test:
@@ -23,7 +23,3 @@ test:
 
 .PHONY: all
 all: clean $(LINTER) lint test build
-
-.PHONY: generate
-generate:
-	go generate ./...
