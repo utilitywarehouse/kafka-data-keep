@@ -26,7 +26,7 @@ jobs:
         id: fetch-github-tokens
         uses: hashicorp/vault-action@v3
         with:
-          url: ${{ vars.VAULT_DEV_URL }}
+          url: ${{ vars.VAULT_URL }}
           method: jwt
           path: github-jwt
           exportEnv: false
