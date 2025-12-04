@@ -70,8 +70,9 @@ func Run(ctx context.Context, cfg AppConfig) error {
 		return fmt.Errorf("failed to create writer manager: %w", err)
 	}
 	defer func() {
+		//nolint: contextcheck
 		if err := mgr.Close(); err != nil {
-			slog.Error("failed to close manager", "error", err)
+			slog.ErrorContext(ctx, "failed to close manager", "error", err)
 		}
 	}()
 
@@ -100,10 +101,10 @@ func initKafkaClient(cfg AppConfig, mgr *PartitionsWriterManager) (*kafka.Client
 			mgr.OnPartitionsAssigned(c, p)
 		}),
 		kgo.OnPartitionsRevoked(func(ctx context.Context, c *kgo.Client, p map[string][]int32) {
-			mgr.OnPartitionsRevoked(p)
+			mgr.OnPartitionsRevoked(ctx, p)
 		}),
 		kgo.OnPartitionsLost(func(ctx context.Context, c *kgo.Client, p map[string][]int32) {
-			mgr.OnPartitionLost(p)
+			mgr.OnPartitionLost(ctx, p)
 		}),
 	}
 	if cfg.BrokersDNSSrv != "" {

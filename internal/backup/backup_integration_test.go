@@ -315,6 +315,7 @@ func setupEnvS3Access() {
 
 // Helper to wait for consumer group offsets
 func waitForGroupOffsets(t *testing.T, ctx context.Context, client *kadm.Client, group string, expected map[string]int) {
+	t.Helper()
 	for {
 		select {
 		case <-ctx.Done():
@@ -331,6 +332,7 @@ func waitForGroupOffsets(t *testing.T, ctx context.Context, client *kadm.Client,
 }
 
 func isGroupAt(t *testing.T, ctx context.Context, client *kadm.Client, group string, expected map[string]int) bool {
+	t.Helper()
 	topics := make([]string, 0, len(expected))
 	for t := range expected {
 		topics = append(topics, t)
@@ -368,6 +370,7 @@ func getOffsetForTopic(topicOffsets map[int32]kadm.OffsetResponse) int {
 }
 
 func writeRecords(t *testing.T, ctx context.Context, client *kgo.Client, topic string, partition int32, count int, totalBytes int64) {
+	t.Helper()
 	recs := make([]*kgo.Record, 0, count)
 	for i := range count {
 		rec := &kgo.Record{
@@ -385,6 +388,7 @@ func writeRecords(t *testing.T, ctx context.Context, client *kgo.Client, topic s
 }
 
 func genBytes(t *testing.T, size int64) []byte {
+	t.Helper()
 	data := make([]byte, size)
 	// This fills the slice with high-entropy random bits that should not be very compressable
 	_, err := rand.Read(data)
@@ -393,6 +397,7 @@ func genBytes(t *testing.T, size int64) []byte {
 }
 
 func decodeAvroFile(t *testing.T, r io.ReadCloser) []*kgo.Record {
+	t.Helper()
 	defer func() {
 		if err := r.Close(); err != nil {
 			t.Logf("Failed to close Avro file reader: %v", err)

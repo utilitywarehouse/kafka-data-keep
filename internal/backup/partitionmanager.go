@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -49,7 +50,7 @@ func (m *PartitionsWriterManager) OnPartitionsAssigned(committer OffsetCommitter
 	}
 }
 
-func (m *PartitionsWriterManager) OnPartitionsRevoked(partitions map[string][]int32) {
+func (m *PartitionsWriterManager) OnPartitionsRevoked(ctx context.Context, partitions map[string][]int32) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -58,19 +59,20 @@ func (m *PartitionsWriterManager) OnPartitionsRevoked(partitions map[string][]in
 			key := partitionWriterKey(topic, partition)
 			w, exists := m.writers[key]
 			if exists {
+				//nolint: contextcheck
 				if err := w.Close(); err != nil {
-					slog.Error("failed to close partition writer on revocation", "error", err)
+					slog.ErrorContext(ctx, "failed to close partition writer on revocation", "error", err)
 				}
 				delete(m.writers, key)
 			} else {
-				slog.Warn("partition writer not found on revocation", "topic", topic, "partition", partition)
+				slog.WarnContext(ctx, "partition writer not found on revocation", "topic", topic, "partition", partition)
 			}
 		}
 	}
 }
 
-func (m *PartitionsWriterManager) OnPartitionLost(partitions map[string][]int32) {
-	m.OnPartitionsRevoked(partitions)
+func (m *PartitionsWriterManager) OnPartitionLost(ctx context.Context, partitions map[string][]int32) {
+	m.OnPartitionsRevoked(ctx, partitions)
 }
 
 func (m *PartitionsWriterManager) GetWriter(topic string, partition int32) (*PartitionWriter, error) {
