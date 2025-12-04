@@ -44,7 +44,7 @@ func (m *PartitionsWriterManager) OnPartitionsAssigned(committer OffsetCommitter
 		for _, partition := range parts {
 			key := partitionWriterKey(topic, partition)
 			if _, exists := m.writers[key]; !exists {
-				m.writers[key] = NewPartitionWriter(m.uploader, committer, m.config, m.encoderFactory, topic, int(partition))
+				m.writers[key] = NewPartitionWriter(m.uploader, committer, m.config, m.encoderFactory, topic, partition)
 			}
 		}
 	}

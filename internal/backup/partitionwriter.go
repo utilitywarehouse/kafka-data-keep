@@ -25,7 +25,7 @@ type PartitionWriter struct {
 	config          Config
 	encoderFactory  codec.RecordEncoderFactory
 	topic           string
-	partition       int
+	partition       int32
 
 	mu                    sync.Mutex
 	currentEncoder        codec.RecordEncoder
@@ -40,7 +40,7 @@ type PartitionWriter struct {
 	isOpen bool
 }
 
-func NewPartitionWriter(uploader *Uploader, offsetCommitter OffsetCommitter, config Config, encoderFactory codec.RecordEncoderFactory, topic string, partition int) *PartitionWriter {
+func NewPartitionWriter(uploader *Uploader, offsetCommitter OffsetCommitter, config Config, encoderFactory codec.RecordEncoderFactory, topic string, partition int32) *PartitionWriter {
 	return &PartitionWriter{
 		uploader:        uploader,
 		offsetCommitter: offsetCommitter,
@@ -184,7 +184,7 @@ func (p *PartitionWriter) flushLocked(ctx context.Context) error {
 func (p *PartitionWriter) commitOffset(ctx context.Context) error {
 	offsets := map[string]map[int32]kgo.EpochOffset{
 		p.topic: {
-			int32(p.partition): {
+			p.partition: {
 				Epoch:  -1, // Unknown epoch
 				Offset: p.lastOffset + 1,
 			},

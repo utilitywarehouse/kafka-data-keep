@@ -19,7 +19,7 @@ type kafkaRecord struct {
 	Value     []byte            `avro:"value"`
 	Headers   map[string][]byte `avro:"headers"`
 	Topic     string            `avro:"topic"`
-	Partition int               `avro:"partition"`
+	Partition int32             `avro:"partition"`
 	Timestamp int64             `avro:"timestamp"`
 	Offset    int64             `avro:"offset"`
 }
@@ -61,7 +61,7 @@ func toAvro(r *kgo.Record) kafkaRecord {
 		Value:     r.Value,
 		Headers:   headers,
 		Topic:     r.Topic,
-		Partition: int(r.Partition),
+		Partition: r.Partition,
 		Timestamp: r.Timestamp.UnixMilli(),
 		Offset:    r.Offset,
 	}
@@ -113,7 +113,7 @@ func toKgo(avroRec kafkaRecord) *kgo.Record {
 		Value:     avroRec.Value,
 		Headers:   headers,
 		Topic:     avroRec.Topic,
-		Partition: int32(avroRec.Partition),
+		Partition: avroRec.Partition,
 		Timestamp: time.UnixMilli(avroRec.Timestamp),
 		Offset:    avroRec.Offset,
 	}
