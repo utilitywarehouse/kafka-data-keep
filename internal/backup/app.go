@@ -82,6 +82,8 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	}
 	defer client.CloseAllowingRebalance()
 
+	slog.InfoContext(ctx, "kafka client opts", "opts", client.Opts())
+
 	slog.InfoContext(ctx, "Starting backup application...")
 	return runConsumer(ctx, client, mgr)
 }
@@ -108,6 +110,7 @@ func initKafkaClient(cfg AppConfig, mgr *PartitionsWriterManager) (*kafka.Client
 		}),
 	}
 	if cfg.BrokersDNSSrv != "" {
+		slog.InfoContext(context.Background(), "Using DNS SRV to discover Kafka brokers", "dns", cfg.BrokersDNSSrv)
 		opts = append(opts, kafka.SeedBrokersFromDNS(cfg.BrokersDNSSrv))
 	} else {
 		opts = append(opts, kgo.SeedBrokers(cfg.Brokers))
