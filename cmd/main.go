@@ -45,9 +45,9 @@ func mainWrap() error {
 
 	switch os.Args[1] {
 	case "backup":
-		return runCmd(ctx, os.Args[2:], backupCmd)
+		return runCmd(ctx, os.Args[2:], true, backupCmd)
 	case "plan-restore":
-		return runCmd(ctx, os.Args[2:], planRestoreCmd)
+		return runCmd(ctx, os.Args[2:], false, planRestoreCmd)
 	default:
 		return fmt.Errorf("expected 'backup|plan-restore' subcommand")
 	}
@@ -137,7 +137,7 @@ func loadBackupAppConfig(args []string) (backup.AppConfig, error) {
 
 const opsAddr = "0.0.0.0:8081"
 
-func runCmd(ctx context.Context, args []string, cmd func(context.Context, []string) error) error {
+func runCmd(ctx context.Context, args []string, startOpsServer bool, cmd func(context.Context, []string) error) error {
 	shutdown, err := telemetry.Register(ctx)
 	if err != nil {
 		return fmt.Errorf("failed registering telemetry services, err: %w", err)
@@ -152,13 +152,15 @@ func runCmd(ctx context.Context, args []string, cmd func(context.Context, []stri
 
 	eg, ctx := errgroup.WithContext(ctx)
 
-	eg.Go(func() error {
-		opStatus := op.NewStatus(build.ServiceName, "kafka data keep").
-			WithInstrumentedChecks().
-			ReadyAlways()
+	if startOpsServer {
+		eg.Go(func() error {
+			opStatus := op.NewStatus(build.ServiceName, "kafka data keep").
+				WithInstrumentedChecks().
+				ReadyAlways()
 
-		return runOpsServer(ctx, opsAddr, opStatus)
-	})
+			return runOpsServer(ctx, opsAddr, opStatus)
+		})
+	}
 
 	eg.Go(func() error {
 		return cmd(ctx, args)
