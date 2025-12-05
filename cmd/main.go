@@ -15,6 +15,7 @@ import (
 
 	"github.com/utilitywarehouse/go-operational/op"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/backup"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/planrestore"
 	"github.com/utilitywarehouse/uwos-go/telemetry"
 	"github.com/utilitywarehouse/uwos-go/telemetry/log"
 	"github.com/utilitywarehouse/uwos-go/x/build"
@@ -44,9 +45,11 @@ func mainWrap() error {
 
 	switch os.Args[1] {
 	case "backup":
-		return runCmd(ctx, os.Args[2:], backupCmd)
+		return runCmd(ctx, os.Args[2:], true, backupCmd)
+	case "plan-restore":
+		return runCmd(ctx, os.Args[2:], false, planRestoreCmd)
 	default:
-		return fmt.Errorf("expected 'backup' subcommand")
+		return fmt.Errorf("expected 'backup|plan-restore' subcommand")
 	}
 }
 
@@ -141,7 +144,7 @@ func loadBackupAppConfig(args []string) (backup.AppConfig, error) {
 
 const opsAddr = "0.0.0.0:8081"
 
-func runCmd(ctx context.Context, args []string, cmd func(context.Context, []string) error) error {
+func runCmd(ctx context.Context, args []string, startOpsServer bool, cmd func(context.Context, []string) error) error {
 	shutdown, err := telemetry.Register(ctx)
 	if err != nil {
 		return fmt.Errorf("failed registering telemetry services, err: %w", err)
@@ -156,13 +159,15 @@ func runCmd(ctx context.Context, args []string, cmd func(context.Context, []stri
 
 	eg, ctx := errgroup.WithContext(ctx)
 
-	eg.Go(func() error {
-		opStatus := op.NewStatus(build.ServiceName, "kafka data keep").
-			WithInstrumentedChecks().
-			ReadyAlways()
+	if startOpsServer {
+		eg.Go(func() error {
+			opStatus := op.NewStatus(build.ServiceName, "kafka data keep").
+				WithInstrumentedChecks().
+				ReadyAlways()
 
-		return runOpsServer(ctx, opsAddr, opStatus)
-	})
+			return runOpsServer(ctx, opsAddr, opStatus)
+		})
+	}
 
 	eg.Go(func() error {
 		return cmd(ctx, args)
@@ -207,6 +212,81 @@ func backupCmd(ctx context.Context, args []string) error {
 		return fmt.Errorf("error running backup: %w", err)
 	}
 	return nil
+}
+
+func planRestoreCmd(ctx context.Context, args []string) error {
+	cfg, err := loadPlanRestoreAppConfig(args)
+	if err != nil {
+		return fmt.Errorf("failed parsing plan-restore config: %w", err)
+	}
+
+	if err := planrestore.Run(ctx, cfg); err != nil {
+		return fmt.Errorf("error running plan-restore: %w", err)
+	}
+	return nil
+}
+
+func loadPlanRestoreAppConfig(args []string) (planrestore.AppConfig, error) {
+	var cfg planrestore.AppConfig
+	fs := flag.NewFlagSet("plan-restore", flag.ExitOnError)
+
+	fs.StringVar(
+		&cfg.Brokers,
+		"brokers",
+		getEnv("KAFKA_BROKERS", "localhost:9092"),
+		"Kafka brokers (comma separated)",
+	)
+	fs.StringVar(
+		&cfg.BrokersDNSSrv,
+		"brokersDNSSrv",
+		getEnv("KAFKA_BROKERS_DNS_SRV", ""),
+		"DNS SRV record with the kafka seed brokers",
+	)
+
+	fs.StringVar(
+		&cfg.RestoreTopics,
+		"restore-topics",
+		getEnv("RESTORE_TOPICS", ""),
+		"List of kafka topics to restore (comma separated)",
+	)
+
+	fs.StringVar(
+		&cfg.PlanTopic,
+		"plan-topic",
+		getEnv("PLAN_TOPIC", "pubsub.plan-topic-restore"),
+		"Kafka topic to send the restore plan to",
+	)
+
+	fs.StringVar(
+		&cfg.S3Bucket,
+		"s3-bucket",
+		getEnv("S3_BUCKET", ""),
+		"S3 bucket name where the backup files are stored",
+	)
+	fs.StringVar(
+		&cfg.S3Endpoint,
+		"s3-endpoint",
+		getEnv("AWS_ENDPOINT_URL", ""),
+		"S3 endpoint URL (for LocalStack or custom S3-compatible storage)",
+	)
+	fs.StringVar(
+		&cfg.S3Region,
+		"s3-region",
+		getEnv("AWS_REGION", "eu-west-1"),
+		"S3 region ",
+	)
+	fs.StringVar(
+		&cfg.S3Prefix,
+		"s3-prefix",
+		getEnv("S3_PREFIX", "msk-backup"),
+		"The prefix for the backup files in S3",
+	)
+
+	if err := fs.Parse(args); err != nil {
+		return cfg, err
+	}
+
+	return cfg, nil
 }
 
 func getEnv(key, fallback string) string {
