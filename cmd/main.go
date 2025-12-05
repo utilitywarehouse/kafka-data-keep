@@ -208,9 +208,9 @@ func backupCmd(ctx context.Context, args []string) error {
 func planRestoreCmd(ctx context.Context, args []string) error {
 	cfg := planrestore.AppConfig{
 		Brokers:       "",
-		BrokersDNSSrv: "",
+		BrokersDNSSrv: "msk-shared.dev.uw.systems",
 		RestoreTopics: []string{"unicom.tests,unicom.status,data-infra.uw.data-infra.pubsubbrige.snowplow"},
-		PlanTopic:     "",
+		PlanTopic:     "pubsub.plan-topic-restore",
 		S3Bucket:      "uw-dev-pubsub-msk-data-keep-backup",
 		S3Region:      "eu-west-1",
 		S3Prefix:      "msk-backup",
