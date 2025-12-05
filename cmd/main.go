@@ -15,6 +15,7 @@ import (
 
 	"github.com/utilitywarehouse/go-operational/op"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/backup"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/planrestore"
 	"github.com/utilitywarehouse/uwos-go/telemetry"
 	"github.com/utilitywarehouse/uwos-go/telemetry/log"
 	"github.com/utilitywarehouse/uwos-go/x/build"
@@ -45,8 +46,10 @@ func mainWrap() error {
 	switch os.Args[1] {
 	case "backup":
 		return runCmd(ctx, os.Args[2:], backupCmd)
+	case "plan-restore":
+		return runCmd(ctx, os.Args[2:], planRestoreCmd)
 	default:
-		return fmt.Errorf("expected 'backup' subcommand")
+		return fmt.Errorf("expected 'backup|plan-restore' subcommand")
 	}
 }
 
@@ -197,6 +200,23 @@ func backupCmd(ctx context.Context, args []string) error {
 	}
 
 	if err := backup.Run(ctx, cfg); err != nil {
+		return fmt.Errorf("error running backup: %w", err)
+	}
+	return nil
+}
+
+func planRestoreCmd(ctx context.Context, args []string) error {
+	cfg := planrestore.AppConfig{
+		Brokers:       "",
+		BrokersDNSSrv: "",
+		RestoreTopics: []string{"unicom.tests,unicom.status,data-infra.uw.data-infra.pubsubbrige.snowplow"},
+		PlanTopic:     "",
+		S3Bucket:      "uw-dev-pubsub-msk-data-keep-backup",
+		S3Region:      "eu-west-1",
+		S3Prefix:      "msk-backup",
+	}
+
+	if err := planrestore.Run(ctx, cfg); err != nil {
 		return fmt.Errorf("error running backup: %w", err)
 	}
 	return nil
