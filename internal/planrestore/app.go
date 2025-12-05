@@ -54,7 +54,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 
 	planner := Planner{
 		s3Client: s3Client,
-		producer: nil,
+		producer: producer,
 		cfg:      cfg,
 	}
 	return planner.Run(ctx)
