@@ -85,6 +85,7 @@ func restoreFile(ctx context.Context, key string, s3Client *s3.Client, kafkaClie
 	if res.FirstErr() != nil {
 		return fmt.Errorf("failed to produce records: %w", res.FirstErr())
 	}
+	slog.InfoContext(ctx, "Restored file", "key", key)
 	return nil
 }
 
