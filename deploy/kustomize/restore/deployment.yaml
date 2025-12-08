@@ -33,7 +33,7 @@ spec:
           command: ["/kafka-data-keep", "restore"]
           env:
             - name: GOMEMLIMIT
-              value: "4GiB"
+              value: "1.5GiB"
             - name: KAFKA_BROKERS_DNS_SRV
               value: TBD
             - name: KAFKA_GROUP_ID
@@ -49,4 +49,4 @@ spec:
               memory: "0"
             limits:
               cpu: "4"
-              memory: 4.5Gi
+              memory: 2Gi
