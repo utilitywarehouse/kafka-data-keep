@@ -90,7 +90,7 @@ const maxPollRecords = 10000 // this affects how many records are processed per 
 func initKafkaClient(cfg AppConfig, mgr *PartitionsWriterManager) (*kafka.Client, error) {
 	opts := []kgo.Opt{
 		kgo.ConsumeRegex(), // use regex to consume topics
-		kgo.ConsumeTopics(strings.Split(cfg.TopicsRegex, ",")...),
+		kgo.ConsumeTopics(splitAndTrim(cfg.TopicsRegex, ",")...),
 		kafka.WithMaxPollRecords(maxPollRecords),
 		kafka.WithConsumeOldestOffset(),
 		kafka.WithTracer(nil), // do not record traces
@@ -113,8 +113,16 @@ func initKafkaClient(cfg AppConfig, mgr *PartitionsWriterManager) (*kafka.Client
 		opts = append(opts, kgo.SeedBrokers(cfg.Brokers))
 	}
 	if cfg.ExcludeTopicsRegex != "" {
-		opts = append(opts, kgo.ConsumeExcludeTopics(strings.Split(cfg.ExcludeTopicsRegex, ",")...))
+		opts = append(opts, kgo.ConsumeExcludeTopics(splitAndTrim(cfg.ExcludeTopicsRegex, ",")...))
 	}
 
 	return kafka.NewClient(opts...)
+}
+
+func splitAndTrim(s, sep string) []string {
+	parts := strings.Split(s, sep)
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+	}
+	return parts
 }
