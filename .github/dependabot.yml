@@ -13,3 +13,7 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+    ignore:
+      - dependency-name: "go.opentelemetry.io/otel/exporters/prometheus"
+        versions:
+          - ">= 0.58.1"
