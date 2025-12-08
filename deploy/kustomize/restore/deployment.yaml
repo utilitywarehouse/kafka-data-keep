@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-data-keep-restore
+  labels:
+    app: kafka-data-keep-restore
+  annotations:
+    uw.systems/msk-kafka-client: "msk-data-keep"
+    "app.uw.systems/name": "MSK data restore"
+    "app.uw.systems/description": "Restores the data from S3 to an MSK cluster."
+    "app.uw.systems/tier": tier_4
+    "app.uw.systems/repos.manifests": "https://github.com/utilitywarehouse/kafka-data-keep"
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: kafka-data-keep-restore
+  template:
+    metadata:
+      annotations:
+        uw.systems/kyverno-inject-sidecar-request: vault-sidecar-aws
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /__/metrics
+        prometheus.io/port: "8081"
+      labels:
+        app: kafka-data-keep-restore
+    spec:
+      serviceAccountName: msk-data-keep-restore
+      containers:
+        - name: kafka-data-keep-restore
+          image: quay.io/utilitywarehouse/kafka-data-keep:main
+          imagePullPolicy: IfNotPresent
+          command: ["/kafka-data-keep", "restore"]
+          env:
+            - name: GOMEMLIMIT
+              value: "4GiB"
+            - name: KAFKA_BROKERS_DNS_SRV
+              value: TBD
+            - name: KAFKA_GROUP_ID
+              value: pubsub.kafka-data-keep-restore
+            - name: S3_BUCKET
+              value: TBD
+            - name: UW_KAFKA_TLS_AUTH
+              value: "true"
+
+          resources:
+            requests:
+              cpu: "0"
+              memory: "0"
+            limits:
+              cpu: "4"
+              memory: 4.5Gi
