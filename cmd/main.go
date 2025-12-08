@@ -16,6 +16,7 @@ import (
 	"github.com/utilitywarehouse/go-operational/op"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/backup"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/planrestore"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/restore"
 	"github.com/utilitywarehouse/uwos-go/telemetry"
 	"github.com/utilitywarehouse/uwos-go/telemetry/log"
 	"github.com/utilitywarehouse/uwos-go/x/build"
@@ -48,8 +49,10 @@ func mainWrap() error {
 		return runCmd(ctx, os.Args[2:], true, backupCmd)
 	case "plan-restore":
 		return runCmd(ctx, os.Args[2:], false, planRestoreCmd)
+	case "restore":
+		return runCmd(ctx, os.Args[2:], false, restoreCmd)
 	default:
-		return fmt.Errorf("expected 'backup|plan-restore' subcommand")
+		return fmt.Errorf("expected 'backup|plan-restore|restore' subcommand")
 	}
 }
 
@@ -215,6 +218,22 @@ func planRestoreCmd(ctx context.Context, args []string) error {
 
 	if err := planrestore.Run(ctx, cfg); err != nil {
 		return fmt.Errorf("error running plan-restore: %w", err)
+	}
+	return nil
+}
+
+func restoreCmd(ctx context.Context, args []string) error {
+	cfg := restore.AppConfig{
+		BrokersDNSSrv:      "msk-shared.dev.uw.systems",
+		PlanTopic:          "pubsub.plan-topic-restore",
+		RestoreTopicPrefix: "pubsub.restore-test.",
+		ConsumerGroup:      "pubsub.msk-data-keep-restore",
+		S3Bucket:           "uw-dev-pubsub-msk-data-keep-backup",
+		S3Region:           "eu-west-1",
+	}
+
+	if err := restore.Run(ctx, cfg); err != nil {
+		return fmt.Errorf("error running restore: %w", err)
 	}
 	return nil
 }

@@ -29,7 +29,6 @@ func Run(ctx context.Context, cfg AppConfig) error {
 		return fmt.Errorf("bucket must be provided")
 	}
 
-	// Initialise S3 client and uploader
 	awsCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(cfg.S3Region))
 	if err != nil {
 		return fmt.Errorf("unable to load SDK config: %w", err)
