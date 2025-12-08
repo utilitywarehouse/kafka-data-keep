@@ -50,7 +50,7 @@ func mainWrap() error {
 	case "plan-restore":
 		return runCmd(ctx, os.Args[2:], false, planRestoreCmd)
 	case "restore":
-		return runCmd(ctx, os.Args[2:], false, restoreCmd)
+		return runCmd(ctx, os.Args[2:], true, restoreCmd)
 	default:
 		return fmt.Errorf("expected 'backup|plan-restore|restore' subcommand")
 	}
