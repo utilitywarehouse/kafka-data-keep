@@ -98,7 +98,7 @@ func initKafkaConsumer(cfg AppConfig) (*kafka.SimpleConsumer, error) {
 		kgo.ConsumerGroup(cfg.ConsumerGroup),
 		kafka.WithMaxPollRecords(10),            // use a low max poll, as it takes ~1s to process one record
 		kgo.SessionTimeout(1 * time.Minute),     // session timeout is 1 minute
-		kgo.HeartbeatInterval(15 * time.Second), // increase heartbeat interval to 15 seconds
+		kgo.HeartbeatInterval(15 * time.Second), // increase heartbeat interval to 15 seconds, as processing is record is slow (~1s / record)
 	}
 	if cfg.BrokersDNSSrv != "" {
 		opts = append(opts, kafka.SeedBrokersFromDNS(cfg.BrokersDNSSrv))
