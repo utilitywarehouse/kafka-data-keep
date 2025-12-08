@@ -11,7 +11,7 @@ metadata:
     "app.uw.systems/tier": tier_4
     "app.uw.systems/repos.manifests": "https://github.com/utilitywarehouse/kafka-data-keep"
 spec:
-  replicas: 3
+  replicas: 15
   selector:
     matchLabels:
       app: kafka-data-keep-restore
