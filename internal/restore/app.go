@@ -11,6 +11,7 @@ import (
 	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
 	"io"
 	"log/slog"
+	"time"
 )
 
 type AppConfig struct {
@@ -96,6 +97,8 @@ func initKafkaConsumer(cfg AppConfig) (*kafka.SimpleConsumer, error) {
 		kafka.WithConsumeOldestOffset(),
 		kgo.ConsumerGroup(cfg.ConsumerGroup),
 		kafka.WithMaxPollRecords(10), // use a low max poll, as it takes ~1s to process one record
+		kgo.SessionTimeout(60000),
+		kgo.HeartbeatInterval(15 * time.Second),
 	}
 	if cfg.BrokersDNSSrv != "" {
 		opts = append(opts, kafka.SeedBrokersFromDNS(cfg.BrokersDNSSrv))
