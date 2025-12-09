@@ -222,22 +222,6 @@ func planRestoreCmd(ctx context.Context, args []string) error {
 	return nil
 }
 
-func restoreCmd(ctx context.Context, args []string) error {
-	cfg := restore.AppConfig{
-		BrokersDNSSrv:      "msk-shared.dev.uw.systems",
-		PlanTopic:          "pubsub.plan-topic-restore",
-		RestoreTopicPrefix: "pubsub.restore-test.",
-		ConsumerGroup:      "pubsub.msk-data-keep-restore",
-		S3Bucket:           "uw-dev-pubsub-msk-data-keep-backup",
-		S3Region:           "eu-west-1",
-	}
-
-	if err := restore.Run(ctx, cfg); err != nil {
-		return fmt.Errorf("error running restore: %w", err)
-	}
-	return nil
-}
-
 func loadPlanRestoreAppConfig(args []string) (planrestore.AppConfig, error) {
 	var cfg planrestore.AppConfig
 	fs := flag.NewFlagSet("plan-restore", flag.ExitOnError)
@@ -298,6 +282,82 @@ func loadPlanRestoreAppConfig(args []string) (planrestore.AppConfig, error) {
 		return cfg, err
 	}
 
+	return cfg, nil
+}
+
+func restoreCmd(ctx context.Context, args []string) error {
+	cfg, err := loadRestoreAppConfig(args)
+	if err != nil {
+		return fmt.Errorf("failed parsing restore config: %w", err)
+	}
+
+	if err := restore.Run(ctx, cfg); err != nil {
+		return fmt.Errorf("error running restore: %w", err)
+	}
+	return nil
+}
+
+func loadRestoreAppConfig(args []string) (restore.AppConfig, error) {
+	var cfg restore.AppConfig
+	fs := flag.NewFlagSet("restore", flag.ExitOnError)
+
+	// Kafka Connection
+	fs.StringVar(
+		&cfg.Brokers,
+		"brokers",
+		getEnv("KAFKA_BROKERS", "localhost:9092"),
+		"Kafka brokers (comma separated)",
+	)
+	fs.StringVar(
+		&cfg.BrokersDNSSrv,
+		"brokersDNSSrv",
+		getEnv("KAFKA_BROKERS_DNS_SRV", ""),
+		"DNS SRV record with the kafka seed brokers",
+	)
+
+	// Kafka Consumer
+	fs.StringVar(
+		&cfg.PlanTopic,
+		"plan-topic",
+		getEnv("KAFKA_PLAN_TOPIC", "pubsub.plan-topic-restore"),
+		"Kafka topic to consume the plan from",
+	)
+	fs.StringVar(
+		&cfg.RestoreTopicPrefix,
+		"restore-topic-prefix",
+		getEnv("KAFKA_RESTORE_TOPIC_PREFIX", "pubsub.restore-test."),
+		"Prefix to add to the restored topics",
+	)
+	fs.StringVar(
+		&cfg.ConsumerGroup,
+		"consumer-group",
+		getEnv("KAFKA_CONSUMER_GROUP", "pubsub.msk-data-keep-restore"),
+		"Kafka consumer group ID",
+	)
+
+	// Storage
+	fs.StringVar(
+		&cfg.S3Bucket,
+		"s3-bucket",
+		getEnv("S3_BUCKET", ""),
+		"S3 bucket name where the backups are stored",
+	)
+	fs.StringVar(
+		&cfg.S3Endpoint,
+		"s3-endpoint",
+		getEnv("AWS_ENDPOINT_URL", ""),
+		"S3 endpoint URL (for LocalStack or custom S3-compatible storage)",
+	)
+	fs.StringVar(
+		&cfg.S3Region,
+		"s3-region",
+		getEnv("AWS_REGION", "eu-west-1"),
+		"S3 region ",
+	)
+
+	if err := fs.Parse(args); err != nil {
+		return cfg, err
+	}
 	return cfg, nil
 }
 
