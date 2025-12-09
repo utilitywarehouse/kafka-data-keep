@@ -1,0 +1,80 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kafka-data-keep-backup
+---
+apiVersion: apps/v1
+# Using a Stateful Set to get permanent PVCs attached
+kind: StatefulSet
+metadata:
+  name: kafka-data-keep-backup
+  labels:
+    app: kafka-data-keep-backup
+    app.kubernetes.io/name: kafka-data-keep-backup
+spec:
+  # Initialize all pods at the same time, otherwise rebalances will happen each time a pod is started
+  podManagementPolicy: Parallel
+  replicas: 2
+  selector:
+    matchLabels:
+      app: kafka-data-keep-backup
+      app.kubernetes.io/name: kafka-data-keep-backup
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /__/metrics
+        prometheus.io/port: "8081"
+      labels:
+        app: kafka-data-keep-backup
+        app.kubernetes.io/name: kafka-data-keep-backup
+    spec:
+      serviceAccountName: kafka-data-keep-backup
+      securityContext:
+        # Change ownership to the group created in Dockerfile to be able to write PVCs
+        fsGroup: 1000
+      containers:
+        - name: kafka-data-keep-backup
+          image: quay.io/utilitywarehouse/kafka-data-keep:main
+          imagePullPolicy: IfNotPresent
+          command: ["/kafka-data-keep", "backup"]
+          env:
+            - name: GOMEMLIMIT
+              value: "3GiB"
+            - name: KAFKA_BROKERS
+              value: TBD
+            - name: KAFKA_GROUP_ID
+              value: TBD
+            - name: KAFKA_TOPICS_REGEX
+              value: .*
+            - name: KAFKA_EXCLUDE_TOPICS_REGEX
+              value: ""
+            - name: S3_BUCKET
+              value: TBD
+            - name: S3_PREFIX
+              value: kafka-backup
+            - name: WORKING_DIR
+              value: /backup-workdir
+          ports:
+            - containerPort: 8081
+              name: ops
+          volumeMounts:
+            - mountPath: /backup-workdir
+              name: workdir
+              readOnly: false
+          resources:
+            requests:
+              cpu: "0"
+              memory: "0"
+            limits:
+              cpu: "4"
+              memory: 4Gi
+  volumeClaimTemplates:
+    - metadata:
+        name: workdir
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi
