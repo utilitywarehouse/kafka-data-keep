@@ -208,20 +208,78 @@ func backupCmd(ctx context.Context, args []string) error {
 }
 
 func planRestoreCmd(ctx context.Context, args []string) error {
-	cfg := planrestore.AppConfig{
-		Brokers:       "",
-		BrokersDNSSrv: "msk-shared.dev.uw.systems",
-		RestoreTopics: []string{"unicom.tests", "unicom.status", "data-infra.uw.data-infra.pubsubbrige.snowplow"},
-		PlanTopic:     "pubsub.plan-topic-restore",
-		S3Bucket:      "uw-dev-pubsub-msk-data-keep-backup",
-		S3Region:      "eu-west-1",
-		S3Prefix:      "msk-backup",
+	cfg, err := loadPlanRestoreAppConfig(args)
+	if err != nil {
+		return fmt.Errorf("failed parsing plan-restore config: %w", err)
 	}
 
 	if err := planrestore.Run(ctx, cfg); err != nil {
-		return fmt.Errorf("error running backup: %w", err)
+		return fmt.Errorf("error running plan-restore: %w", err)
 	}
 	return nil
+}
+
+func loadPlanRestoreAppConfig(args []string) (planrestore.AppConfig, error) {
+	var cfg planrestore.AppConfig
+	fs := flag.NewFlagSet("plan-restore", flag.ExitOnError)
+
+	fs.StringVar(
+		&cfg.Brokers,
+		"brokers",
+		getEnv("KAFKA_BROKERS", "localhost:9092"),
+		"Kafka brokers (comma separated)",
+	)
+	fs.StringVar(
+		&cfg.BrokersDNSSrv,
+		"brokersDNSSrv",
+		getEnv("KAFKA_BROKERS_DNS_SRV", ""),
+		"DNS SRV record with the kafka seed brokers",
+	)
+
+	fs.StringVar(
+		&cfg.RestoreTopics,
+		"restore-topics",
+		getEnv("RESTORE_TOPICS", ""),
+		"List of kafka topics to restore (comma separated)",
+	)
+
+	fs.StringVar(
+		&cfg.PlanTopic,
+		"plan-topic",
+		getEnv("PLAN_TOPIC", "pubsub.plan-topic-restore"),
+		"Kafka topic to send the restore plan to",
+	)
+
+	fs.StringVar(
+		&cfg.S3Bucket,
+		"s3-bucket",
+		getEnv("S3_BUCKET", ""),
+		"S3 bucket name where the backup files are stored",
+	)
+	fs.StringVar(
+		&cfg.S3Endpoint,
+		"s3-endpoint",
+		getEnv("AWS_ENDPOINT_URL", ""),
+		"S3 endpoint URL (for LocalStack or custom S3-compatible storage)",
+	)
+	fs.StringVar(
+		&cfg.S3Region,
+		"s3-region",
+		getEnv("AWS_REGION", "eu-west-1"),
+		"S3 region ",
+	)
+	fs.StringVar(
+		&cfg.S3Prefix,
+		"s3-prefix",
+		getEnv("S3_PREFIX", "msk-backup"),
+		"The prefix for the backup files in S3",
+	)
+
+	if err := fs.Parse(args); err != nil {
+		return cfg, err
+	}
+
+	return cfg, nil
 }
 
 func getEnv(key, fallback string) string {

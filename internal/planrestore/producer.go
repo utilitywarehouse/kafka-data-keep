@@ -18,8 +18,8 @@ type Planner struct {
 }
 
 func (p *Planner) Run(ctx context.Context) error {
-	for _, topic := range p.cfg.RestoreTopics {
-		if err := p.planForTopic(ctx, topic); err != nil {
+	for _, topic := range strings.Split(p.cfg.RestoreTopics, ",") {
+		if err := p.planForTopic(ctx, strings.TrimSpace(topic)); err != nil {
 			return err
 		}
 	}

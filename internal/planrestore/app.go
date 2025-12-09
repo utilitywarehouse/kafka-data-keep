@@ -14,7 +14,7 @@ import (
 type AppConfig struct {
 	Brokers       string
 	BrokersDNSSrv string
-	RestoreTopics []string
+	RestoreTopics string
 	PlanTopic     string
 	S3Bucket      string
 	S3Endpoint    string
