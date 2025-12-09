@@ -164,6 +164,11 @@ func (p *PartitionWriter) flushLocked(ctx context.Context) error {
 		return fmt.Errorf("failed to upload file %s: %w", p.currentFilePath, err)
 	}
 
+	// Remove the local file after successful upload
+	if err := os.Remove(p.currentFilePath); err != nil {
+		return fmt.Errorf("failed to remove local file %s: %w", p.currentFilePath, err)
+	}
+
 	// Commit offset
 	if err := p.commitOffset(ctx); err != nil {
 		return fmt.Errorf("failed to commit offset: %w", err)
@@ -172,11 +177,6 @@ func (p *PartitionWriter) flushLocked(ctx context.Context) error {
 	p.isOpen = false
 	p.currentEncoder = nil
 	p.currentCountingWriter = nil
-
-	// Remove the local file after successful upload
-	if err := os.Remove(p.currentFilePath); err != nil {
-		return fmt.Errorf("failed to remove local file %s: %w", p.currentFilePath, err)
-	}
 
 	return nil
 }
