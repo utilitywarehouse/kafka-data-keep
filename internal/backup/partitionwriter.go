@@ -3,11 +3,11 @@ package backup
 import (
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
@@ -27,14 +27,15 @@ type PartitionWriter struct {
 	topic           string
 	partition       int32
 
-	mu                    sync.Mutex
-	currentEncoder        codec.RecordEncoder
-	currentCountingWriter *countingWriter
-	currentFilePath       string // Full local path
-	currentKey            string // S3 key (relative path)
+	mu              sync.Mutex
+	currentEncoder  codec.RecordEncoder
+	currentFile     *os.File
+	currentFilePath string // Full local path
+	currentKey      string // S3 key (relative path)
 
 	firstOffset int64
 	lastOffset  int64
+	lastWriteAt time.Time
 
 	// We need to track if we have an open file
 	isOpen bool
@@ -65,6 +66,13 @@ func (p *PartitionWriter) WriteRecords(ctx context.Context, records []*kgo.Recor
 		}
 	}
 
+	// check if we need to resume writing to the file
+	if p.isPaused() {
+		if err := p.resumeLocalFile(ctx); err != nil {
+			return fmt.Errorf("failed to resume local file for partition %s-%d: %w", p.topic, p.partition, err)
+		}
+	}
+
 	for _, record := range records {
 		if err := p.currentEncoder.Encode(record); err != nil {
 			return fmt.Errorf("failed to encode record for partition %s-%d: %w", p.topic, p.partition, err)
@@ -73,6 +81,7 @@ func (p *PartitionWriter) WriteRecords(ctx context.Context, records []*kgo.Recor
 		p.lastOffset = record.Offset
 	}
 
+	p.lastWriteAt = time.Now()
 	shouldFlush, err := p.shouldFlush()
 	if err != nil {
 		return fmt.Errorf("failed to check if file should be flushed for partition %s-%d: %w", p.topic, p.partition, err)
@@ -112,10 +121,7 @@ func (p *PartitionWriter) open(offset int64) error {
 		return fmt.Errorf("failed to create file %s: %w", localPath, err)
 	}
 
-	// Wrap writer to count bytes
-	cw := &countingWriter{w: f}
-
-	enc, err := p.encoderFactory.New(cw)
+	enc, err := p.encoderFactory.New(f)
 	if err != nil {
 		ferr := f.Close()
 		if ferr != nil {
@@ -124,11 +130,33 @@ func (p *PartitionWriter) open(offset int64) error {
 		return fmt.Errorf("failed to create encoder: %w", err)
 	}
 
+	p.currentFile = f
 	p.currentEncoder = enc
-	p.currentCountingWriter = cw
 
 	p.firstOffset = offset
 	p.isOpen = true
+	p.lastWriteAt = time.Time{}
+	return nil
+}
+
+func (p *PartitionWriter) resumeLocalFile(ctx context.Context) error {
+	slog.DebugContext(ctx, "resuming local file", "filename", p.currentFilePath)
+
+	f, err := os.OpenFile(p.currentFilePath, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return fmt.Errorf("failed to open file for resuming %s: %w", p.currentFilePath, err)
+	}
+
+	enc, err := p.encoderFactory.New(f)
+	if err != nil {
+		ferr := f.Close()
+		if ferr != nil {
+			slog.ErrorContext(ctx, "failed closing the opened file at resume", "error", ferr)
+		}
+		return fmt.Errorf("failed to create encoder on resume: %w", err)
+	}
+	p.currentEncoder = enc
+	p.currentFile = f
 
 	return nil
 }
@@ -140,8 +168,11 @@ func (p *PartitionWriter) shouldFlush() (bool, error) {
 	if err := p.currentEncoder.Flush(); err != nil {
 		return false, fmt.Errorf("failed to flush encoder: %w", err)
 	}
-
-	return p.currentCountingWriter.count >= p.config.MinFileSize, nil
+	fstat, err := p.currentFile.Stat()
+	if err != nil {
+		return false, fmt.Errorf("failed to stat file: %w", err)
+	}
+	return fstat.Size() >= p.config.MinFileSize, nil
 }
 
 func (p *PartitionWriter) flushLocked(ctx context.Context) error {
@@ -149,16 +180,18 @@ func (p *PartitionWriter) flushLocked(ctx context.Context) error {
 		return nil
 	}
 
-	slog.DebugContext(ctx, "Flushing file for partition", "filename", p.currentKey, "size", p.currentCountingWriter.count)
+	slog.DebugContext(ctx, "Flushing file for partition", "filename", p.currentKey)
 
-	if err := p.currentEncoder.Close(); err != nil {
-		return fmt.Errorf("failed to flush writer: %w", err)
+	// check if the writer was paused
+	if !p.isPaused() {
+		if err := p.currentEncoder.Close(); err != nil {
+			return fmt.Errorf("failed to flush writer: %w", err)
+		}
+
+		if err := p.currentFile.Close(); err != nil {
+			return fmt.Errorf("failed to close file: %w", err)
+		}
 	}
-
-	if err := p.currentCountingWriter.Close(); err != nil {
-		return fmt.Errorf("failed to close writer: %w", err)
-	}
-
 	// Upload the closed file
 	if err := p.uploader.Upload(ctx, p.currentFilePath, p.currentKey); err != nil {
 		return fmt.Errorf("failed to upload file %s: %w", p.currentFilePath, err)
@@ -176,9 +209,14 @@ func (p *PartitionWriter) flushLocked(ctx context.Context) error {
 
 	p.isOpen = false
 	p.currentEncoder = nil
-	p.currentCountingWriter = nil
+	p.currentFile = nil
+	p.lastWriteAt = time.Time{}
 
 	return nil
+}
+
+func (p *PartitionWriter) isPaused() bool {
+	return p.currentEncoder == nil
 }
 
 func (p *PartitionWriter) commitOffset(ctx context.Context) error {
@@ -203,6 +241,34 @@ func (p *PartitionWriter) commitOffset(ctx context.Context) error {
 	return commitErr
 }
 
+func (p *PartitionWriter) PauseWhenIdle(ctx context.Context) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.isOpen || !p.isIdle() {
+		return nil
+	}
+
+	slog.DebugContext(ctx, "closing local file as idle", "filename", p.currentKey)
+
+	// close the local file when the writer is idle
+	if err := p.currentEncoder.Close(); err != nil {
+		return fmt.Errorf("failed closing local encoder when idle: %w", err)
+	}
+
+	if err := p.currentFile.Close(); err != nil {
+		return fmt.Errorf("failed closing file when idle: %w", err)
+	}
+
+	p.currentEncoder = nil
+	p.currentFile = nil
+	return nil
+}
+
+func (p *PartitionWriter) isIdle() bool {
+	return p.currentEncoder != nil && !p.lastWriteAt.IsZero() &&
+		p.lastWriteAt.Add(p.config.PartitionIdleThreshold).Before(time.Now())
+}
+
 func (p *PartitionWriter) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -210,20 +276,4 @@ func (p *PartitionWriter) Close() error {
 		return fmt.Errorf("failed to close writer for partition %s-%d: %w", p.topic, p.partition, err)
 	}
 	return nil
-}
-
-// Counts the bytes written to the underlying writer.
-type countingWriter struct {
-	w     io.WriteCloser
-	count int64
-}
-
-func (c *countingWriter) Write(p []byte) (n int, err error) {
-	n, err = c.w.Write(p)
-	c.count += int64(n)
-	return
-}
-
-func (c *countingWriter) Close() error {
-	return c.w.Close()
 }

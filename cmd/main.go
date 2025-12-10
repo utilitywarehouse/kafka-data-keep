@@ -107,6 +107,13 @@ func loadBackupAppConfig(args []string) (backup.AppConfig, error) {
 		getEnvInt64("MIN_FILE_SIZE", 5*1024*1024),
 		"The minimum file size in bytes for each partition backup file",
 	)
+	fs.DurationVar(
+		&cfg.PartitionIdleThreshold,
+		"partition-idle-threshold",
+		getEnvDuration("PARTITION_IDLE_THRESHOLD", 1*time.Minute),
+		"The threshold after which a partition will be considered idle for not consuming any new records. Should be a duration",
+	)
+
 	fs.StringVar(
 		&cfg.WorkingDir,
 		"working-dir",
@@ -212,6 +219,17 @@ func getEnv(key, fallback string) string {
 func getEnvInt64(key string, fallback int64) int64 {
 	if value, ok := os.LookupEnv(key); ok {
 		i, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return fallback
+		}
+		return i
+	}
+	return fallback
+}
+
+func getEnvDuration(key string, fallback time.Duration) time.Duration {
+	if value, ok := os.LookupEnv(key); ok {
+		i, err := time.ParseDuration(value)
 		if err != nil {
 			return fallback
 		}
