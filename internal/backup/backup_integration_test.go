@@ -192,15 +192,15 @@ func TestBackupIntegration(t *testing.T) {
 			time.Sleep(time.Millisecond * 100)
 		}
 
-		time.Sleep(1 * time.Second) // give it some time to consume the records
+		fileKey := fileKey(s3Prefix, topic3, 0, 0)
+		waitLocalFileHasRecords(t, ctx, workingDir, fileKey, 10000)
 
-		// stop consuming & trigger the flush
 		stopApp(ctx, t, cancel, errCh)
 
 		filesFound := listFilesOnBucket(ctx, t, s3Client, s3Prefix)
 		require.Len(t, filesFound, 1)
 		// we expect the file to have records, but it might not have consumed all
-		require.LessOrEqual(t, filesFound["flush-on-stop/flush-stop-1/0/flush-stop-1-0-0000000000000000000.avro"], 10000)
+		require.LessOrEqual(t, filesFound[fileKey], 10000)
 	})
 
 	t.Run("pause and resume local files", func(t *testing.T) {
@@ -414,11 +414,12 @@ func setupEnvS3Access() {
 // Helper to wait for consumer group offsets
 func waitForGroupOffsets(t *testing.T, ctx context.Context, client *kadm.Client, group string, expected map[string]int) {
 	t.Helper()
+	timeoutC := time.After(30 * time.Second)
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(30 * time.Second):
+		case <-timeoutC:
 			t.Fatalf("consumer group %s did not reach expected offsets: %+v", group, expected)
 			return
 		case <-time.Tick(100 * time.Millisecond):
