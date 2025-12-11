@@ -72,7 +72,7 @@ func isBrokerGone(err error) bool {
 
 func runPauseIdleWriters(ctx context.Context, pwManager *PartitionsWriterManager) error {
 	tickerMillis := min(pwManager.config.PartitionIdleThreshold.Milliseconds(), time.Minute.Milliseconds())
-	slog.DebugContext(ctx, "Start pausing idle writers", "interval", tickerMillis)
+	slog.InfoContext(ctx, "Start pausing idle writers", "interval", tickerMillis)
 
 	for {
 		select {
