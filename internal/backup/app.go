@@ -140,3 +140,19 @@ func splitAndTrim(s, sep string) []string {
 	}
 	return parts
 }
+
+func runPauseIdleWriters(ctx context.Context, pwManager *PartitionsWriterManager) error {
+	tickerMillis := min(pwManager.config.PartitionIdleThreshold.Milliseconds(), time.Minute.Milliseconds())
+	slog.InfoContext(ctx, "Start pausing idle writers", "interval", tickerMillis)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.Tick(time.Duration(tickerMillis) * time.Millisecond):
+			if err := pwManager.PauseIdleWriters(ctx); err != nil {
+				return fmt.Errorf("failed pausing idle writers: %w", err)
+			}
+		}
+	}
+}

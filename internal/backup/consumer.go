@@ -4,12 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
-	"syscall"
-	"time"
-
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
+	"log/slog"
+	"syscall"
 )
 
 func runConsumer(ctx context.Context, client *kafka.Client, pwManager *PartitionsWriterManager) error {
@@ -68,20 +66,4 @@ func isBrokerGone(err error) bool {
 	/*	check if the error is a kgo.ErrGroupSession resulted from a connection refused source */
 	var egs *kgo.ErrGroupSession
 	return errors.As(err, &egs) && errors.Is(err, syscall.ECONNREFUSED)
-}
-
-func runPauseIdleWriters(ctx context.Context, pwManager *PartitionsWriterManager) error {
-	tickerMillis := min(pwManager.config.PartitionIdleThreshold.Milliseconds(), time.Minute.Milliseconds())
-	slog.InfoContext(ctx, "Start pausing idle writers", "interval", tickerMillis)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-time.Tick(time.Duration(tickerMillis) * time.Millisecond):
-			if err := pwManager.PauseIdleWriters(ctx); err != nil {
-				return fmt.Errorf("failed pausing idle writers: %w", err)
-			}
-		}
-	}
 }
