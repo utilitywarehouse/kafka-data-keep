@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
 	"log/slog"
 	"syscall"
+
+	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
 )
 
 func runConsumer(ctx context.Context, client *kafka.Client, pwManager *PartitionsWriterManager) error {
