@@ -1,0 +1,43 @@
+name: go
+
+on:
+  push:
+    branches:
+      - "*"
+env:
+  GOPRIVATE: "github.com/utilitywarehouse/*"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # allows the workflow to request an OIDC token for vault auth
+      contents: read
+    steps:
+      - name: Fetch Github Tokens
+        id: fetch-github-tokens
+        uses: hashicorp/vault-action@v3
+        with:
+          url: ${{ vars.VAULT_URL }}
+          method: jwt
+          path: github-jwt
+          exportEnv: false
+          role: github_uw_ro
+          secrets: |
+            /github/token/uw_ro token | GITHUB_UW_RO_TOKEN ;
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Configure git for private modules
+        run: git config --global url."https://x-oauth-basic:${{ steps.fetch-github-tokens.outputs.GITHUB_UW_RO_TOKEN }}@github.com".insteadOf "https://github.com"
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+      - name: Modules
+        id: mod
+        run: |
+          make mod
+          git add . && git diff --staged --exit-code
+      - name: Test
+        run: make test

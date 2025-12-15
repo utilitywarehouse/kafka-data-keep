@@ -17,6 +17,10 @@ clean:
 build: clean
 	CGO_ENABLED=0 go build -o kafka-data-keep -a ./cmd/main.go
 
+.PHONY: mod
+mod: clean
+	go mod tidy
+
 .PHONY: test
 test:
 	go test -v --race -cover ./...
