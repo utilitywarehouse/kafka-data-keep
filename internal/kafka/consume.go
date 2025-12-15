@@ -12,7 +12,7 @@ import (
 
 // These functions are copied over from the uwos-go kafka package as they deal also with reconnections.
 
-func handleFetches(ctx context.Context, fetches *kgo.Fetches) (err error, stopProcessing bool) {
+func HandleFetches(ctx context.Context, fetches *kgo.Fetches) (err error, stopProcessing bool) {
 	// Err0 is a quicker way to check for common errors.
 	err = fetches.Err0()
 	switch {

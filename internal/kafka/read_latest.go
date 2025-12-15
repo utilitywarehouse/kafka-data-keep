@@ -92,7 +92,7 @@ func consumeLatest(ctx context.Context, client *kgo.Client, expectedCount int) (
 		}
 
 		fetches := client.PollRecords(ctx, 1000)
-		err, stopProcessing := handleFetches(ctx, &fetches)
+		err, stopProcessing := HandleFetches(ctx, &fetches)
 		if err != nil {
 			return nil, fmt.Errorf("failed to poll records at tip: %w", err)
 		}
