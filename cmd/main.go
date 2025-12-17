@@ -244,10 +244,16 @@ func loadPlanRestoreAppConfig(args []string) (planrestore.AppConfig, error) {
 	)
 
 	fs.StringVar(
-		&cfg.RestoreTopics,
-		"restore-topics",
-		getEnv("RESTORE_TOPICS", ""),
-		"List of kafka topics to restore (comma separated)",
+		&cfg.RestoreTopicsRegex,
+		"restore-topics-regex",
+		getEnv("RESTORE_TOPICS_REGEX", ".*"),
+		"List of regex to match topics to restore (comma separated). The topics will be restored in the order specified in this list",
+	)
+	fs.StringVar(
+		&cfg.ExcludeTopicsRegex,
+		"exclude-topics-regex",
+		getEnv("EXCLUDE_TOPICS_REGEX", ""),
+		"List of regex to exclude topics from restore (comma separated)",
 	)
 
 	fs.StringVar(

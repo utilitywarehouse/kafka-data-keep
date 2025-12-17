@@ -13,14 +13,15 @@ import (
 )
 
 type AppConfig struct {
-	Brokers       string
-	BrokersDNSSrv string
-	RestoreTopics string
-	PlanTopic     string
-	S3Bucket      string
-	S3Endpoint    string
-	S3Region      string
-	S3Prefix      string
+	Brokers            string
+	BrokersDNSSrv      string
+	RestoreTopicsRegex string
+	ExcludeTopicsRegex string
+	PlanTopic          string
+	S3Bucket           string
+	S3Endpoint         string
+	S3Region           string
+	S3Prefix           string
 }
 
 func Run(ctx context.Context, cfg AppConfig) error {
