@@ -20,20 +20,15 @@ type Planner struct {
 }
 
 func (p *Planner) Run(ctx context.Context) error {
-	var topics []string
-
-	// Discover topics from S3
-	foundTopics, err := p.listTopicsFromS3(ctx)
+	topics, err := p.listTopicsFromS3(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list topics from S3: %w", err)
 	}
 
-	// If using S3 discovery (empty RestoreTopics):
-	filtered, err := p.filterTopics(foundTopics)
+	topics, err = p.filterTopics(topics)
 	if err != nil {
 		return err
 	}
-	topics = filtered
 
 	if len(topics) == 0 {
 		slog.WarnContext(ctx, "No topics found to restore")
