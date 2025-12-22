@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 func TestPlanner_filterTopics(t *testing.T) {
@@ -75,6 +76,79 @@ func TestPlanner_filterTopics(t *testing.T) {
 			got, err := p.filterTopics(tt.inputTopics)
 			require.NoError(t, err)
 			assert.Equal(t, tt.expected, got)
+		})
+	}
+}
+
+func TestComputeResume(t *testing.T) {
+	tests := []struct {
+		name          string
+		latestRecords map[int32]*kgo.Record
+		topicsOrder   []string
+		wantTopic     string
+		wantFile      string
+	}{
+		{
+			name: "single topic",
+			latestRecords: map[int32]*kgo.Record{
+				0: {Value: []byte("kafka-backup/account-identity.account.change.events/0/account-identity.account.change.events-0-0000000000000000001.avro")},
+				1: {Value: []byte("kafka-backup/account-identity.account.change.events/11/account-identity.account.change.events-11-0000000000009153963.avro")},
+				2: {Value: []byte("kafka-backup/account-identity.account.change.events/12/account-identity.account.change.events-12-0000000000008519936.avro")},
+				3: {Value: []byte("kafka-backup/account-identity.account.change.events/12/account-identity.account.change.events-12-0000000000009082875.avro")},
+			},
+			topicsOrder: []string{
+				"topic-not-in-list",
+				"account-identity.account.change.events",
+			},
+			wantTopic: "account-identity.account.change.events",
+			wantFile:  "kafka-backup/account-identity.account.change.events/12/account-identity.account.change.events-12-0000000000009082875.avro",
+		},
+		{
+			name: "multiple topics",
+			latestRecords: map[int32]*kgo.Record{
+				0: {Value: []byte("kafka-backup/account-identity.account.change.events/0/account-identity.account.change.events-0-0000000000000000001.avro")},
+				1: {Value: []byte("kafka-backup/account-identity.account.change.events/11/account-identity.account.change.events-11-0000000000009153963.avro")},
+				2: {Value: []byte("kafka-backup/account-identity.account.change.events/12/account-identity.account.change.events-12-0000000000008519936.avro")},
+				3: {Value: []byte("kafka-backup/cbc.PaymentologyNotificationEvents/0/cbc.PaymentologyNotificationEvents-0-0000000000049607695.avro")},
+				4: {Value: []byte("kafka-backup/cbc.PaymentologyNotificationEvents/11/cbc.PaymentologyNotificationEvents-11-0000000000006148155.avro")},
+				5: {Value: []byte("kafka-backup/cbc.PaymentologyNotificationEvents/3/cbc.PaymentologyNotificationEvents-3-0000000000023826482.avro")},
+				6: {Value: []byte("kafka-backup/cbc.PaymentologyNotificationEvents/2/cbc.PaymentologyNotificationEvents-2-0000000000049854163.avro")},
+			},
+			topicsOrder: []string{
+				"cbc.PaymentologyNotificationEvents", "account-identity.account.change.events",
+			},
+			wantTopic: "account-identity.account.change.events",
+			wantFile:  "kafka-backup/account-identity.account.change.events/12/account-identity.account.change.events-12-0000000000008519936.avro",
+		},
+		{
+			name: "restore other topics",
+			latestRecords: map[int32]*kgo.Record{
+				2: {Value: []byte("kafka-backup/account-identity.account.change.events/12/account-identity.account.change.events-12-0000000000008519936.avro")},
+				3: {Value: []byte("kafka-backup/cbc.PaymentologyNotificationEvents/0/cbc.PaymentologyNotificationEvents-0-0000000000049607695.avro")},
+			},
+			topicsOrder: []string{
+				"another-topic",
+			},
+			wantTopic: "",
+			wantFile:  "",
+		},
+		{
+			name:          "no last entries",
+			latestRecords: nil,
+			topicsOrder: []string{
+				"cbc.PaymentologyNotificationEvents", "account-identity.account.change.events",
+			},
+			wantTopic: "",
+			wantFile:  "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			topic, file, err := computeResume(tt.latestRecords, tt.topicsOrder)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantTopic, topic)
+			assert.Equal(t, tt.wantFile, file)
 		})
 	}
 }

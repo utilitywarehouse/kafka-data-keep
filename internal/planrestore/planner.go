@@ -10,13 +10,14 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/twmb/franz-go/pkg/kgo"
+	kafka2 "github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
 )
 
 type Planner struct {
-	s3Client *s3.Client
-	producer *kafka.Client
-	cfg      AppConfig
+	s3Client    *s3.Client
+	kafkaClient *kafka.Client
+	cfg         AppConfig
 }
 
 func (p *Planner) Run(ctx context.Context) error {
@@ -37,12 +38,77 @@ func (p *Planner) Run(ctx context.Context) error {
 
 	slog.InfoContext(ctx, "Planning restore for topics", "count", len(topics), "topics", topics)
 
+	latestRecords, err := kafka2.ReadLatest(ctx, p.kafkaClient.Client, p.cfg.PlanTopic)
+	if err != nil {
+		return fmt.Errorf("failed to read latest records from plan topic: %w", err)
+	}
+
+	resumeTopic, resumeFile, err := computeResume(latestRecords, topics)
+	if err != nil {
+		return fmt.Errorf("failed determining resume file: %w", err)
+	}
+
+	slog.InfoContext(ctx, "Resuming from file", "file", resumeFile, "topic", resumeTopic)
+
+	resumed := false
+	if resumeTopic == "" {
+		resumed = true
+	}
+
 	for _, topic := range topics {
-		if err := p.planForTopic(ctx, topic); err != nil {
-			return err
+		// start processing when we reach the resume topic
+		if topic == resumeTopic {
+			resumed = true
 		}
+
+		if resumed {
+			// pass the resume file only for the resume topic
+			if topic != resumeTopic {
+				resumeFile = ""
+			}
+
+			if err := p.planForTopic(ctx, topic, resumeFile); err != nil {
+				return err
+			}
+			continue
+		}
+
+		slog.InfoContext(ctx, "Skipping topic", "topic", topic)
 	}
 	return nil
+}
+
+func computeResume(latestRecords map[int32]*kgo.Record, topicsOrder []string) (string, string, error) {
+	// we might have files from different topics as the last entries in the plan topic
+	resumeMap := make(map[string]string)
+	for _, rec := range latestRecords {
+		file := string(rec.Value)
+		topic, err := topicFromFileName(file)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to extract topic from file %s: %w", file, err)
+		}
+		currentVal, exists := resumeMap[topic]
+		if !exists {
+			resumeMap[topic] = file
+		} else if currentVal < file {
+			resumeMap[topic] = file
+		}
+	}
+
+	var lastTopic string
+	// taking the last file from the last topic based on the passed in order
+	for _, topic := range topicsOrder {
+		if _, exists := resumeMap[topic]; exists {
+			lastTopic = topic
+		}
+	}
+
+	if lastTopic == "" {
+		return "", "", nil
+	}
+
+	return lastTopic, resumeMap[lastTopic], nil
+
 }
 
 func (p *Planner) filterTopics(topics []string) ([]string, error) {
@@ -121,10 +187,14 @@ func (p *Planner) listTopicsFromS3(ctx context.Context) ([]string, error) {
 	return topics, nil
 }
 
-func (p *Planner) planForTopic(ctx context.Context, topic string) error {
+func (p *Planner) planForTopic(ctx context.Context, topic string, resumeFile string) error {
 	input := &s3.ListObjectsV2Input{
 		Bucket: aws.String(p.cfg.S3Bucket),
 		Prefix: aws.String(p.cfg.S3Prefix + "/" + topic + "/"),
+	}
+
+	if resumeFile != "" {
+		input.StartAfter = aws.String(resumeFile)
 	}
 
 	paginator := s3.NewListObjectsV2Paginator(p.s3Client, input)
@@ -146,7 +216,7 @@ func (p *Planner) planForTopic(ctx context.Context, topic string) error {
 				})
 			}
 		}
-		if res := p.producer.ProduceSync(ctx, recs...); res.FirstErr() != nil {
+		if res := p.kafkaClient.ProduceSync(ctx, recs...); res.FirstErr() != nil {
 			return fmt.Errorf("failed to produce records for topic %s: %w", topic, res.FirstErr())
 		}
 	}
@@ -161,6 +231,19 @@ func partitioningKey(path string) string {
 		return path[:idx+1]
 	}
 	return path
+}
+
+func topicFromFileName(fileName string) (string, error) {
+	if fileName == "" {
+		return "", nil
+	}
+	// from a key like kafka-backup/account-identity.account.change.events/7/account-identity.account.change.events-7-0000000000000000000.avro we want to extract the topic
+	parts := strings.Split(fileName, "/")
+
+	if len(parts) < 3 {
+		return "", fmt.Errorf("invalid file name %s. Expected in the format folder/topic/partition/filename.avro", fileName)
+	}
+	return parts[len(parts)-3], nil
 }
 
 func compileRegexes(regexStr string) ([]*regexp.Regexp, error) {
