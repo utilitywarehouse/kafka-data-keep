@@ -46,23 +46,23 @@ func Run(ctx context.Context, cfg AppConfig) error {
 
 	s3Client := s3.NewFromConfig(awsCfg, s3ClientOpts...)
 
-	producer, err := initKafkaProducer(cfg)
+	kafkaClient, err := initKafkaClient(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to create kafka producer: %w", err)
 	}
-	defer producer.Close()
+	defer kafkaClient.Close()
 
 	slog.InfoContext(ctx, "Starting plan restore application...")
 
 	planner := Planner{
 		s3Client:    s3Client,
-		kafkaClient: producer,
+		kafkaClient: kafkaClient,
 		cfg:         cfg,
 	}
 	return planner.Run(ctx)
 }
 
-func initKafkaProducer(cfg AppConfig) (*kafka.Client, error) {
+func initKafkaClient(cfg AppConfig) (*kafka.Client, error) {
 	opts := []kgo.Opt{
 		kafka.WithTracer(nil), // do not record traces
 		kgo.DefaultProduceTopic(cfg.PlanTopic),
