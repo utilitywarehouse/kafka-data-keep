@@ -50,10 +50,7 @@ func (p *Planner) Run(ctx context.Context) error {
 
 	slog.InfoContext(ctx, "Resuming from file", "file", resumeFile, "topic", resumeTopic)
 
-	resumed := false
-	if resumeTopic == "" {
-		resumed = true
-	}
+	resumed := resumeTopic == ""
 
 	for _, topic := range topics {
 		// start processing when we reach the resume topic
@@ -108,7 +105,6 @@ func computeResume(latestRecords map[int32]*kgo.Record, topicsOrder []string) (s
 	}
 
 	return lastTopic, resumeMap[lastTopic], nil
-
 }
 
 func (p *Planner) filterTopics(topics []string) ([]string, error) {

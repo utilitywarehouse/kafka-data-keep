@@ -15,7 +15,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go/modules/redpanda"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/codec/avro"
@@ -42,7 +41,7 @@ func TestBackupIntegration(t *testing.T) {
 
 	ctx := context.Background()
 
-	kafkaBrokers, tkf := startKafkaService(t, ctx)
+	kafkaBrokers, tkf := testutil.StartKafkaService(ctx, t)
 	t.Cleanup(tkf)
 
 	s3Endpoint, ts3f := testutil.StartS3Service(ctx, t)
@@ -356,21 +355,6 @@ func listFilesOnBucket(ctx context.Context, t *testing.T, s3Client *s3.Client, s
 		t.Logf("Found file: %s (size: %d), recs: %d", key, obj.Size, len(records))
 	}
 	return filesFound
-}
-
-func startKafkaService(t *testing.T, ctx context.Context) (string, func()) {
-	t.Helper()
-	redpandaContainer, err := redpanda.Run(ctx, "redpandadata/redpanda:v25.1.1")
-	require.NoError(t, err)
-	terminateFunc := func() {
-		if err := redpandaContainer.Terminate(ctx); err != nil {
-			t.Logf("Failed to terminate Redpanda container: %v", err)
-		}
-	}
-
-	kafkaBrokers, err := redpandaContainer.KafkaSeedBroker(ctx)
-	require.NoError(t, err)
-	return kafkaBrokers, terminateFunc
 }
 
 // Helper to wait for consumer group offsets
