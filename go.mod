@@ -17,7 +17,7 @@ require (
 	github.com/twmb/franz-go/pkg/kmsg v1.12.0
 	github.com/utilitywarehouse/go-operational v0.0.0-20250423084238-c80547bcb12b
 	github.com/utilitywarehouse/uwos-go/pubsub/kafka v1.9.0
-	github.com/utilitywarehouse/uwos-go/telemetry v1.40.0
+	github.com/utilitywarehouse/uwos-go/telemetry v1.41.0
 	github.com/utilitywarehouse/uwos-go/x/build v1.3.1
 	golang.org/x/sync v0.18.0
 )

@@ -688,8 +688,8 @@ github.com/utilitywarehouse/uwos-go/pubsub/kafka v1.9.0 h1:aoW3Bl6eBt6UJs3DVl66q
 github.com/utilitywarehouse/uwos-go/pubsub/kafka v1.9.0/go.mod h1:xNrANOdsyYiYwM8EM7tRec7HdmkekPKtxJEQmUN8R3s=
 github.com/utilitywarehouse/uwos-go/runtime/k8sruntime v1.5.3 h1:vBHS0TfiMZYAtjwX+wd/O1v+UoBGpYCVlXnsb7RWTHE=
 github.com/utilitywarehouse/uwos-go/runtime/k8sruntime v1.5.3/go.mod h1:yZEys0FSk1hXbygu05NwIuW+wPb3IiWVJL0MAC1lYkY=
-github.com/utilitywarehouse/uwos-go/telemetry v1.40.0 h1:7aMeXSnbQXeM67vTmJnFnTbcpm1ou4vYz1BHPGhKae4=
-github.com/utilitywarehouse/uwos-go/telemetry v1.40.0/go.mod h1:RNJP2K+klpvywFqVNkLuj2/4k2f7nAJyf0oIJke3E0A=
+github.com/utilitywarehouse/uwos-go/telemetry v1.41.0 h1:uXFON7taLL81Z9BFz5ZxBMOS6lXec0XCKXvGgOi7rw8=
+github.com/utilitywarehouse/uwos-go/telemetry v1.41.0/go.mod h1:RNJP2K+klpvywFqVNkLuj2/4k2f7nAJyf0oIJke3E0A=
 github.com/utilitywarehouse/uwos-go/x/build v1.3.1 h1:60qp3b78ap5mhWpDR+hDHCS3nl7nxWMhko/CJxKx7LU=
 github.com/utilitywarehouse/uwos-go/x/build v1.3.1/go.mod h1:lPcK+lTj6WqqCcbni1Q48nOiA/P1K+ce8NQdGs+I5Nw=
 github.com/uw-labs/sync v0.0.0-20220413223303-ecb5d1fd966e h1:Ds0w89OPe2QtdNcvJSuFPAucuf6cG+Tvd+OuGpD5QTA=
