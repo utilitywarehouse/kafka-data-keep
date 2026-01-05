@@ -72,7 +72,7 @@ The `backup` subcommand supports the following flags and environment variables. 
 
 ### Usage Example
 
-```
+```console
 ./kafka-data-keep backup \
   -brokers "kafka:9092" \
   -topics-regex "my-topic.*" \
@@ -107,7 +107,7 @@ The `plan-restore` subcommand supports the following flags and environment varia
 
 ## Usage Example
 
-```bash
+```console
 ./kafka-data-keep plan-restore \
   -brokers "kafka:9092" \
   -restore-topics-regex "domain1.*, domain2.*" \
