@@ -1,3 +1,8 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kafka-data-keep-plan-restore
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -9,7 +14,7 @@ spec:
   # plan-restore supports resuming, so we can keep the default backoff limit of 6 times.
   template:
     spec:
-      serviceAccountName: msk-data-keep-plan-restore
+      serviceAccountName: kafka-data-keep-plan-restore
       restartPolicy: OnFailure
       containers:
         - name: kafka-data-keep-plan-restore
