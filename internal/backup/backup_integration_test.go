@@ -12,15 +12,13 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go/modules/minio"
-	"github.com/testcontainers/testcontainers-go/modules/redpanda"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/codec/avro"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/testutil"
 )
 
 func init() {
@@ -31,10 +29,7 @@ func init() {
 }
 
 const (
-	minioRegion = "us-east-1"
-	bucketName  = "test-backup-bucket"
-	s3User      = "uwadmin"
-	s3pass      = "uwadminpass"
+	bucketName = "test-backup-bucket"
 )
 
 func TestBackupIntegration(t *testing.T) {
@@ -46,14 +41,14 @@ func TestBackupIntegration(t *testing.T) {
 
 	ctx := context.Background()
 
-	kafkaBrokers, tkf := startKafkaService(t, ctx)
+	kafkaBrokers, tkf := testutil.StartKafkaService(ctx, t)
 	t.Cleanup(tkf)
 
-	s3Endpoint, ts3f := startS3Service(t, ctx)
+	s3Endpoint, ts3f := testutil.StartS3Service(ctx, t)
 	t.Cleanup(ts3f)
 
-	setupEnvS3Access()
-	s3Client := newS3Client(t, ctx, s3Endpoint)
+	testutil.SetupEnvS3Access()
+	s3Client := testutil.NewS3Client(ctx, t, s3Endpoint)
 
 	_, err := s3Client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucketName)})
 	require.NoError(t, err)
@@ -94,7 +89,7 @@ func TestBackupIntegration(t *testing.T) {
 			S3Bucket:               bucketName,
 			S3Prefix:               s3Prefix,
 			S3Endpoint:             s3Endpoint,
-			S3Region:               minioRegion,
+			S3Region:               testutil.MinioRegion,
 		}
 
 		// Run backup with a cancellable context (no timeout, we'll cancel after second batch)
@@ -170,7 +165,7 @@ func TestBackupIntegration(t *testing.T) {
 			S3Bucket:               bucketName,
 			S3Prefix:               s3Prefix,
 			S3Endpoint:             s3Endpoint,
-			S3Region:               minioRegion,
+			S3Region:               testutil.MinioRegion,
 		}
 
 		// Run backup with a cancellable context (no timeout, we'll cancel after second batch)
@@ -226,7 +221,7 @@ func TestBackupIntegration(t *testing.T) {
 			S3Bucket:               bucketName,
 			S3Prefix:               s3Prefix,
 			S3Endpoint:             s3Endpoint,
-			S3Region:               minioRegion,
+			S3Region:               testutil.MinioRegion,
 		}
 
 		// Run backup with a cancellable context (no timeout, we'll cancel after second batch)
@@ -360,55 +355,6 @@ func listFilesOnBucket(ctx context.Context, t *testing.T, s3Client *s3.Client, s
 		t.Logf("Found file: %s (size: %d), recs: %d", key, obj.Size, len(records))
 	}
 	return filesFound
-}
-
-func startKafkaService(t *testing.T, ctx context.Context) (string, func()) {
-	t.Helper()
-	redpandaContainer, err := redpanda.Run(ctx, "redpandadata/redpanda:v25.1.1")
-	require.NoError(t, err)
-	terminateFunc := func() {
-		if err := redpandaContainer.Terminate(ctx); err != nil {
-			t.Logf("Failed to terminate Redpanda container: %v", err)
-		}
-	}
-
-	kafkaBrokers, err := redpandaContainer.KafkaSeedBroker(ctx)
-	require.NoError(t, err)
-	return kafkaBrokers, terminateFunc
-}
-
-func startS3Service(t *testing.T, ctx context.Context) (string, func()) {
-	t.Helper()
-	minioContainer, err := minio.Run(ctx, "minio/minio:latest", minio.WithUsername(s3User), minio.WithPassword(s3pass))
-	require.NoError(t, err)
-
-	terminateFunc := func() {
-		if err := minioContainer.Terminate(ctx); err != nil {
-			t.Logf("Failed to terminate MinIO container: %v", err)
-		}
-	}
-
-	// Get connection details for MinIO
-	connString, err := minioContainer.ConnectionString(ctx)
-	require.NoError(t, err)
-	return fmt.Sprintf("http://%s", connString), terminateFunc
-}
-
-func newS3Client(t *testing.T, ctx context.Context, s3Endpoint string) *s3.Client {
-	t.Helper()
-	awsCfg, err := config.LoadDefaultConfig(ctx)
-	require.NoError(t, err)
-
-	return s3.NewFromConfig(awsCfg, func(o *s3.Options) {
-		o.BaseEndpoint = aws.String(s3Endpoint)
-		o.UsePathStyle = true
-	})
-}
-
-func setupEnvS3Access() {
-	_ = os.Setenv("AWS_ACCESS_KEY_ID", s3User)
-	_ = os.Setenv("AWS_SECRET_ACCESS_KEY", s3pass)
-	_ = os.Setenv("AWS_REGION", minioRegion)
 }
 
 // Helper to wait for consumer group offsets
