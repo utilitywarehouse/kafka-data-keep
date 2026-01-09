@@ -3,15 +3,16 @@ package restore
 import (
 	"context"
 	"fmt"
+	"io"
+	"log/slog"
+	"time"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/codec/avro"
 	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
-	"io"
-	"log/slog"
-	"time"
 )
 
 type AppConfig struct {
@@ -81,7 +82,7 @@ func restoreFile(ctx context.Context, key string, s3Client *s3.Client, kafkaClie
 	if err != nil {
 		return fmt.Errorf("failed to decode Avro file: %w", err)
 	}
-	// use background context as we want to push the records through without stopping if the context was canceled.
+	//nolint:contextcheck //use background context as we want to push the records through without stopping if the context was canceled.
 	res := kafkaClient.ProduceSync(context.Background(), recs...)
 	if res.FirstErr() != nil {
 		return fmt.Errorf("failed to produce records: %w", res.FirstErr())
