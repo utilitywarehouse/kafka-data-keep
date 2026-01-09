@@ -37,8 +37,8 @@ func (p *Planner) Run(ctx context.Context) error {
 	}
 
 	slog.InfoContext(ctx, "Planning restore for topics", "count", len(topics), "topics", topics)
-
-	latestRecords, err := kafka2.ReadLatest(ctx, p.kafkaClient.Client, p.cfg.PlanTopic)
+	seedBrokers := p.kafkaClient.OptValue(kgo.SeedBrokers).([]string)
+	latestRecords, err := kafka2.ReadLatest(ctx, seedBrokers, p.cfg.PlanTopic)
 	if err != nil {
 		return fmt.Errorf("failed to read latest records from plan topic: %w", err)
 	}
@@ -80,7 +80,7 @@ func computeResume(latestRecords map[int32]*kgo.Record, topicsOrder []string) (s
 	resumeMap := make(map[string]string)
 	for _, rec := range latestRecords {
 		file := string(rec.Value)
-		topic, err := topicFromFileName(file)
+		topic, _, err := TopicPartitionFromFileName(file)
 		if err != nil {
 			return "", "", fmt.Errorf("failed to extract topic from file %s: %w", file, err)
 		}
@@ -229,17 +229,17 @@ func partitioningKey(path string) string {
 	return path
 }
 
-func topicFromFileName(fileName string) (string, error) {
+func TopicPartitionFromFileName(fileName string) (string, string, error) {
 	if fileName == "" {
-		return "", nil
+		return "", "", nil
 	}
 	// from a key like kafka-backup/account-identity.account.change.events/7/account-identity.account.change.events-7-0000000000000000000.avro we want to extract the topic
 	parts := strings.Split(fileName, "/")
 
 	if len(parts) < 3 {
-		return "", fmt.Errorf("invalid file name %s. Expected in the format folder/topic/partition/filename.avro", fileName)
+		return "", "", fmt.Errorf("invalid file name %s. Expected in the format folder/topic/partition/filename.avro", fileName)
 	}
-	return parts[len(parts)-3], nil
+	return parts[len(parts)-3], parts[len(parts)-2], nil
 }
 
 func compileRegexes(regexStr string) ([]*regexp.Regexp, error) {

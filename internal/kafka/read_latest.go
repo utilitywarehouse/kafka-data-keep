@@ -7,10 +7,17 @@ import (
 
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"slices"
 )
 
-// ReadLatest consumes the last message (tip) for each partition in the specified topic.
-func ReadLatest(ctx context.Context, client *kgo.Client, topic string) (map[int32]*kgo.Record, error) {
+// ReadLatest consumes the last message (tip) for the specified partitions in the specified topic. If no partition is specified, all are read.
+func ReadLatest(ctx context.Context, seedBrokers []string, topic string, onlyPartitions ...int32) (map[int32]*kgo.Record, error) {
+	client, err := kgo.NewClient(kgo.SeedBrokers(seedBrokers...))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create kafka client: %w", err)
+	}
+
+	defer client.Close()
 	endOffsets, startOffsets, err := getTopicOffsets(ctx, client, topic)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get topic offsets for topic %s: %w", topic, err)
@@ -21,19 +28,10 @@ func ReadLatest(ctx context.Context, client *kgo.Client, topic string) (map[int3
 		return nil, nil
 	}
 
-	tipOffsets := computePartitionsLatest(ctx, endOffsets, startOffsets)
+	tipOffsets := computePartitionsLatest(ctx, endOffsets, startOffsets, onlyPartitions)
 
 	client.AddConsumePartitions(map[string]map[int32]kgo.Offset{
 		topic: tipOffsets,
-	})
-
-	pList := make([]int32, 0, len(tipOffsets))
-	for p := range tipOffsets {
-		pList = append(pList, p)
-	}
-
-	defer client.RemoveConsumePartitions(map[string][]int32{
-		topic: pList,
 	})
 
 	return consumeLatest(ctx, client, len(tipOffsets))
@@ -56,28 +54,35 @@ func getTopicOffsets(ctx context.Context, client *kgo.Client, topic string) (map
 	return listedOffsets[topic], listedStartOffsets[topic], nil
 }
 
-func computePartitionsLatest(ctx context.Context, endOffsets, startOffsets map[int32]kadm.ListedOffset) map[int32]kgo.Offset {
+func computePartitionsLatest(ctx context.Context, endOffsets, startOffsets map[int32]kadm.ListedOffset, onlyPartitions []int32) map[int32]kgo.Offset {
 	partitionsLatest := make(map[int32]kgo.Offset, len(endOffsets))
 
-	for partition, offsetInfo := range endOffsets {
+	for partition, endOffsetInfo := range endOffsets {
+		if excludePartition(onlyPartitions, partition) {
+			continue
+		}
 		lowWatermark := int64(0)
 		if startInfo, ok := startOffsets[partition]; ok {
 			lowWatermark = startInfo.Offset
 		}
 
-		startOffset := offsetInfo.Offset - 1
+		latestOffset := endOffsetInfo.Offset - 1
 
 		// If the tip is below the low watermark (deleted/expired), we can't consume it.
 		// So we don't add it to the consumeMap.
-		if startOffset < lowWatermark {
-			slog.DebugContext(ctx, "Partition is empty, skipping.", "partition", partition, "tip", startOffset, "lowWatermark", lowWatermark)
+		if latestOffset < lowWatermark {
+			slog.DebugContext(ctx, "Partition is empty, skipping.", "partition", partition, "tip", latestOffset, "lowWatermark", lowWatermark)
 			continue
 		}
 
-		partitionsLatest[partition] = kgo.NewOffset().At(startOffset)
+		partitionsLatest[partition] = kgo.NewOffset().At(latestOffset)
 	}
 
 	return partitionsLatest
+}
+
+func excludePartition(onlyPartitions []int32, partition int32) bool {
+	return len(onlyPartitions) > 0 && !slices.Contains(onlyPartitions, partition)
 }
 
 func consumeLatest(ctx context.Context, client *kgo.Client, expectedCount int) (map[int32]*kgo.Record, error) {
