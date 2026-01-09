@@ -100,7 +100,7 @@ func initKafkaConsumer(cfg AppConfig) (*kafka.SimpleConsumer, error) {
 		kafka.WithMaxPollRecords(10),                   // use a low max poll, as it takes ~1s to process one record, and we should give it a chance to process rebalances.
 		kgo.SessionTimeout(1 * time.Minute),            // session timeout is 1 minute
 		kgo.HeartbeatInterval(15 * time.Second),        // increase heartbeat interval to 15 seconds, as processing a record is slow (~1s / record)
-		kgo.RecordPartitioner(kgo.ManualPartitioner()), // use a manual partitioner, as all the restore records have a partition set
+		kgo.RecordPartitioner(kgo.ManualPartitioner()), // use a manual partitioner, as all the restore records have a partition set and we should keep the same partition
 	}
 	if cfg.BrokersDNSSrv != "" {
 		opts = append(opts, kafka.SeedBrokersFromDNS(cfg.BrokersDNSSrv))
@@ -110,6 +110,8 @@ func initKafkaConsumer(cfg AppConfig) (*kafka.SimpleConsumer, error) {
 
 	return kafka.NewSimpleConsumer(opts...)
 }
+
+const originalOffsetHeader = "original_offset"
 
 func decodeAvroFile(ctx context.Context, r io.ReadCloser, topicPrefix string) ([]*kgo.Record, error) {
 	defer func() {
@@ -130,6 +132,8 @@ func decodeAvroFile(ctx context.Context, r io.ReadCloser, topicPrefix string) ([
 			return nil, fmt.Errorf("failed decoding Avro record: %w", err)
 		}
 		rec.Topic = topicPrefix + rec.Topic
+		// set the original offset header -> we're using for dedup and consumer group restoring
+		setOriginalOffsetHeader(rec)
 		records = append(records, rec)
 	}
 
@@ -138,4 +142,17 @@ func decodeAvroFile(ctx context.Context, r io.ReadCloser, topicPrefix string) ([
 	}
 
 	return records, nil
+}
+
+func setOriginalOffsetHeader(rec *kgo.Record) {
+	val := []byte(fmt.Sprintf("%d", rec.Offset))
+	// check if the header already exists from a previous restore
+	for i := range rec.Headers {
+		if rec.Headers[i].Key == originalOffsetHeader {
+			rec.Headers[i].Value = val
+			return
+		}
+	}
+
+	rec.Headers = append(rec.Headers, kgo.RecordHeader{Key: originalOffsetHeader, Value: val})
 }
