@@ -156,6 +156,5 @@ func TestReadLastRecords(t *testing.T) {
 		records, err = ReadLatest(ctx, []string{seedBroker}, topic, int32(3))
 		require.NoError(t, err)
 		assert.Empty(t, records, "Should return empty map for empty topic when reading a single partition")
-
 	})
 }

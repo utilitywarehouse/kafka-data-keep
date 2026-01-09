@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"slices"
 )
 
 // ReadLatest consumes the last message (tip) for the specified partitions in the specified topic. If no partition is specified, all are read.

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strconv"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -13,7 +14,6 @@ import (
 	kafka2 "github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/planrestore"
 	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
-	"strconv"
 )
 
 type kafkaS3Restorer struct {
@@ -84,7 +84,7 @@ func (r *kafkaS3Restorer) getResumeOffset(ctx context.Context, topic string, par
 		return resumeOffset, nil
 	}
 
-	seedBrokers := r.consumer.OptValue(kgo.SeedBrokers).([]string)
+	seedBrokers := r.consumer.OptValue(kgo.SeedBrokers).([]string) //nolint:errcheck
 	lastRecord, err := kafka2.ReadLatest(ctx, seedBrokers, r.cfg.PlanTopic, partitionInt)
 	if err != nil {
 		return -1, fmt.Errorf("failed to read latest record for topic %s partition %d: %w", topic, partitionInt, err)
