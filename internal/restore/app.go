@@ -112,7 +112,7 @@ func initKafkaConsumer(cfg AppConfig) (*kafka.SimpleConsumer, error) {
 func decodeAvroFile(ctx context.Context, r io.ReadCloser, topicPrefix string) ([]*kgo.Record, error) {
 	defer func() {
 		if err := r.Close(); err != nil {
-			slog.ErrorContext(ctx, "Failed to close Avro file reader: %v", err)
+			slog.ErrorContext(ctx, "Failed closing Avro file reader", "error", err)
 		}
 	}()
 	decFactory := &avro.RecordDecoderFactory{}
