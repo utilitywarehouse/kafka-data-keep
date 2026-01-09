@@ -96,9 +96,10 @@ func initKafkaConsumer(cfg AppConfig) (*kafka.SimpleConsumer, error) {
 		kgo.ConsumeTopics(cfg.PlanTopic),
 		kafka.WithConsumeOldestOffset(),
 		kgo.ConsumerGroup(cfg.ConsumerGroup),
-		kafka.WithMaxPollRecords(10),            // use a low max poll, as it takes ~1s to process one record
-		kgo.SessionTimeout(1 * time.Minute),     // session timeout is 1 minute
-		kgo.HeartbeatInterval(15 * time.Second), // increase heartbeat interval to 15 seconds, as processing is record is slow (~1s / record)
+		kafka.WithMaxPollRecords(10),                   // use a low max poll, as it takes ~1s to process one record, and we should give it a chance to process rebalances.
+		kgo.SessionTimeout(1 * time.Minute),            // session timeout is 1 minute
+		kgo.HeartbeatInterval(15 * time.Second),        // increase heartbeat interval to 15 seconds, as processing a record is slow (~1s / record)
+		kgo.RecordPartitioner(kgo.ManualPartitioner()), // use a manual partitioner, as all the restore records have a partition set
 	}
 	if cfg.BrokersDNSSrv != "" {
 		opts = append(opts, kafka.SeedBrokersFromDNS(cfg.BrokersDNSSrv))
