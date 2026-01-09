@@ -72,10 +72,45 @@ The `backup` subcommand supports the following flags and environment variables. 
 
 ### Usage Example
 
-```bash
+```console
 ./kafka-data-keep backup \
   -brokers "kafka:9092" \
   -topics-regex "my-topic.*" \
+  -s3-bucket "my-backup-bucket" \
+  -s3-region "us-east-1"
+```
+
+# Plan Restore
+
+Prepares the restore plan by reading the backup files on the S3 bucket and, for each file, it will create a record in a Kafka topic. 
+We are using this intermediary phase, before restore, to leverage the kafka consumer group functionality to achieve parallelism per partition safely at restore time and to keep track of the restore process.
+
+The topics will be processed in the order specified in the `restore-topics-regex` list. If multiple topics match a particular regex, they'll be processed in alphabetical order. 
+
+In case something fails during the execution, it will resume the listing by reading the last messages produced on the kafka topic.
+
+## Configuration
+
+The `plan-restore` subcommand supports the following flags and environment variables. Flags take precedence over environment variables.
+
+| Flag | Environment Variable | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `-brokers` | `KAFKA_BROKERS` | `localhost:9092` | Kafka brokers (comma separated) |
+| `-brokersDNSSrv` | `KAFKA_BROKERS_DNS_SRV` | | DNS SRV record with the kafka seed brokers |
+| `-restore-topics-regex` | `RESTORE_TOPICS_REGEX` | `.*` | List of regex to match topics to restore (comma separated). The topics will be restored in the order specified in this list. |
+| `-exclude-topics-regex` | `EXCLUDE_TOPICS_REGEX` | | List of regex to exclude topics from restore (comma separated) |
+| `-plan-topic` | `PLAN_TOPIC` | `pubsub.plan-topic-restore` | Kafka topic to send the restore plan to |
+| `-s3-bucket` | `S3_BUCKET` | | S3 bucket name where the backup files are stored |
+| `-s3-prefix` | `S3_PREFIX` | `msk-backup` | The prefix for the backup files in S3 |
+| `-s3-endpoint` | `AWS_ENDPOINT_URL` | | S3 endpoint URL (for LocalStack or custom S3-compatible storage) |
+| `-s3-region` | `AWS_REGION` | `eu-west-1` | S3 region |
+
+## Usage Example
+
+```console
+./kafka-data-keep plan-restore \
+  -brokers "kafka:9092" \
+  -restore-topics-regex "domain1.*, domain2.*" \
   -s3-bucket "my-backup-bucket" \
   -s3-region "us-east-1"
 ```

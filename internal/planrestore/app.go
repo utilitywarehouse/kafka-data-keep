@@ -3,23 +3,25 @@ package planrestore
 import (
 	"context"
 	"fmt"
+	"log/slog"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
-	"log/slog"
 )
 
 type AppConfig struct {
-	Brokers       string
-	BrokersDNSSrv string
-	RestoreTopics string
-	PlanTopic     string
-	S3Bucket      string
-	S3Endpoint    string
-	S3Region      string
-	S3Prefix      string
+	Brokers            string
+	BrokersDNSSrv      string
+	RestoreTopicsRegex string
+	ExcludeTopicsRegex string
+	PlanTopic          string
+	S3Bucket           string
+	S3Endpoint         string
+	S3Region           string
+	S3Prefix           string
 }
 
 func Run(ctx context.Context, cfg AppConfig) error {
@@ -44,23 +46,23 @@ func Run(ctx context.Context, cfg AppConfig) error {
 
 	s3Client := s3.NewFromConfig(awsCfg, s3ClientOpts...)
 
-	producer, err := initKafkaProducer(cfg)
+	kafkaClient, err := initKafkaClient(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to create kafka producer: %w", err)
 	}
-	defer producer.Close()
+	defer kafkaClient.Close()
 
 	slog.InfoContext(ctx, "Starting plan restore application...")
 
 	planner := Planner{
-		s3Client: s3Client,
-		producer: producer,
-		cfg:      cfg,
+		s3Client:    s3Client,
+		kafkaClient: kafkaClient,
+		cfg:         cfg,
 	}
 	return planner.Run(ctx)
 }
 
-func initKafkaProducer(cfg AppConfig) (*kafka.Client, error) {
+func initKafkaClient(cfg AppConfig) (*kafka.Client, error) {
 	opts := []kgo.Opt{
 		kafka.WithTracer(nil), // do not record traces
 		kgo.DefaultProduceTopic(cfg.PlanTopic),

@@ -6,14 +6,16 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/utilitywarehouse/kafka-data-keep/internal/codec"
 )
 
 type Config struct {
-	MinFileSize int64
-	RootPath    string
-	S3Prefix    string
+	MinFileSize            int64
+	PartitionIdleThreshold time.Duration
+	RootPath               string
+	S3Prefix               string
 }
 
 type PartitionsWriterManager struct {
@@ -97,6 +99,19 @@ func (m *PartitionsWriterManager) Close() error {
 	var errs []error
 	for _, w := range m.writers {
 		if err := w.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func (m *PartitionsWriterManager) PauseIdleWriters(ctx context.Context) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	var errs []error
+	for _, w := range m.writers {
+		if err := w.PauseWhenIdle(ctx); err != nil {
 			errs = append(errs, err)
 		}
 	}

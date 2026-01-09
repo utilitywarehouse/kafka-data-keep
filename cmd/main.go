@@ -113,6 +113,13 @@ func loadBackupAppConfig(args []string) (backup.AppConfig, error) {
 		getEnvInt64("MIN_FILE_SIZE", 5*1024*1024),
 		"The minimum file size in bytes for each partition backup file",
 	)
+	fs.DurationVar(
+		&cfg.PartitionIdleThreshold,
+		"partition-idle-threshold",
+		getEnvDuration("PARTITION_IDLE_THRESHOLD", 1*time.Minute),
+		"The threshold after which a partition will be considered idle for not consuming any new records. Should be a duration",
+	)
+
 	fs.StringVar(
 		&cfg.WorkingDir,
 		"working-dir",
@@ -240,10 +247,16 @@ func loadPlanRestoreAppConfig(args []string) (planrestore.AppConfig, error) {
 	)
 
 	fs.StringVar(
-		&cfg.RestoreTopics,
-		"restore-topics",
-		getEnv("RESTORE_TOPICS", ""),
-		"List of kafka topics to restore (comma separated)",
+		&cfg.RestoreTopicsRegex,
+		"restore-topics-regex",
+		getEnv("RESTORE_TOPICS_REGEX", ".*"),
+		"List of regex to match topics to restore (comma separated). The topics will be restored in the order specified in this list",
+	)
+	fs.StringVar(
+		&cfg.ExcludeTopicsRegex,
+		"exclude-topics-regex",
+		getEnv("EXCLUDE_TOPICS_REGEX", ""),
+		"List of regex to exclude topics from restore (comma separated)",
 	)
 
 	fs.StringVar(
@@ -360,7 +373,6 @@ func loadRestoreAppConfig(args []string) (restore.AppConfig, error) {
 	}
 	return cfg, nil
 }
-
 func getEnv(key, fallback string) string {
 	if value, ok := os.LookupEnv(key); ok {
 		return value
@@ -371,6 +383,17 @@ func getEnv(key, fallback string) string {
 func getEnvInt64(key string, fallback int64) int64 {
 	if value, ok := os.LookupEnv(key); ok {
 		i, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return fallback
+		}
+		return i
+	}
+	return fallback
+}
+
+func getEnvDuration(key string, fallback time.Duration) time.Duration {
+	if value, ok := os.LookupEnv(key); ok {
+		i, err := time.ParseDuration(value)
 		if err != nil {
 			return fallback
 		}

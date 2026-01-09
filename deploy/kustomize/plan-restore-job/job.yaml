@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kafka-data-keep-plan-restore
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-data-keep-plan-restore
+  labels:
+    app: kafka-data-keep-plan-restore
+    app.kubernetes.io/name: kafka-data-keep-plan-restore
+spec:
+  # plan-restore supports resuming, so we can keep the default backoff limit of 6 times.
+  template:
+    spec:
+      serviceAccountName: kafka-data-keep-plan-restore
+      restartPolicy: OnFailure
+      containers:
+        - name: kafka-data-keep-plan-restore
+          image: quay.io/utilitywarehouse/kafka-data-keep:main
+          imagePullPolicy: IfNotPresent
+          command: ["/kafka-data-keep", "plan-restore"]
+          resources:
+            requests:
+              cpu: 0
+              memory: 0
+            limits:
+              cpu: 4
+              memory: 1Gi
+          env:
+            - name: KAFKA_BROKERS
+              value: TBD
+            - name: RESTORE_TOPICS_REGEX
+              value: TBD
+            - name: EXCLUDE_TOPICS_REGEX
+              value: ""
+            - name: PLAN_TOPIC
+              value: TBD
+            - name: S3_BUCKET
+              value: TBD
+            - name: S3_PREFIX
+              value: kafka-backup
+            - name: AWS_REGION
+              value: TBD

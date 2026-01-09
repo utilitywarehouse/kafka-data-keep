@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -13,20 +14,22 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/codec/avro"
 	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
+	"golang.org/x/sync/errgroup"
 )
 
 type AppConfig struct {
-	Brokers            string
-	BrokersDNSSrv      string
-	TopicsRegex        string
-	ExcludeTopicsRegex string
-	GroupID            string
-	MinFileSize        int64
-	WorkingDir         string
-	S3Bucket           string
-	S3Endpoint         string
-	S3Region           string
-	S3Prefix           string
+	Brokers                string
+	BrokersDNSSrv          string
+	TopicsRegex            string
+	ExcludeTopicsRegex     string
+	GroupID                string
+	MinFileSize            int64
+	PartitionIdleThreshold time.Duration
+	WorkingDir             string
+	S3Bucket               string
+	S3Endpoint             string
+	S3Region               string
+	S3Prefix               string
 }
 
 func Run(ctx context.Context, cfg AppConfig) error {
@@ -59,9 +62,10 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	slog.InfoContext(ctx, "Using working dir for local files", "path", cfg.WorkingDir)
 
 	wConfig := Config{
-		MinFileSize: cfg.MinFileSize,
-		RootPath:    cfg.WorkingDir,
-		S3Prefix:    cfg.S3Prefix,
+		MinFileSize:            cfg.MinFileSize,
+		PartitionIdleThreshold: cfg.PartitionIdleThreshold,
+		RootPath:               cfg.WorkingDir,
+		S3Prefix:               cfg.S3Prefix,
 	}
 
 	// Create manager first
@@ -83,7 +87,17 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	defer client.CloseAllowingRebalance()
 
 	slog.InfoContext(ctx, "Starting backup application...")
-	return runConsumer(ctx, client, mgr)
+	eg, ctx := errgroup.WithContext(ctx)
+
+	eg.Go(func() error {
+		return runConsumer(ctx, client, mgr)
+	})
+
+	eg.Go(func() error {
+		return runPauseIdleWriters(ctx, mgr)
+	})
+
+	return eg.Wait()
 }
 
 const maxPollRecords = 10000 // this affects how many records are processed per poll, not how many are fetched from Kafka
@@ -125,4 +139,20 @@ func splitAndTrim(s, sep string) []string {
 		parts[i] = strings.TrimSpace(parts[i])
 	}
 	return parts
+}
+
+func runPauseIdleWriters(ctx context.Context, pwManager *PartitionsWriterManager) error {
+	tickerMillis := min(pwManager.config.PartitionIdleThreshold.Milliseconds(), time.Minute.Milliseconds())
+	slog.InfoContext(ctx, "Start pausing idle writers", "interval", tickerMillis)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.Tick(time.Duration(tickerMillis) * time.Millisecond):
+			if err := pwManager.PauseIdleWriters(ctx); err != nil {
+				return fmt.Errorf("failed pausing idle writers: %w", err)
+			}
+		}
+	}
 }

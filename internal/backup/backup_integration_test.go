@@ -7,19 +7,18 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go/modules/minio"
-	"github.com/testcontainers/testcontainers-go/modules/redpanda"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/codec/avro"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/testutil"
 )
 
 func init() {
@@ -30,10 +29,7 @@ func init() {
 }
 
 const (
-	minioRegion = "us-east-1"
-	bucketName  = "test-backup-bucket"
-	s3User      = "uwadmin"
-	s3pass      = "uwadminpass"
+	bucketName = "test-backup-bucket"
 )
 
 func TestBackupIntegration(t *testing.T) {
@@ -45,14 +41,14 @@ func TestBackupIntegration(t *testing.T) {
 
 	ctx := context.Background()
 
-	kafkaBrokers, tkf := startKafkaService(t, ctx)
+	kafkaBrokers, tkf := testutil.StartKafkaService(ctx, t)
 	t.Cleanup(tkf)
 
-	s3Endpoint, ts3f := startS3Service(t, ctx)
+	s3Endpoint, ts3f := testutil.StartS3Service(ctx, t)
 	t.Cleanup(ts3f)
 
-	setupEnvS3Access()
-	s3Client := newS3Client(t, ctx, s3Endpoint)
+	testutil.SetupEnvS3Access()
+	s3Client := testutil.NewS3Client(ctx, t, s3Endpoint)
 
 	_, err := s3Client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucketName)})
 	require.NoError(t, err)
@@ -84,15 +80,16 @@ func TestBackupIntegration(t *testing.T) {
 		groupID := newRandomName("test-backup-group")
 		s3Prefix := "multiple-batches/"
 		cfg := AppConfig{
-			Brokers:     kafkaBrokers,
-			TopicsRegex: "multiple-.*",
-			GroupID:     groupID,
-			MinFileSize: 5000,
-			WorkingDir:  workingDir,
-			S3Bucket:    bucketName,
-			S3Prefix:    s3Prefix,
-			S3Endpoint:  s3Endpoint,
-			S3Region:    minioRegion,
+			Brokers:                kafkaBrokers,
+			TopicsRegex:            "multiple-.*",
+			GroupID:                groupID,
+			MinFileSize:            5000,
+			PartitionIdleThreshold: 100 * time.Millisecond,
+			WorkingDir:             workingDir,
+			S3Bucket:               bucketName,
+			S3Prefix:               s3Prefix,
+			S3Endpoint:             s3Endpoint,
+			S3Region:               testutil.MinioRegion,
 		}
 
 		// Run backup with a cancellable context (no timeout, we'll cancel after second batch)
@@ -158,16 +155,17 @@ func TestBackupIntegration(t *testing.T) {
 		groupID := newRandomName("test-backup-group")
 		s3Prefix := "flush-on-stop/"
 		cfg := AppConfig{
-			Brokers:            kafkaBrokers,
-			TopicsRegex:        "flush-stop-.*",
-			ExcludeTopicsRegex: "multiple-.*", // eclude the topics from the previous test
-			GroupID:            groupID,
-			MinFileSize:        100 * 1024 * 1024, // use a big limit, so we make sure we flush only on stopping the app
-			WorkingDir:         workingDir,
-			S3Bucket:           bucketName,
-			S3Prefix:           s3Prefix,
-			S3Endpoint:         s3Endpoint,
-			S3Region:           minioRegion,
+			Brokers:                kafkaBrokers,
+			TopicsRegex:            "flush-stop-.*",
+			ExcludeTopicsRegex:     "multiple-.*", // exclude the topics from the previous test
+			GroupID:                groupID,
+			PartitionIdleThreshold: 1 * time.Second,
+			MinFileSize:            100 * 1024 * 1024, // use a big limit, so we make sure we flush only on stopping the app
+			WorkingDir:             workingDir,
+			S3Bucket:               bucketName,
+			S3Prefix:               s3Prefix,
+			S3Endpoint:             s3Endpoint,
+			S3Region:               testutil.MinioRegion,
 		}
 
 		// Run backup with a cancellable context (no timeout, we'll cancel after second batch)
@@ -189,16 +187,110 @@ func TestBackupIntegration(t *testing.T) {
 			time.Sleep(time.Millisecond * 100)
 		}
 
-		time.Sleep(1 * time.Second) // give it some time to consume the records
+		fileKey := fileKey(s3Prefix, topic3, 0, 0)
+		waitLocalFileHasRecords(t, ctx, workingDir, fileKey, 10000)
+
+		stopApp(ctx, t, cancel, errCh)
+
+		filesFound := listFilesOnBucket(ctx, t, s3Client, s3Prefix)
+		require.Len(t, filesFound, 1)
+		// we expect the file to have records, but it might not have consumed all
+		require.LessOrEqual(t, filesFound[fileKey], 10000)
+	})
+
+	t.Run("pause and resume local files", func(t *testing.T) {
+		t.Parallel()
+
+		topic4 := "pause-resume-1"
+		_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, topic4)
+		require.NoError(t, err)
+
+		// Setup backup application config
+		workingDir := t.TempDir()
+
+		groupID := newRandomName("test-backup-group")
+		s3Prefix := "pause-resume/"
+		cfg := AppConfig{
+			Brokers:                kafkaBrokers,
+			TopicsRegex:            "pause-resume-.*",
+			ExcludeTopicsRegex:     "multiple-.*", // exclude the topics from the previous test
+			GroupID:                groupID,
+			PartitionIdleThreshold: 100 * time.Millisecond, // check for idle partitions very frequently
+			MinFileSize:            100 * 1024 * 1024,      // use a big limit, so the flush doesn't happen
+			WorkingDir:             workingDir,
+			S3Bucket:               bucketName,
+			S3Prefix:               s3Prefix,
+			S3Endpoint:             s3Endpoint,
+			S3Region:               testutil.MinioRegion,
+		}
+
+		// Run backup with a cancellable context (no timeout, we'll cancel after second batch)
+		backupCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		// Run backup in a goroutine
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- Run(backupCtx, cfg)
+		}()
+
+		waitConsumerStart(ctx, t, kadmClient, groupID)
+		// write records, but offsets won't be committed, since the file size limit is very high
+		writeRecords(t, ctx, adminClient, topic4, 0, 10, 1000)
+		fileKey := fileKey(cfg.S3Prefix, topic4, 0, 0)
+
+		waitLocalFileHasRecords(t, ctx, workingDir, fileKey, 10)
+
+		//  Wait for the partition writer to go idle and be paused
+		time.Sleep(1 * time.Second)
+
+		// write second batch
+		writeRecords(t, ctx, adminClient, topic4, 0, 10, 1000)
+		// local file should be resumed
+		waitLocalFileHasRecords(t, ctx, workingDir, fileKey, 20)
 
 		// stop consuming & trigger the flush
 		stopApp(ctx, t, cancel, errCh)
 
 		filesFound := listFilesOnBucket(ctx, t, s3Client, s3Prefix)
 		require.Len(t, filesFound, 1)
-		// we expect the file to have records, but it might not have consumed all
-		require.LessOrEqual(t, filesFound["flush-on-stop/flush-stop-1/0/flush-stop-1-0-0000000000000000000.avro"], 10000)
+		require.Equal(t, 20, filesFound[fileKey])
 	})
+}
+
+func waitLocalFileHasRecords(t *testing.T, ctx context.Context, dir string, fileKey string, howMany int) {
+	t.Helper()
+	filePath := filepath.Join(dir, fileKey)
+	timeoutC := time.After(5 * time.Second)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timeoutC:
+			t.Fatalf("local file %s did not have expected records after 5 seconds", filePath)
+			return
+		case <-time.Tick(200 * time.Millisecond):
+			// check the file only if it exists
+			if _, err := os.Stat(filePath); os.IsNotExist(err) {
+				t.Logf("Local file %s does not exist yet", filePath)
+				continue
+			}
+			f, err := os.Open(filePath)
+			require.NoError(t, err)
+			recs := decodeAvroFile(t, f)
+			t.Logf("Local file %s has %d records. Expected %d", fileKey, len(recs), howMany)
+			if len(recs) == howMany {
+				return
+			}
+		}
+	}
+}
+
+func fileKey(s3Prefix string, topic4 string, partition int, offset int) string {
+	filename := fmt.Sprintf("%s-%d-%s.avro", topic4, partition, fmt.Sprintf("%019d", offset))
+	fileKey := filepath.Join(s3Prefix, topic4, fmt.Sprintf("%d", partition), filename)
+	return fileKey
 }
 
 func stopApp(ctx context.Context, t *testing.T, cancel context.CancelFunc, errCh chan error) {
@@ -216,11 +308,12 @@ func stopApp(ctx context.Context, t *testing.T, cancel context.CancelFunc, errCh
 
 func waitConsumerStart(ctx context.Context, t *testing.T, client *kadm.Client, groupId string) {
 	t.Helper()
+	timeoutC := time.After(10 * time.Second)
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(10 * time.Second):
+		case <-timeoutC:
 			t.Fatalf("consumer group %s did not start in 10 seconds", groupId)
 		case <-time.Tick(100 * time.Millisecond):
 			dg, err := client.DescribeGroups(ctx, groupId)
@@ -264,63 +357,15 @@ func listFilesOnBucket(ctx context.Context, t *testing.T, s3Client *s3.Client, s
 	return filesFound
 }
 
-func startKafkaService(t *testing.T, ctx context.Context) (string, func()) {
-	t.Helper()
-	redpandaContainer, err := redpanda.Run(ctx, "redpandadata/redpanda:v25.1.1")
-	require.NoError(t, err)
-	terminateFunc := func() {
-		if err := redpandaContainer.Terminate(ctx); err != nil {
-			t.Logf("Failed to terminate Redpanda container: %v", err)
-		}
-	}
-
-	kafkaBrokers, err := redpandaContainer.KafkaSeedBroker(ctx)
-	require.NoError(t, err)
-	return kafkaBrokers, terminateFunc
-}
-
-func startS3Service(t *testing.T, ctx context.Context) (string, func()) {
-	t.Helper()
-	minioContainer, err := minio.Run(ctx, "minio/minio:latest", minio.WithUsername(s3User), minio.WithPassword(s3pass))
-	require.NoError(t, err)
-
-	terminateFunc := func() {
-		if err := minioContainer.Terminate(ctx); err != nil {
-			t.Logf("Failed to terminate MinIO container: %v", err)
-		}
-	}
-
-	// Get connection details for MinIO
-	connString, err := minioContainer.ConnectionString(ctx)
-	require.NoError(t, err)
-	return fmt.Sprintf("http://%s", connString), terminateFunc
-}
-
-func newS3Client(t *testing.T, ctx context.Context, s3Endpoint string) *s3.Client {
-	t.Helper()
-	awsCfg, err := config.LoadDefaultConfig(ctx)
-	require.NoError(t, err)
-
-	return s3.NewFromConfig(awsCfg, func(o *s3.Options) {
-		o.BaseEndpoint = aws.String(s3Endpoint)
-		o.UsePathStyle = true
-	})
-}
-
-func setupEnvS3Access() {
-	_ = os.Setenv("AWS_ACCESS_KEY_ID", s3User)
-	_ = os.Setenv("AWS_SECRET_ACCESS_KEY", s3pass)
-	_ = os.Setenv("AWS_REGION", minioRegion)
-}
-
 // Helper to wait for consumer group offsets
 func waitForGroupOffsets(t *testing.T, ctx context.Context, client *kadm.Client, group string, expected map[string]int) {
 	t.Helper()
+	timeoutC := time.After(30 * time.Second)
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(30 * time.Second):
+		case <-timeoutC:
 			t.Fatalf("consumer group %s did not reach expected offsets: %+v", group, expected)
 			return
 		case <-time.Tick(100 * time.Millisecond):
