@@ -74,10 +74,10 @@ func Run(ctx context.Context, cfg AppConfig) error {
 		return fmt.Errorf("failed to create writer manager: %w", err)
 	}
 	defer func() {
+		slog.InfoContext(ctx, "Closing partition manager to flush all in progress files ...")
 		//nolint: contextcheck
-		if err := mgr.Close(); err != nil {
-			slog.ErrorContext(ctx, "failed to close manager", "error", err)
-		}
+		err := mgr.Close()
+		slog.InfoContext(ctx, "Finished closing partition manager", "error", err)
 	}()
 
 	client, err := initKafkaClient(cfg, mgr)
@@ -97,7 +97,9 @@ func Run(ctx context.Context, cfg AppConfig) error {
 		return runPauseIdleWriters(ctx, mgr)
 	})
 
-	return eg.Wait()
+	err = eg.Wait()
+	slog.InfoContext(ctx, "Backup application exiting .... running cleanup", "error", err)
+	return err
 }
 
 const maxPollRecords = 10000 // this affects how many records are processed per poll, not how many are fetched from Kafka
