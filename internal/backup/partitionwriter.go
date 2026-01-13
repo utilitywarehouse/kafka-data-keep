@@ -184,12 +184,8 @@ func (p *PartitionWriter) flushLocked(ctx context.Context) error {
 
 	// check if the writer was paused
 	if !p.isPaused() {
-		if err := p.currentEncoder.Close(); err != nil {
-			return fmt.Errorf("failed to flush writer: %w", err)
-		}
-
-		if err := p.currentFile.Close(); err != nil {
-			return fmt.Errorf("failed to close file: %w", err)
+		if err := p.closeLocalFileLocked(); err != nil {
+			return fmt.Errorf("failed closing local file on flush: %w", err)
 		}
 	}
 	// Upload the closed file
@@ -208,8 +204,6 @@ func (p *PartitionWriter) flushLocked(ctx context.Context) error {
 	}
 
 	p.isOpen = false
-	p.currentEncoder = nil
-	p.currentFile = nil
 	p.lastWriteAt = time.Time{}
 
 	return nil
@@ -251,16 +245,26 @@ func (p *PartitionWriter) PauseWhenIdle(ctx context.Context) error {
 	slog.DebugContext(ctx, "closing local file as idle", "filename", p.currentKey)
 
 	// close the local file when the writer is idle
+	if err := p.closeLocalFileLocked(); err != nil {
+		return fmt.Errorf("failed closing local file on idle: %w", err)
+	}
+
+	return nil
+}
+
+func (p *PartitionWriter) closeLocalFileLocked() error {
+	// close the encoder first, so that it will flush
 	if err := p.currentEncoder.Close(); err != nil {
-		return fmt.Errorf("failed closing local encoder when idle: %w", err)
+		return fmt.Errorf("failed closing local encoder: %w", err)
 	}
 
 	if err := p.currentFile.Close(); err != nil {
-		return fmt.Errorf("failed closing file when idle: %w", err)
+		return fmt.Errorf("failed closing file: %w", err)
 	}
 
 	p.currentEncoder = nil
 	p.currentFile = nil
+
 	return nil
 }
 
@@ -272,8 +276,15 @@ func (p *PartitionWriter) isIdle() bool {
 func (p *PartitionWriter) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if err := p.flushLocked(context.Background()); err != nil {
+
+	// don't do a full flush, just close the local file
+	if !p.isOpen || p.isPaused() {
+		return nil
+	}
+
+	if err := p.closeLocalFileLocked(); err != nil {
 		return fmt.Errorf("failed to close writer for partition %s-%d: %w", p.topic, p.partition, err)
 	}
+
 	return nil
 }

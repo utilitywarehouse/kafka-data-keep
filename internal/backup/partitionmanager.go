@@ -61,7 +61,7 @@ func (m *PartitionsWriterManager) OnPartitionsRevoked(ctx context.Context, parti
 			key := partitionWriterKey(topic, partition)
 			w, exists := m.writers[key]
 			if exists {
-				//nolint: contextcheck
+
 				if err := w.Close(); err != nil {
 					slog.ErrorContext(ctx, "failed to close partition writer on revocation", "error", err)
 				}

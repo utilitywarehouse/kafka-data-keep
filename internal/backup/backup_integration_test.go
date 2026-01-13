@@ -142,7 +142,7 @@ func TestBackupIntegration(t *testing.T) {
 		require.Equal(t, expectedFiles, filesFound)
 	})
 
-	t.Run("flush on stopping the app", func(t *testing.T) {
+	t.Run("keep local files when stopping the app", func(t *testing.T) {
 		t.Parallel()
 
 		topic3 := "flush-stop-1"
@@ -160,7 +160,7 @@ func TestBackupIntegration(t *testing.T) {
 			ExcludeTopicsRegex:     "multiple-.*", // exclude the topics from the previous test
 			GroupID:                groupID,
 			PartitionIdleThreshold: 1 * time.Second,
-			MinFileSize:            100 * 1024 * 1024, // use a big limit, so we make sure we flush only on stopping the app
+			MinFileSize:            100 * 1024 * 1024, // use a big limit, so we make sure no flush occurs
 			WorkingDir:             workingDir,
 			S3Bucket:               bucketName,
 			S3Prefix:               s3Prefix,
@@ -192,10 +192,11 @@ func TestBackupIntegration(t *testing.T) {
 
 		stopApp(ctx, t, cancel, errCh)
 
-		filesFound := listFilesOnBucket(ctx, t, s3Client, s3Prefix)
-		require.Len(t, filesFound, 1)
-		// we expect the file to have records, but it might not have consumed all
-		require.LessOrEqual(t, filesFound[fileKey], 10000)
+		// we expect no files on S3
+		require.Empty(t, listFilesOnBucket(ctx, t, s3Client, s3Prefix), "no files should be on S3 after backup was stopped")
+		// we expect that the local file is still there
+		_, err := os.Stat(filepath.Join(workingDir, fileKey))
+		require.NoError(t, err, "Local file should still exist after backup was stopped")
 	})
 
 	t.Run("pause and resume local files", func(t *testing.T) {
@@ -251,10 +252,6 @@ func TestBackupIntegration(t *testing.T) {
 
 		// stop consuming & trigger the flush
 		stopApp(ctx, t, cancel, errCh)
-
-		filesFound := listFilesOnBucket(ctx, t, s3Client, s3Prefix)
-		require.Len(t, filesFound, 1)
-		require.Equal(t, 20, filesFound[fileKey])
 	})
 }
 
@@ -336,9 +333,6 @@ func listFilesOnBucket(ctx context.Context, t *testing.T, s3Client *s3.Client, s
 	// List files in S3
 	listResp, err := s3Client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: aws.String(bucketName), Prefix: aws.String(s3prefix)})
 	require.NoError(t, err)
-	require.NotEmpty(t, listResp.Contents, "expected files in S3 bucket")
-	require.NoError(t, err)
-	require.NotEmpty(t, listResp.Contents, "expected files in S3 bucket")
 
 	t.Logf("Found %d files in S3", len(listResp.Contents))
 

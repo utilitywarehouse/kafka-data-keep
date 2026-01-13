@@ -74,7 +74,6 @@ func Run(ctx context.Context, cfg AppConfig) error {
 		return fmt.Errorf("failed to create writer manager: %w", err)
 	}
 	defer func() {
-		//nolint: contextcheck
 		if err := mgr.Close(); err != nil {
 			slog.ErrorContext(ctx, "failed to close manager", "error", err)
 		}
