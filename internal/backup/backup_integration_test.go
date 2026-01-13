@@ -145,8 +145,8 @@ func TestBackupIntegration(t *testing.T) {
 	t.Run("keep local files when stopping the app", func(t *testing.T) {
 		t.Parallel()
 
-		topic3 := "flush-stop-1"
-		_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, topic3)
+		topic := "flush-stop-1"
+		_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, topic)
 		require.NoError(t, err)
 
 		// Setup backup application config
@@ -181,13 +181,13 @@ func TestBackupIntegration(t *testing.T) {
 		waitConsumerStart(ctx, t, kadmClient, groupID)
 		// write records continuously, but offsets won't be committed, since the file size limit is very high
 		for i := range 10 {
-			writeRecords(t, ctx, adminClient, topic3, 0, 1000, 1000)
+			writeRecords(t, ctx, adminClient, topic, 0, 1000, 1000)
 			require.NoError(t, adminClient.Flush(ctx))
-			t.Logf("Wrote batch of %d records to topic %s", i, topic3)
+			t.Logf("Wrote batch of %d records to topic %s", i, topic)
 			time.Sleep(time.Millisecond * 100)
 		}
 
-		fileKey := fileKey(s3Prefix, topic3, 0, 0)
+		fileKey := fileKey(s3Prefix, topic, 0, 0)
 		waitLocalFileHasRecords(t, ctx, workingDir, fileKey, 10000)
 
 		stopApp(ctx, t, cancel, errCh)
@@ -197,6 +197,77 @@ func TestBackupIntegration(t *testing.T) {
 		// we expect that the local file is still there
 		_, err := os.Stat(filepath.Join(workingDir, fileKey))
 		require.NoError(t, err, "Local file should still exist after backup was stopped")
+	})
+
+	t.Run("overwrite local file when restarting the app", func(t *testing.T) {
+		t.Parallel()
+
+		topic := "overwrite-restart-1"
+		_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, topic)
+		require.NoError(t, err)
+
+		// Setup backup application config
+		workingDir := t.TempDir()
+
+		groupID := newRandomName("test-overwrite-restart")
+		s3Prefix := "flush-on-stop/"
+		cfg := AppConfig{
+			Brokers:                kafkaBrokers,
+			TopicsRegex:            topic,
+			ExcludeTopicsRegex:     "multiple-.*", // exclude the topics from the previous test
+			GroupID:                groupID,
+			PartitionIdleThreshold: 1 * time.Second,
+			MinFileSize:            100 * 1024 * 1024, // use a big limit, so we make sure no flush occurs
+			WorkingDir:             workingDir,
+			S3Bucket:               bucketName,
+			S3Prefix:               s3Prefix,
+			S3Endpoint:             s3Endpoint,
+			S3Region:               testutil.MinioRegion,
+		}
+
+		// Run backup with a cancellable context (no timeout, we'll cancel after second batch)
+		backupCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		// Run backup in a goroutine
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- Run(backupCtx, cfg)
+		}()
+
+		waitConsumerStart(ctx, t, kadmClient, groupID)
+		// write records continuously, but offsets won't be committed, since the file size limit is very high
+		for i := range 10 {
+			writeRecords(t, ctx, adminClient, topic, 0, 1000, 1000)
+			require.NoError(t, adminClient.Flush(ctx))
+			t.Logf("Wrote batch of %d records to topic %s", i, topic)
+			time.Sleep(time.Millisecond * 100)
+		}
+
+		fileKey := fileKey(s3Prefix, topic, 0, 0)
+		waitLocalFileHasRecords(t, ctx, workingDir, fileKey, 10000)
+
+		stopApp(ctx, t, cancel, errCh)
+
+		backupCtx, cancel = context.WithCancel(ctx)
+		defer cancel()
+
+		// start the backup again
+		errCh = make(chan error, 1)
+		go func() {
+			errCh <- Run(backupCtx, cfg)
+		}()
+
+		waitConsumerStart(ctx, t, kadmClient, groupID)
+		// wait until the local file refills with all the records
+		waitLocalFileHasRecords(t, ctx, workingDir, fileKey, 10000)
+
+		// write more records
+		writeRecords(t, ctx, adminClient, topic, 0, 1000, 1000)
+
+		// wait until the local file has the new records
+		waitLocalFileHasRecords(t, ctx, workingDir, fileKey, 11000)
+		stopApp(ctx, t, cancel, errCh)
 	})
 
 	t.Run("pause and resume local files", func(t *testing.T) {
@@ -250,7 +321,7 @@ func TestBackupIntegration(t *testing.T) {
 		// local file should be resumed
 		waitLocalFileHasRecords(t, ctx, workingDir, fileKey, 20)
 
-		// stop consuming & trigger the flush
+		// stop consuming
 		stopApp(ctx, t, cancel, errCh)
 	})
 }
