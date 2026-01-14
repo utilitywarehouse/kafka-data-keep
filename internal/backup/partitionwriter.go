@@ -15,6 +15,8 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/codec"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/metric"
 )
 
 // OffsetCommitter defines the interface for committing offsets.
@@ -45,6 +47,19 @@ type PartitionWriter struct {
 	isOpen bool
 }
 
+var unexpectedLeftoverFilesCounter = initUnexpectedLeftoverFilesCounter()
+
+func initUnexpectedLeftoverFilesCounter() metric.Int64Counter {
+	c, err := otel.Meter("kafka-data-keep").Int64Counter(
+		"kafka.data-keep.unexpected-leftover-files",
+		metric.WithDescription("Number of unexpected leftover local files found"),
+	)
+	if err != nil {
+		panic(fmt.Sprintf("failed to create unexpectedLeftoverFilesCounter metric: %v", err))
+	}
+	return c
+}
+
 func NewPartitionWriter(uploader *Uploader, offsetCommitter OffsetCommitter, config Config, encoderFactory codec.RecordEncoderFactory, decoderFactory codec.RecordDecoderFactory, topic string, partition int32) *PartitionWriter {
 	return &PartitionWriter{
 		uploader:        uploader,
@@ -66,7 +81,7 @@ func (p *PartitionWriter) WriteRecords(ctx context.Context, records []*kgo.Recor
 	defer p.mu.Unlock()
 
 	if !p.isOpen {
-		if err := p.open(records[0].Offset); err != nil {
+		if err := p.open(ctx, records[0].Offset); err != nil {
 			return fmt.Errorf("failed to open file for partition %s-%d: %w", p.topic, p.partition, err)
 		}
 	}
@@ -100,7 +115,7 @@ func (p *PartitionWriter) WriteRecords(ctx context.Context, records []*kgo.Recor
 	return nil
 }
 
-func (p *PartitionWriter) open(offset int64) error {
+func (p *PartitionWriter) open(ctx context.Context, offset int64) error {
 	// Simple masking with 0 padding so that we get the file names in alphabetical order. 19 digits is the maximum we can have in kafka offsets.
 	// Using the first offset in the file name to ensure idempotence when something fails during execution until we commit the offsets after file upload.
 	maskedOffset := fmt.Sprintf("%019d", offset)
@@ -120,7 +135,7 @@ func (p *PartitionWriter) open(offset int64) error {
 		return fmt.Errorf("failed to create directory %s: %w", dir, err)
 	}
 
-	err := p.checkLeftoverLocalFiles(offset, dir)
+	err := p.checkLeftoverLocalFiles(ctx, offset, dir)
 	if err != nil {
 		return fmt.Errorf("failed checking leftover files: %w", err)
 	}
@@ -135,7 +150,7 @@ func (p *PartitionWriter) open(offset int64) error {
 	if err != nil {
 		ferr := f.Close()
 		if ferr != nil {
-			slog.Error("failed closing the opened file", "error", ferr)
+			slog.ErrorContext(ctx, "failed closing the opened file", "error", ferr)
 		}
 		return fmt.Errorf("failed to create encoder: %w", err)
 	}
@@ -149,7 +164,7 @@ func (p *PartitionWriter) open(offset int64) error {
 	return nil
 }
 
-func (p *PartitionWriter) checkLeftoverLocalFiles(currentOffset int64, dir string) error {
+func (p *PartitionWriter) checkLeftoverLocalFiles(ctx context.Context, currentOffset int64, dir string) error {
 	// Check for existing files in the directory
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -164,14 +179,14 @@ func (p *PartitionWriter) checkLeftoverLocalFiles(currentOffset int64, dir strin
 		if err != nil {
 			return fmt.Errorf("failed to get info for file %s: %w", entry.Name(), err)
 		}
-		if err := p.checkLeftoverLocalFile(dir, info, currentOffset); err != nil {
+		if err := p.checkLeftoverLocalFile(ctx, dir, info, currentOffset); err != nil {
 			return fmt.Errorf("failed to check leftover file %s: %w", entry.Name(), err)
 		}
 	}
 	return nil
 }
 
-func (p *PartitionWriter) checkLeftoverLocalFile(dir string, info fs.FileInfo, currentOffset int64) error {
+func (p *PartitionWriter) checkLeftoverLocalFile(ctx context.Context, dir string, info fs.FileInfo, currentOffset int64) error {
 	// check if the file matches the pattern
 	// %s-%d-%s.avro
 	// we are expecting the filename to end with .avro
@@ -195,7 +210,8 @@ func (p *PartitionWriter) checkLeftoverLocalFile(dir string, info fs.FileInfo, c
 	}
 
 	if fileOffset > currentOffset {
-		slog.Warn("Unexpected local file: has higher offset than current offset. Was the consumer group reset?", "file", info.Name(), "file_offset", fileOffset, "current_offset", currentOffset)
+		slog.WarnContext(ctx, "Unexpected local file: has higher offset than current offset. Was the consumer group reset?", "file", info.Name(), "file_offset", fileOffset, "current_offset", currentOffset)
+		unexpectedLeftoverFilesCounter.Add(ctx, 1)
 		return nil
 	}
 
@@ -207,12 +223,14 @@ func (p *PartitionWriter) checkLeftoverLocalFile(dir string, info fs.FileInfo, c
 	}
 
 	if found {
-		slog.Info("Removing older overlapping file", "file", info.Name(), "new_offset", currentOffset)
+		slog.InfoContext(ctx, "Removing older overlapping file", "file", info.Name(), "new_offset", currentOffset)
 		if err := os.Remove(filepath.Join(dir, info.Name())); err != nil {
 			return fmt.Errorf("failed to remove overlapping file %s: %w", info.Name(), err)
 		}
 	} else {
-		slog.Warn("Unexpected local file: file has lower offset, but current offset not found in it", "file", info.Name(), "file_offset", fileOffset, "current_offset", currentOffset)
+		slog.WarnContext(ctx, "Unexpected local file: file has lower offset, but current offset not found in it", "file", info.Name(), "file_offset", fileOffset, "current_offset", currentOffset)
+		unexpectedLeftoverFilesCounter.Add(ctx, 1)
+		return nil
 	}
 
 	return nil
