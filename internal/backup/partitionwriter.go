@@ -3,9 +3,12 @@ package backup
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,6 +27,7 @@ type PartitionWriter struct {
 	offsetCommitter OffsetCommitter
 	config          Config
 	encoderFactory  codec.RecordEncoderFactory
+	decoderFactory  codec.RecordDecoderFactory
 	topic           string
 	partition       int32
 
@@ -41,12 +45,13 @@ type PartitionWriter struct {
 	isOpen bool
 }
 
-func NewPartitionWriter(uploader *Uploader, offsetCommitter OffsetCommitter, config Config, encoderFactory codec.RecordEncoderFactory, topic string, partition int32) *PartitionWriter {
+func NewPartitionWriter(uploader *Uploader, offsetCommitter OffsetCommitter, config Config, encoderFactory codec.RecordEncoderFactory, decoderFactory codec.RecordDecoderFactory, topic string, partition int32) *PartitionWriter {
 	return &PartitionWriter{
 		uploader:        uploader,
 		offsetCommitter: offsetCommitter,
 		config:          config,
 		encoderFactory:  encoderFactory,
+		decoderFactory:  decoderFactory,
 		topic:           topic,
 		partition:       partition,
 	}
@@ -115,6 +120,11 @@ func (p *PartitionWriter) open(offset int64) error {
 		return fmt.Errorf("failed to create directory %s: %w", dir, err)
 	}
 
+	err := p.checkLeftoverLocalFiles(offset, dir)
+	if err != nil {
+		return fmt.Errorf("failed checking leftover files: %w", err)
+	}
+
 	// overwrite file if it exists already
 	f, err := os.Create(localPath)
 	if err != nil {
@@ -137,6 +147,105 @@ func (p *PartitionWriter) open(offset int64) error {
 	p.isOpen = true
 	p.lastWriteAt = time.Time{}
 	return nil
+}
+
+func (p *PartitionWriter) checkLeftoverLocalFiles(currentOffset int64, dir string) error {
+	// Check for existing files in the directory
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return fmt.Errorf("failed to read directory %s: %w", dir, err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return fmt.Errorf("failed to get info for file %s: %w", entry.Name(), err)
+		}
+		if err := p.checkLeftoverLocalFile(dir, info, currentOffset); err != nil {
+			return fmt.Errorf("failed to check leftover file %s: %w", entry.Name(), err)
+		}
+	}
+	return nil
+}
+
+func (p *PartitionWriter) checkLeftoverLocalFile(dir string, info fs.FileInfo, currentOffset int64) error {
+	// check if the file matches the pattern
+	// %s-%d-%s.avro
+	// we are expecting the filename to end with .avro
+	if filepath.Ext(info.Name()) != ".avro" {
+		return nil
+	}
+	// split the filename to get the offset
+	parts := strings.Split(strings.TrimSuffix(info.Name(), ".avro"), "-")
+	if len(parts) < 3 {
+		return fmt.Errorf("unexpected file name %s. Expected in the format {topic_name}-{partition}-{masked_offset}.avro", info.Name())
+	}
+	// parsing the last part
+	lastPart := parts[len(parts)-1]
+	fileOffset, err := strconv.ParseInt(lastPart, 10, 64)
+	if err != nil {
+		return fmt.Errorf("failed to parse offset from file name %s: %w", info.Name(), err)
+	}
+
+	if fileOffset == currentOffset { // this is expected, the file will be overwritten
+		return nil
+	}
+
+	if fileOffset > currentOffset {
+		slog.Warn("Unexpected local file: has higher offset than current offset. Was the consumer group reset?", "file", info.Name(), "file_offset", fileOffset, "current_offset", currentOffset)
+		return nil
+	}
+
+	// check if we're in the situation when the start offset advanced on the partition, due to retention time or compaction.
+	filePath := filepath.Join(dir, info.Name())
+	found, err := fileContainsOffset(filePath, fileOffset, p.decoderFactory)
+	if err != nil {
+		return fmt.Errorf("failed to check if file %s contains offset %d: %w", info.Name(), fileOffset, err)
+	}
+
+	if found {
+		slog.Info("Removing older overlapping file", "file", info.Name(), "new_offset", currentOffset)
+		if err := os.Remove(filepath.Join(dir, info.Name())); err != nil {
+			return fmt.Errorf("failed to remove overlapping file %s: %w", info.Name(), err)
+		}
+	} else {
+		slog.Warn("Unexpected local file: file has lower offset, but current offset not found in it", "file", info.Name(), "file_offset", fileOffset, "current_offset", currentOffset)
+	}
+
+	return nil
+}
+
+func fileContainsOffset(filePath string, offset int64, decoderFact codec.RecordDecoderFactory) (bool, error) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return false, fmt.Errorf("failed to open file %s: %w", filePath, err)
+	}
+
+	defer func() {
+		if err := f.Close(); err != nil {
+			slog.Error("failed closing file", "error", err)
+		}
+	}()
+
+	dec, err := decoderFact.New(f)
+	if err != nil {
+		return false, fmt.Errorf("failed to create decoder: %w", err)
+	}
+
+	for dec.HasNext() {
+		rec, err := dec.Decode()
+		if err != nil {
+			return false, fmt.Errorf("failed to decode record: %w", err)
+		}
+		if rec.Offset == offset {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 func (p *PartitionWriter) resumeLocalFile(ctx context.Context) error {

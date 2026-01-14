@@ -69,7 +69,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	}
 
 	// Create manager first
-	mgr, err := NewPartitionsWriterManager(uploader, &avro.RecordEncoderFactory{}, wConfig)
+	mgr, err := NewPartitionsWriterManager(uploader, &avro.RecordEncoderFactory{}, &avro.RecordDecoderFactory{}, wConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create writer manager: %w", err)
 	}

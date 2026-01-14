@@ -22,16 +22,18 @@ type PartitionsWriterManager struct {
 	uploader       *Uploader
 	config         Config
 	encoderFactory codec.RecordEncoderFactory
+	decoderFactory codec.RecordDecoderFactory
 
 	mu      sync.Mutex
 	writers map[string]*PartitionWriter
 }
 
-func NewPartitionsWriterManager(uploader *Uploader, encoderFactory codec.RecordEncoderFactory, config Config) (*PartitionsWriterManager, error) {
+func NewPartitionsWriterManager(uploader *Uploader, encoderFactory codec.RecordEncoderFactory, decoderFactory codec.RecordDecoderFactory, config Config) (*PartitionsWriterManager, error) {
 	m := &PartitionsWriterManager{
 		uploader:       uploader,
 		config:         config,
 		encoderFactory: encoderFactory,
+		decoderFactory: decoderFactory,
 		writers:        make(map[string]*PartitionWriter),
 	}
 
@@ -46,7 +48,7 @@ func (m *PartitionsWriterManager) OnPartitionsAssigned(committer OffsetCommitter
 		for _, partition := range parts {
 			key := partitionWriterKey(topic, partition)
 			if _, exists := m.writers[key]; !exists {
-				m.writers[key] = NewPartitionWriter(m.uploader, committer, m.config, m.encoderFactory, topic, partition)
+				m.writers[key] = NewPartitionWriter(m.uploader, committer, m.config, m.encoderFactory, m.decoderFactory, topic, partition)
 			}
 		}
 	}
@@ -61,7 +63,6 @@ func (m *PartitionsWriterManager) OnPartitionsRevoked(ctx context.Context, parti
 			key := partitionWriterKey(topic, partition)
 			w, exists := m.writers[key]
 			if exists {
-
 				if err := w.Close(); err != nil {
 					slog.ErrorContext(ctx, "failed to close partition writer on revocation", "error", err)
 				}
