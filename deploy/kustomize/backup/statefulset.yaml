@@ -19,6 +19,8 @@ spec:
   updateStrategy:
     type: RollingUpdate
     rollingUpdate:
+      # It requires the MaxUnavailableStatefulSet feature gate set to true.
+      # This is supported since 1.24, and it defaults to true from 1.35
       maxUnavailable: 100%
   selector:
     matchLabels:
