@@ -122,7 +122,7 @@ func (p *PartitionWriter) open(ctx context.Context, offset int64) error {
 	filename := fmt.Sprintf("%s-%d-%s.avro", p.topic, p.partition, maskedOffset)
 
 	// Key for S3 (relative path)
-	key := filepath.Join(p.config.S3Prefix, p.topic, fmt.Sprintf("%d", p.partition), filename)
+	key := p.s3Key(filename)
 	p.currentKey = key
 
 	// Full local path
@@ -162,6 +162,10 @@ func (p *PartitionWriter) open(ctx context.Context, offset int64) error {
 	p.isOpen = true
 	p.lastWriteAt = time.Time{}
 	return nil
+}
+
+func (p *PartitionWriter) s3Key(filename string) string {
+	return filepath.Join(p.config.S3Prefix, p.topic, fmt.Sprintf("%d", p.partition), filename)
 }
 
 func (p *PartitionWriter) checkLeftoverLocalFiles(ctx context.Context, currentOffset int64, dir string) error {
@@ -216,23 +220,64 @@ func (p *PartitionWriter) checkLeftoverLocalFile(ctx context.Context, dir string
 	}
 
 	// check if we're in the situation when the start offset advanced on the partition, due to retention time or compaction.
+	handled, err := p.checkLeftoverDueToStartOffsetAdvance(ctx, dir, info, currentOffset)
+	if handled || err != nil {
+		return err
+	}
+
+	// check if the file starting with this offset was already uploaded to S3 but from another node
+	handled, err = p.checkLeftoverDueToUpload(ctx, dir, info.Name())
+	if handled || err != nil {
+		return err
+	}
+
+	slog.WarnContext(ctx, "Unexpected local file with lower offset than current one", "file", info.Name(), "file_offset", fileOffset, "current_offset", currentOffset)
+	unexpectedLeftoverFilesCounter.Add(ctx, 1)
+	return nil
+}
+
+func (p *PartitionWriter) checkLeftoverDueToStartOffsetAdvance(ctx context.Context, dir string, info fs.FileInfo, currentOffset int64) (bool, error) {
 	filePath := filepath.Join(dir, info.Name())
-	found, err := fileContainsOffset(filePath, fileOffset, p.decoderFactory)
+	found, err := fileContainsOffset(filePath, currentOffset, p.decoderFactory)
 	if err != nil {
-		return fmt.Errorf("failed to check if file %s contains offset %d: %w", info.Name(), fileOffset, err)
+		return false, fmt.Errorf("failed to check if file %s contains offset %d: %w", filePath, currentOffset, err)
 	}
 
-	if found {
-		slog.InfoContext(ctx, "Removing older overlapping file", "file", info.Name(), "new_offset", currentOffset)
-		if err := os.Remove(filepath.Join(dir, info.Name())); err != nil {
-			return fmt.Errorf("failed to remove overlapping file %s: %w", info.Name(), err)
+	if !found {
+		return false, nil
+	}
+
+	err = removeLeftoverFile(ctx, filePath, "start offset advanced on same consumer")
+	if err != nil {
+		return true, err
+	}
+
+	return true, nil
+}
+
+func (p *PartitionWriter) checkLeftoverDueToUpload(ctx context.Context, dir string, fileName string) (bool, error) {
+	key := p.s3Key(fileName)
+
+	exists, err := p.uploader.FileExists(ctx, key)
+	if err != nil {
+		return false, fmt.Errorf("failed to check if file exists in S3: %w", err)
+	}
+
+	if exists {
+		if err := removeLeftoverFile(ctx, filepath.Join(dir, fileName), "uploaded to S3 from another pod"); err != nil {
+			return true, err
 		}
-	} else {
-		slog.WarnContext(ctx, "Unexpected local file: file has lower offset, but current offset not found in it", "file", info.Name(), "file_offset", fileOffset, "current_offset", currentOffset)
-		unexpectedLeftoverFilesCounter.Add(ctx, 1)
-		return nil
+		return true, nil
 	}
 
+	return false, nil
+}
+
+func removeLeftoverFile(ctx context.Context, filePath string, reason string) error {
+	slog.InfoContext(ctx, "Removing leftover file", "file", filePath, "reason", reason)
+	if err := os.Remove(filePath); err != nil {
+		return fmt.Errorf("failed to remove leftover (due to %s) file %s: %w", reason, filePath, err)
+	}
 	return nil
 }
 
