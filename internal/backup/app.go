@@ -113,7 +113,7 @@ func initKafkaClient(cfg AppConfig, mgr *PartitionsWriterManager) (*kafka.Client
 		kgo.DisableAutoCommit(),    // We will commit manually
 		kgo.BlockRebalanceOnPoll(), // block rebalance while processing records
 		kgo.OnPartitionsAssigned(func(ctx context.Context, c *kgo.Client, p map[string][]int32) {
-			mgr.OnPartitionsAssigned(c, p)
+			mgr.OnPartitionsAssigned(ctx, c, p)
 		}),
 		kgo.OnPartitionsRevoked(func(ctx context.Context, c *kgo.Client, p map[string][]int32) {
 			mgr.OnPartitionsRevoked(ctx, p)
