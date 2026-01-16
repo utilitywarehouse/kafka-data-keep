@@ -71,7 +71,7 @@ func TestBackupIntegration(t *testing.T) {
 
 		topic1 := "multiple-1"
 		topic2 := "multiple-2"
-		_, err = kadmClient.CreateTopic(ctx, 2, 1, nil, topic1)
+		_, err := kadmClient.CreateTopic(ctx, 2, 1, nil, topic1)
 		require.NoError(t, err)
 
 		_, err = kadmClient.CreateTopic(ctx, 2, 1, nil, topic2)
@@ -149,7 +149,7 @@ func TestBackupIntegration(t *testing.T) {
 		t.Parallel()
 
 		topic := "keep-local-on-stop-1"
-		_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, topic)
+		_, err := kadmClient.CreateTopic(ctx, 1, 1, nil, topic)
 		require.NoError(t, err)
 
 		// Setup backup application config
@@ -193,7 +193,7 @@ func TestBackupIntegration(t *testing.T) {
 		// we expect no files on S3
 		require.Empty(t, listFilesOnBucket(ctx, t, s3Client, s3Prefix), "no files should be on S3 after backup was stopped")
 		// we expect that the local file is still there
-		_, err := os.Stat(filepath.Join(workingDir, fileKey))
+		_, err = os.Stat(filepath.Join(workingDir, fileKey))
 		require.NoError(t, err, "Local file should still exist after backup was stopped")
 	})
 
@@ -201,7 +201,7 @@ func TestBackupIntegration(t *testing.T) {
 		t.Parallel()
 
 		topic := "overwrite-restart-1"
-		_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, topic)
+		_, err := kadmClient.CreateTopic(ctx, 1, 1, nil, topic)
 		require.NoError(t, err)
 
 		// Setup backup application config
@@ -269,7 +269,7 @@ func TestBackupIntegration(t *testing.T) {
 		t.Parallel()
 
 		topic := "delete-old-local-on-offset-advance-1"
-		_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, topic)
+		_, err := kadmClient.CreateTopic(ctx, 1, 1, nil, topic)
 		require.NoError(t, err)
 
 		// Setup backup application config
@@ -347,7 +347,7 @@ func TestBackupIntegration(t *testing.T) {
 		t.Parallel()
 
 		topic1 := "delete-leftover-initial-topic"
-		_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, topic1)
+		_, err := kadmClient.CreateTopic(ctx, 1, 1, nil, topic1)
 		require.NoError(t, err)
 
 		// Setup backup application config
@@ -419,7 +419,7 @@ func TestBackupIntegration(t *testing.T) {
 		t.Parallel()
 
 		topic4 := "pause-resume-1"
-		_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, topic4)
+		_, err := kadmClient.CreateTopic(ctx, 1, 1, nil, topic4)
 		require.NoError(t, err)
 
 		// Setup backup application config
@@ -483,7 +483,7 @@ func TestBackupIntegration(t *testing.T) {
 		initialValue := readCounterValue(t, reader, "kafka-data-keep", "kafka.data-keep.unexpected-leftover-files")
 
 		topic := "unexpected-leftover-file"
-		_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, topic)
+		_, err := kadmClient.CreateTopic(ctx, 1, 1, nil, topic)
 		require.NoError(t, err)
 
 		// Setup backup application config
@@ -538,7 +538,7 @@ func TestBackupIntegration(t *testing.T) {
 		waitForGroupOffsets(t, ctx, kadmClient, groupID, map[string]int{topic: 150})
 		stopApp(ctx, t, cancel, errCh)
 
-		_, err := os.Stat(leftoverLocalFile)
+		_, err = os.Stat(leftoverLocalFile)
 		require.NoError(t, err, "the unexpected local file should exist")
 
 		updatedValue := readCounterValue(t, reader, "kafka-data-keep", "kafka.data-keep.unexpected-leftover-files")
