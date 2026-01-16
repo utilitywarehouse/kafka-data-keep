@@ -182,16 +182,11 @@ func TestBackupIntegration(t *testing.T) {
 		}()
 
 		waitConsumerStart(ctx, t, kadmClient, groupID)
-		// write records continuously, but offsets won't be committed, since the file size limit is very high
-		for i := range 10 {
-			writeRecords(t, ctx, adminClient, topic, 0, 1000, 1000)
-			require.NoError(t, adminClient.Flush(ctx))
-			t.Logf("Wrote batch of %d records to topic %s", i, topic)
-			time.Sleep(time.Millisecond * 100)
-		}
+		// write records, and the file won't be flushed since the file size limit is very high
+		writeRecords(t, ctx, adminClient, topic, 0, 1000, 1000)
 
 		fileKey := fileKey(s3Prefix, topic, 0, 0)
-		waitLocalFileHasRecords(t, ctx, workingDir, fileKey, 10000)
+		waitLocalFileHasRecords(t, ctx, workingDir, fileKey, 1000)
 
 		stopApp(ctx, t, cancel, errCh)
 
@@ -345,6 +340,78 @@ func TestBackupIntegration(t *testing.T) {
 
 		// wait until the new local file has the new records
 		waitLocalFileHasRecords(t, ctx, workingDir, fileKey2, 1900)
+		stopApp(ctx, t, cancel, errCh)
+	})
+
+	t.Run("remove leftover partitions folders", func(t *testing.T) {
+		t.Parallel()
+
+		topic1 := "delete-leftover-initial-topic"
+		_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, topic1)
+		require.NoError(t, err)
+
+		// Setup backup application config
+		workingDir := t.TempDir()
+
+		groupID := newRandomName("delete-leftover-paritition-folders")
+		s3Prefix := "delete-leftover-paritition-folders/"
+		cfg := AppConfig{
+			Brokers:                kafkaBrokers,
+			TopicsRegex:            topic1,
+			ExcludeTopicsRegex:     "multiple-.*", // exclude the topics from the previous test
+			GroupID:                groupID,
+			PartitionIdleThreshold: 1 * time.Second,
+			MinFileSize:            100 * 1024 * 1024, // use a big limit, so we make sure no flush occurs
+			WorkingDir:             workingDir,
+			S3Bucket:               bucketName,
+			S3Prefix:               s3Prefix,
+			S3Endpoint:             s3Endpoint,
+			S3Region:               testutil.MinioRegion,
+		}
+
+		// Run backup with a cancellable context (no timeout, we'll cancel after second batch)
+		firstRunCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		// Run backup in a goroutine
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- Run(firstRunCtx, cfg)
+		}()
+
+		waitConsumerStart(ctx, t, kadmClient, groupID)
+		// write records, but offsets won't be committed, since the file size limit is very high
+		writeRecords(t, ctx, adminClient, topic1, 0, 1000, 1000)
+
+		fileKey1 := fileKey(s3Prefix, topic1, 0, 0)
+		waitLocalFileHasRecords(t, ctx, workingDir, fileKey1, 1000)
+
+		stopApp(ctx, t, cancel, errCh)
+
+		topic2 := "delete-leftover-second-topic"
+		_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, topic2)
+		require.NoError(t, err)
+
+		writeRecords(t, ctx, adminClient, topic2, 0, 1000, 1000)
+
+		// consume another topic
+		secondRunCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		// start the backup again to consume the second topic.
+		// The former partitions folder from topic1 should be deleted once the new partitions are assigned
+		cfg.TopicsRegex = topic2
+		errCh = make(chan error, 1)
+		go func() {
+			errCh <- Run(secondRunCtx, cfg)
+		}()
+
+		waitConsumerStart(ctx, t, kadmClient, groupID)
+
+		// check that the folder of topic1 partition 0 was removed
+		_, err = os.Stat(filepath.Dir(filepath.Join(workingDir, fileKey1)))
+		require.ErrorIs(t, err, os.ErrNotExist, "old file should not exist anymore")
+
 		stopApp(ctx, t, cancel, errCh)
 	})
 
