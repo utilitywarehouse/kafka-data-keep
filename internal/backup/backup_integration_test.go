@@ -19,6 +19,9 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/codec/avro"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/testutil"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
 func init() {
@@ -267,7 +270,7 @@ func TestBackupIntegration(t *testing.T) {
 		stopApp(ctx, t, cancel, errCh)
 	})
 
-	t.Run("remove old file on restart when offset is advanced", func(t *testing.T) {
+	t.Run("remove leftover file on offset advance", func(t *testing.T) {
 		t.Parallel()
 
 		topic := "delete-old-local-on-offset-advance-1"
@@ -399,6 +402,117 @@ func TestBackupIntegration(t *testing.T) {
 		// stop consuming
 		stopApp(ctx, t, cancel, errCh)
 	})
+
+	t.Run("unexpected leftover file", func(t *testing.T) {
+		t.Parallel()
+
+		// rig the meter provider, so we can check the counter value
+		origProvider := otel.GetMeterProvider()
+		defer func() { otel.SetMeterProvider(origProvider) }()
+
+		reader := metric.NewManualReader()
+		otel.SetMeterProvider(metric.NewMeterProvider(metric.WithReader(reader)))
+
+		initialValue := readCounterValue(t, reader, "kafka-data-keep", "kafka.data-keep.unexpected-leftover-files")
+
+		topic := "unexpected-leftover-file"
+		_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, topic)
+		require.NoError(t, err)
+
+		// Setup backup application config
+		workingDir := t.TempDir()
+
+		groupID := newRandomName("unexpected-leftover-file")
+		s3Prefix := "unexpected-leftover-file/"
+		cfg := AppConfig{
+			Brokers:                kafkaBrokers,
+			TopicsRegex:            topic,
+			ExcludeTopicsRegex:     "multiple-.*",
+			GroupID:                groupID,
+			PartitionIdleThreshold: 1 * time.Second,
+			MinFileSize:            1, // use a small limit
+			WorkingDir:             workingDir,
+			S3Bucket:               bucketName,
+			S3Prefix:               s3Prefix,
+			S3Endpoint:             s3Endpoint,
+			S3Region:               testutil.MinioRegion,
+		}
+
+		// write 150 records
+		writeRecords(t, ctx, adminClient, topic, 0, 150, 1000)
+
+		// delete the first 100 records
+		delMap := make(kadm.Offsets)
+		delMap.Add(kadm.Offset{Topic: topic, Partition: 0, At: 100})
+		_, err = kadmClient.DeleteRecords(ctx, delMap)
+		require.NoError(t, err)
+
+		// Create a local avro file with zero entries corresponding to the zero offset
+		leftoverFileKey := fileKey(s3Prefix, topic, 0, 0)
+		leftoverLocalFile := filepath.Join(workingDir, leftoverFileKey)
+
+		createEmptyAvroFile(t, leftoverLocalFile)
+
+		// Run backup with a cancellable context
+		backupCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		// Run backup in a goroutine
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- Run(backupCtx, cfg)
+		}()
+
+		waitConsumerStart(ctx, t, kadmClient, groupID)
+
+		// The backup finds the local file starting at 0, that is less than the current offset (100).
+		// Since it's not in S3, it should just log a warning message and increase the counter
+
+		waitForGroupOffsets(t, ctx, kadmClient, groupID, map[string]int{topic: 150})
+		stopApp(ctx, t, cancel, errCh)
+
+		_, err := os.Stat(leftoverLocalFile)
+		require.NoError(t, err, "the unexpected local file should exist")
+
+		updatedValue := readCounterValue(t, reader, "kafka-data-keep", "kafka.data-keep.unexpected-leftover-files")
+		require.Equal(t, initialValue+1, updatedValue, "Counter should have been incremented")
+	})
+}
+
+// Helper to navigate the OTel data tree
+func readCounterValue(t *testing.T, reader *metric.ManualReader, scopeName string, metricName string) int64 {
+	t.Helper()
+	var rm metricdata.ResourceMetrics
+	require.NoError(t, reader.Collect(context.Background(), &rm))
+
+	for _, sm := range rm.ScopeMetrics {
+		if sm.Scope.Name == scopeName {
+			for _, m := range sm.Metrics {
+				if m.Name == metricName {
+					if data, ok := m.Data.(metricdata.Sum[int64]); ok {
+						if len(data.DataPoints) > 0 {
+							return data.DataPoints[0].Value
+						}
+					}
+				}
+			}
+		}
+	}
+	return 0
+}
+
+func createEmptyAvroFile(t *testing.T, file string) {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(filepath.Dir(file), 0o755))
+	f, err := os.Create(file)
+	require.NoError(t, err)
+
+	// Create a valid empty Avro file
+	encFactory := &avro.RecordEncoderFactory{}
+	enc, err := encFactory.New(f)
+	require.NoError(t, err)
+	require.NoError(t, enc.Close())
+	require.NoError(t, f.Close())
 }
 
 func waitLocalFileHasRecords(t *testing.T, ctx context.Context, dir string, fileKey string, howMany int) {
