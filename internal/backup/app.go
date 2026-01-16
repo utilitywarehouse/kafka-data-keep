@@ -74,7 +74,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 		return fmt.Errorf("failed to create writer manager: %w", err)
 	}
 	defer func() {
-		slog.InfoContext(ctx, "Closing partition manager to flush all in progress files ...")
+		slog.InfoContext(ctx, "Closing partition manager ...")
 		err := mgr.Close()
 		slog.InfoContext(ctx, "Finished closing partition manager", "error", err)
 	}()
