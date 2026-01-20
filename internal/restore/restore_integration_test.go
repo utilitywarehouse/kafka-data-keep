@@ -3,12 +3,14 @@ package restore_test
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
+	"log/slog"
 	"math/big"
+	"os"
 	"testing"
 	"time"
 
-	"errors"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/google/uuid"
@@ -19,8 +21,6 @@ import (
 	"github.com/utilitywarehouse/kafka-data-keep/internal/planrestore"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/restore"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/testutil"
-	"log/slog"
-	"os"
 )
 
 func init() {
@@ -207,6 +207,7 @@ func TestRestoreE2E(t *testing.T) {
 }
 
 func expectHeader(t *testing.T, r *kgo.Record, headerName string, value string) {
+	t.Helper()
 	for _, h := range r.Headers {
 		if h.Key == headerName {
 			require.Equal(t, value, string(h.Value), "Header value mismatch")
