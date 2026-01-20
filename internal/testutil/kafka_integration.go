@@ -121,6 +121,7 @@ func WaitForRecords(ctx context.Context, t *testing.T, topic string, kafkaBroker
 		select {
 		case <-timeout:
 			t.Fatalf("timed out waiting for %d records, got %d", expectedCount, len(records))
+			return nil, nil
 		default:
 			if len(records) >= expectedCount {
 				return records, nil

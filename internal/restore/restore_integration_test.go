@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"errors"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/google/uuid"
@@ -18,7 +19,16 @@ import (
 	"github.com/utilitywarehouse/kafka-data-keep/internal/planrestore"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/restore"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/testutil"
+	"log/slog"
+	"os"
 )
+
+func init() {
+	// Enable debug logging for slog
+	slog.SetDefault(
+		slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})),
+	)
+}
 
 func TestRestoreE2E(t *testing.T) {
 	if testing.Short() {
@@ -96,9 +106,9 @@ func TestRestoreE2E(t *testing.T) {
 
 	stopApp(ctx, t, backupCancel, backupErrCh)
 
-	// Create the plan Topic (15 partitions)
+	// Create the plan Topic (5 partitions)
 	planTopic := "e2e-plan-topic"
-	_, err = kadmClient.CreateTopic(ctx, int32(partitions), 1, nil, planTopic)
+	_, err = kadmClient.CreateTopic(ctx, 5, 1, nil, planTopic)
 	require.NoError(t, err)
 
 	// Run Plan Restore
@@ -140,10 +150,30 @@ func TestRestoreE2E(t *testing.T) {
 		restoreErrCh <- restore.Run(restoreCtx, restoreCfg)
 	}()
 
-	restoredRecs, err := testutil.WaitForRecords(ctx, t, restoredTopic, kafkaBrokers, totalRecords)
+	/*	pause the restore after some records were restored */
+	_, err = testutil.WaitForRecords(ctx, t, restoredTopic, kafkaBrokers, totalRecords/10)
 	require.NoError(t, err)
 
 	stopApp(ctx, t, restoreCancel, restoreErrCh)
+
+	// rewind the offsets in the plan topic to the beginning so that we force it to reconsume the messages to check the resume mechanism
+	ts := make(kadm.TopicsSet)
+	ts.Add(planTopic)
+	_, err = kadmClient.DeleteOffsets(ctx, restoreGroup, ts)
+	require.NoError(t, err)
+
+	// start again the restore
+	resumeRestoreCtx, resumeRestoreCancel := context.WithCancel(ctx)
+	defer resumeRestoreCancel()
+	resumeRestoreErrCh := make(chan error, 1)
+	go func() {
+		resumeRestoreErrCh <- restore.Run(resumeRestoreCtx, restoreCfg)
+	}()
+
+	restoredRecs, err := testutil.WaitForRecords(ctx, t, restoredTopic, kafkaBrokers, totalRecords)
+	require.NoError(t, err)
+
+	stopApp(ctx, t, resumeRestoreCancel, resumeRestoreErrCh)
 
 	// Check distribution and content
 	counts := make(map[int]int)
@@ -248,8 +278,11 @@ func stopApp(ctx context.Context, t *testing.T, cancel context.CancelFunc, errCh
 	case <-ctx.Done():
 		return
 	case err := <-errCh:
-		require.NoError(t, err, "backup returned unexpected error")
+		if errors.Is(err, context.Canceled) {
+			return
+		}
+		require.NoError(t, err, "app returned unexpected error")
 	case <-time.After(10 * time.Second):
-		t.Fatal("backup did not finish after cancellation")
+		t.Fatal("app did not finish after cancellation")
 	}
 }

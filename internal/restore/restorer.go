@@ -39,7 +39,8 @@ func (r *kafkaS3Restorer) Run(ctx context.Context) error {
 }
 
 func (r *kafkaS3Restorer) restoreFile(ctx context.Context, key string) error {
-	getResp, err := r.s3Client.GetObject(ctx, &s3.GetObjectInput{
+	// use background context as otherwise, if the context is canceled, it fails when decoding the file
+	getResp, err := r.s3Client.GetObject(context.Background(), &s3.GetObjectInput{
 		Bucket: aws.String(r.cfg.S3Bucket),
 		Key:    aws.String(key),
 	})
