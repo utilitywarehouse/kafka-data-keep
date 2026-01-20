@@ -2,14 +2,15 @@ package planrestore
 
 import (
 	"context"
+	"strings"
+	"testing"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/testutil"
-	"strings"
-	"testing"
 )
 
 func TestPlanRestoreIntegration(t *testing.T) {
@@ -87,7 +88,7 @@ func TestPlanRestoreIntegration(t *testing.T) {
 		},
 	}
 
-	records, err := testutil.WaitForRecords(t, ctx, planTopic, kafkaBrokers, totalMapValues(expectedMap))
+	records, err := testutil.WaitForRecords(ctx, t, planTopic, kafkaBrokers, totalMapValues(expectedMap))
 	require.NoError(t, err)
 
 	checkPlannedEntries(t, expectedMap, records)
@@ -130,7 +131,7 @@ func TestPlanRestoreIntegration(t *testing.T) {
 		},
 	}
 
-	records, err = testutil.WaitForRecords(t, ctx, planTopic, kafkaBrokers, totalMapValues(expectedMap))
+	records, err = testutil.WaitForRecords(ctx, t, planTopic, kafkaBrokers, totalMapValues(expectedMap))
 	require.NoError(t, err)
 
 	checkPlannedEntries(t, expectedMap, records)

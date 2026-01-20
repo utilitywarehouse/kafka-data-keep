@@ -115,7 +115,7 @@ func TestBackupIntegration(t *testing.T) {
 		require.NoError(t, adminClient.Flush(ctx))
 
 		// Wait until these records are consumed
-		testutil.WaitForGroupOffsets(t, ctx, kadmClient, groupID, map[string]int{topic1: 30, topic2: 50})
+		testutil.WaitForGroupOffsets(ctx, t, kadmClient, groupID, map[string]int{topic1: 30, topic2: 50})
 
 		// Second batch of records
 		writeRecords(t, ctx, adminClient, topic1, 0, 20, cfg.MinFileSize)
@@ -125,7 +125,7 @@ func TestBackupIntegration(t *testing.T) {
 		require.NoError(t, adminClient.Flush(ctx))
 
 		// Wait until the second batch is consumed
-		testutil.WaitForGroupOffsets(t, ctx, kadmClient, groupID, map[string]int{topic1: 60, topic2: 120})
+		testutil.WaitForGroupOffsets(ctx, t, kadmClient, groupID, map[string]int{topic1: 60, topic2: 120})
 
 		stopApp(ctx, t, cancel, errCh)
 
@@ -534,7 +534,7 @@ func TestBackupIntegration(t *testing.T) {
 
 		// The backup finds the local file starting at 0, that is less than the current offset (100).
 		// Since it's not in S3, it should just log a warning message and increase the counter
-		testutil.WaitForGroupOffsets(t, ctx, kadmClient, groupID, map[string]int{topic: 150})
+		testutil.WaitForGroupOffsets(ctx, t, kadmClient, groupID, map[string]int{topic: 150})
 		stopApp(ctx, t, cancel, errCh)
 
 		_, err = os.Stat(leftoverLocalFile)

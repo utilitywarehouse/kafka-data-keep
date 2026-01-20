@@ -2,7 +2,9 @@ package restore_test
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
+	"math/big"
 	"testing"
 	"time"
 
@@ -16,7 +18,6 @@ import (
 	"github.com/utilitywarehouse/kafka-data-keep/internal/planrestore"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/restore"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/testutil"
-	"math/rand"
 )
 
 func TestRestoreE2E(t *testing.T) {
@@ -24,6 +25,7 @@ func TestRestoreE2E(t *testing.T) {
 		t.Skip("Skipping e2e test in short mode")
 	}
 
+	t.Parallel()
 	ctx := context.Background()
 
 	// 1. Start Services
@@ -90,7 +92,7 @@ func TestRestoreE2E(t *testing.T) {
 
 	totalRecsPerPartition := writeSequencedRecords(t, ctx, producerClient, srcTopic, partitions, 10)
 	totalRecords := total(totalRecsPerPartition)
-	testutil.WaitForGroupOffsets(t, ctx, kadmClient, backupGroup, map[string]int{srcTopic: totalRecords})
+	testutil.WaitForGroupOffsets(ctx, t, kadmClient, backupGroup, map[string]int{srcTopic: totalRecords})
 
 	stopApp(ctx, t, backupCancel, backupErrCh)
 
@@ -138,26 +140,26 @@ func TestRestoreE2E(t *testing.T) {
 		restoreErrCh <- restore.Run(restoreCtx, restoreCfg)
 	}()
 
-	restoredRecs, err := testutil.WaitForRecords(t, ctx, restoredTopic, kafkaBrokers, totalRecords)
+	restoredRecs, err := testutil.WaitForRecords(ctx, t, restoredTopic, kafkaBrokers, totalRecords)
 	require.NoError(t, err)
 
 	stopApp(ctx, t, restoreCancel, restoreErrCh)
 
 	// Check distribution and content
-	counts := make(map[int32]int)
-	recsByPartition := make(map[int32][]*kgo.Record)
+	counts := make(map[int]int)
+	recsByPartition := make(map[int][]*kgo.Record)
 
 	for _, r := range restoredRecs {
-		counts[r.Partition]++
-		recsByPartition[r.Partition] = append(recsByPartition[r.Partition], r)
+		counts[int(r.Partition)]++
+		recsByPartition[int(r.Partition)] = append(recsByPartition[int(r.Partition)], r)
 	}
 
-	require.Equal(t, partitions, len(counts), "Should have messages in all partitions")
-	for p := 0; p < partitions; p++ {
-		require.Equal(t, totalRecsPerPartition[p], counts[int32(p)], "Partition %d count mismatch", p)
+	require.Len(t, counts, partitions, "Should have messages in all partitions")
+	for p := range partitions {
+		require.Equal(t, totalRecsPerPartition[p], counts[p], "Partition %d count mismatch", p)
 
 		// check ordering and content
-		pRecs := recsByPartition[int32(p)]
+		pRecs := recsByPartition[p]
 
 		// We expect strict order per partition
 		currentIdx := 0
@@ -192,13 +194,14 @@ func writeSequencedRecords(t *testing.T, ctx context.Context, client *kgo.Client
 		recs := make([]*kgo.Record, 0)
 		for p := range partitions {
 			msgsPerPartition := randomInt(100, 1000)
-			for i := 0; i < msgsPerPartition; i++ {
+			for i := range msgsPerPartition {
 				val := totalRecsPerPartition[p] + i
 				rec := &kgo.Record{
-					Topic:     topic,
+					Topic: topic,
+					//nolint:gosec // partitions count is small enough to fit in int32
 					Partition: int32(p),
-					Key:       []byte(fmt.Sprintf("key-%d", p)),
-					Value:     []byte(fmt.Sprintf("val-%d", val)),
+					Key:       fmt.Appendf(nil, "key-%d", p),
+					Value:     fmt.Appendf(nil, "val-%d", val),
 					Headers: []kgo.RecordHeader{
 						{Key: "test-header", Value: fmt.Appendf(nil, "header-value-%d", val)},
 					},
@@ -206,7 +209,6 @@ func writeSequencedRecords(t *testing.T, ctx context.Context, client *kgo.Client
 				recs = append(recs, rec)
 			}
 			totalRecsPerPartition[p] += msgsPerPartition
-
 		}
 
 		require.NoError(t, client.ProduceSync(ctx, recs...).FirstErr(), "failed to produce records")
@@ -218,8 +220,12 @@ func writeSequencedRecords(t *testing.T, ctx context.Context, client *kgo.Client
 	return totalRecsPerPartition
 }
 
-func randomInt(min, max int) int {
-	return rand.Intn(max-min+1) + min
+func randomInt(minVal, maxVal int) int {
+	bigInt, err := rand.Int(rand.Reader, big.NewInt(int64(maxVal-minVal+1)))
+	if err != nil {
+		panic(err)
+	}
+	return int(bigInt.Int64()) + minVal
 }
 
 func stopApp(ctx context.Context, t *testing.T, cancel context.CancelFunc, errCh chan error) {

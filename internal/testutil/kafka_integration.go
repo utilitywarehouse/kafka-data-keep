@@ -3,13 +3,13 @@ package testutil
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go/modules/redpanda"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
-	"time"
 )
 
 func StartKafkaService(ctx context.Context, t *testing.T) (string, func()) {
@@ -47,7 +47,7 @@ func WaitConsumerStart(ctx context.Context, t *testing.T, client *kadm.Client, g
 	}
 }
 
-func WaitForGroupOffsets(t *testing.T, ctx context.Context, client *kadm.Client, group string, expected map[string]int) {
+func WaitForGroupOffsets(ctx context.Context, t *testing.T, client *kadm.Client, group string, expected map[string]int) {
 	t.Helper()
 	timeoutC := time.After(30 * time.Second)
 	for {
@@ -58,14 +58,14 @@ func WaitForGroupOffsets(t *testing.T, ctx context.Context, client *kadm.Client,
 			t.Fatalf("consumer group %s did not reach expected offsets: %+v", group, expected)
 			return
 		case <-time.Tick(100 * time.Millisecond):
-			if isGroupAt(t, ctx, client, group, expected) {
+			if isGroupAt(ctx, t, client, group, expected) {
 				return
 			}
 		}
 	}
 }
 
-func isGroupAt(t *testing.T, ctx context.Context, client *kadm.Client, group string, expected map[string]int) bool {
+func isGroupAt(ctx context.Context, t *testing.T, client *kadm.Client, group string, expected map[string]int) bool {
 	t.Helper()
 	topics := make([]string, 0, len(expected))
 	for t := range expected {
@@ -103,7 +103,7 @@ func getOffsetForTopic(topicOffsets map[int32]kadm.OffsetResponse) int {
 	return currentOffsetSum
 }
 
-func WaitForRecords(t *testing.T, ctx context.Context, topic string, kafkaBrokers string, expectedCount int) ([]*kgo.Record, error) {
+func WaitForRecords(ctx context.Context, t *testing.T, topic string, kafkaBrokers string, expectedCount int) ([]*kgo.Record, error) {
 	t.Helper()
 
 	client, err := kgo.NewClient(
