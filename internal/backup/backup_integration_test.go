@@ -19,6 +19,9 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/codec/avro"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/testutil"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
 func init() {
@@ -68,7 +71,7 @@ func TestBackupIntegration(t *testing.T) {
 
 		topic1 := "multiple-1"
 		topic2 := "multiple-2"
-		_, err = kadmClient.CreateTopic(ctx, 2, 1, nil, topic1)
+		_, err := kadmClient.CreateTopic(ctx, 2, 1, nil, topic1)
 		require.NoError(t, err)
 
 		_, err = kadmClient.CreateTopic(ctx, 2, 1, nil, topic2)
@@ -127,14 +130,14 @@ func TestBackupIntegration(t *testing.T) {
 		stopApp(ctx, t, cancel, errCh)
 
 		expectedFiles := map[string]int{
-			"multiple-batches/multiple-1/0/multiple-1-0-0000000000000000000.avro": 10,
-			"multiple-batches/multiple-1/0/multiple-1-0-0000000000000000010.avro": 20,
-			"multiple-batches/multiple-1/1/multiple-1-1-0000000000000000000.avro": 20,
-			"multiple-batches/multiple-1/1/multiple-1-1-0000000000000000020.avro": 10,
-			"multiple-batches/multiple-2/0/multiple-2-0-0000000000000000000.avro": 20,
-			"multiple-batches/multiple-2/0/multiple-2-0-0000000000000000020.avro": 30,
-			"multiple-batches/multiple-2/1/multiple-2-1-0000000000000000000.avro": 30,
-			"multiple-batches/multiple-2/1/multiple-2-1-0000000000000000030.avro": 40,
+			fileKey(s3Prefix, topic1, 0, 0):  10,
+			fileKey(s3Prefix, topic1, 0, 10): 20,
+			fileKey(s3Prefix, topic1, 1, 0):  20,
+			fileKey(s3Prefix, topic1, 1, 20): 10,
+			fileKey(s3Prefix, topic2, 0, 0):  20,
+			fileKey(s3Prefix, topic2, 0, 20): 30,
+			fileKey(s3Prefix, topic2, 1, 0):  30,
+			fileKey(s3Prefix, topic2, 1, 30): 40,
 		}
 
 		filesFound := listFilesOnBucket(ctx, t, s3Client, s3Prefix)
@@ -142,25 +145,145 @@ func TestBackupIntegration(t *testing.T) {
 		require.Equal(t, expectedFiles, filesFound)
 	})
 
-	t.Run("flush on stopping the app", func(t *testing.T) {
+	t.Run("keep local files when stopping the app", func(t *testing.T) {
 		t.Parallel()
 
-		topic3 := "flush-stop-1"
-		_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, topic3)
+		topic := "keep-local-on-stop-1"
+		_, err := kadmClient.CreateTopic(ctx, 1, 1, nil, topic)
 		require.NoError(t, err)
 
 		// Setup backup application config
 		workingDir := t.TempDir()
 
 		groupID := newRandomName("test-backup-group")
-		s3Prefix := "flush-on-stop/"
+		s3Prefix := "keep-local-on-stop/"
 		cfg := AppConfig{
 			Brokers:                kafkaBrokers,
-			TopicsRegex:            "flush-stop-.*",
+			TopicsRegex:            topic,
 			ExcludeTopicsRegex:     "multiple-.*", // exclude the topics from the previous test
 			GroupID:                groupID,
 			PartitionIdleThreshold: 1 * time.Second,
-			MinFileSize:            100 * 1024 * 1024, // use a big limit, so we make sure we flush only on stopping the app
+			MinFileSize:            100 * 1024 * 1024, // use a big limit, so we make sure no flush occurs
+			WorkingDir:             workingDir,
+			S3Bucket:               bucketName,
+			S3Prefix:               s3Prefix,
+			S3Endpoint:             s3Endpoint,
+			S3Region:               testutil.MinioRegion,
+		}
+
+		// Run backup with a cancellable context (no timeout, we'll cancel after second batch)
+		backupCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		// Run backup in a goroutine
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- Run(backupCtx, cfg)
+		}()
+
+		waitConsumerStart(ctx, t, kadmClient, groupID)
+		// write records, and the file won't be flushed since the file size limit is very high
+		writeRecords(t, ctx, adminClient, topic, 0, 1000, 1000)
+
+		fileKey := fileKey(s3Prefix, topic, 0, 0)
+		waitLocalFileHasRecords(t, ctx, workingDir, fileKey, 1000)
+
+		stopApp(ctx, t, cancel, errCh)
+
+		// we expect no files on S3
+		require.Empty(t, listFilesOnBucket(ctx, t, s3Client, s3Prefix), "no files should be on S3 after backup was stopped")
+		// we expect that the local file is still there
+		_, err = os.Stat(filepath.Join(workingDir, fileKey))
+		require.NoError(t, err, "Local file should still exist after backup was stopped")
+	})
+
+	t.Run("overwrite local file when restarting the app", func(t *testing.T) {
+		t.Parallel()
+
+		topic := "overwrite-restart-1"
+		_, err := kadmClient.CreateTopic(ctx, 1, 1, nil, topic)
+		require.NoError(t, err)
+
+		// Setup backup application config
+		workingDir := t.TempDir()
+
+		groupID := newRandomName("test-overwrite-restart")
+		s3Prefix := "overwrite-restart/"
+		cfg := AppConfig{
+			Brokers:                kafkaBrokers,
+			TopicsRegex:            topic,
+			ExcludeTopicsRegex:     "multiple-.*", // exclude the topics from the previous test
+			GroupID:                groupID,
+			PartitionIdleThreshold: 1 * time.Second,
+			MinFileSize:            100 * 1024 * 1024, // use a big limit, so we make sure no flush occurs
+			WorkingDir:             workingDir,
+			S3Bucket:               bucketName,
+			S3Prefix:               s3Prefix,
+			S3Endpoint:             s3Endpoint,
+			S3Region:               testutil.MinioRegion,
+		}
+
+		// Run backup with a cancellable context (no timeout, we'll cancel after second batch)
+		backupCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		// Run backup in a goroutine
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- Run(backupCtx, cfg)
+		}()
+
+		waitConsumerStart(ctx, t, kadmClient, groupID)
+		// write records, but offsets won't be committed, since the file size limit is very high
+		writeRecords(t, ctx, adminClient, topic, 0, 1000, 1000)
+		require.NoError(t, adminClient.Flush(ctx))
+		t.Logf("Wrote records to topic %s", topic)
+
+		fileKey := fileKey(s3Prefix, topic, 0, 0)
+		waitLocalFileHasRecords(t, ctx, workingDir, fileKey, 1000)
+
+		stopApp(ctx, t, cancel, errCh)
+
+		backupCtx, cancel = context.WithCancel(ctx)
+		defer cancel()
+
+		// start the backup again
+		errCh = make(chan error, 1)
+		go func() {
+			errCh <- Run(backupCtx, cfg)
+		}()
+
+		waitConsumerStart(ctx, t, kadmClient, groupID)
+		// wait until the local file refills with all the records
+		waitLocalFileHasRecords(t, ctx, workingDir, fileKey, 1000)
+
+		// write more records
+		writeRecords(t, ctx, adminClient, topic, 0, 1000, 1000)
+
+		// wait until the local file has the new records
+		waitLocalFileHasRecords(t, ctx, workingDir, fileKey, 2000)
+		stopApp(ctx, t, cancel, errCh)
+	})
+
+	t.Run("remove leftover file on offset advance", func(t *testing.T) {
+		t.Parallel()
+
+		topic := "delete-old-local-on-offset-advance-1"
+		_, err := kadmClient.CreateTopic(ctx, 1, 1, nil, topic)
+		require.NoError(t, err)
+
+		// Setup backup application config
+		workingDir := t.TempDir()
+
+		groupID := newRandomName("delete-old-local-on-offset-advance")
+		s3Prefix := "delete-old-local-on-offset-advance/"
+		cfg := AppConfig{
+			Brokers:                kafkaBrokers,
+			TopicsRegex:            topic,
+			ExcludeTopicsRegex:     "multiple-.*", // exclude the topics from the previous test
+			GroupID:                groupID,
+			PartitionIdleThreshold: 1 * time.Second,
+			MinFileSize:            100 * 1024 * 1024, // use a big limit, so we make sure no flush occurs
 			WorkingDir:             workingDir,
 			S3Bucket:               bucketName,
 			S3Prefix:               s3Prefix,
@@ -180,29 +303,123 @@ func TestBackupIntegration(t *testing.T) {
 
 		waitConsumerStart(ctx, t, kadmClient, groupID)
 		// write records continuously, but offsets won't be committed, since the file size limit is very high
-		for i := range 10 {
-			writeRecords(t, ctx, adminClient, topic3, 0, 1000, 1000)
-			require.NoError(t, adminClient.Flush(ctx))
-			t.Logf("Wrote batch of %d records to topic %s", i, topic3)
-			time.Sleep(time.Millisecond * 100)
-		}
+		writeRecords(t, ctx, adminClient, topic, 0, 1000, 1000)
 
-		fileKey := fileKey(s3Prefix, topic3, 0, 0)
-		waitLocalFileHasRecords(t, ctx, workingDir, fileKey, 10000)
+		fileKey1 := fileKey(s3Prefix, topic, 0, 0)
+		waitLocalFileHasRecords(t, ctx, workingDir, fileKey1, 1000)
 
 		stopApp(ctx, t, cancel, errCh)
 
-		filesFound := listFilesOnBucket(ctx, t, s3Client, s3Prefix)
-		require.Len(t, filesFound, 1)
-		// we expect the file to have records, but it might not have consumed all
-		require.LessOrEqual(t, filesFound[fileKey], 10000)
+		backupCtx, cancel = context.WithCancel(ctx)
+		defer cancel()
+
+		// delete 100 the offset from the start of the partition
+		delMap := make(kadm.Offsets)
+		delMap.Add(kadm.Offset{Topic: topic, Partition: 0, At: 100})
+		_, err = kadmClient.DeleteRecords(ctx, delMap)
+		require.NoError(t, err)
+
+		// start the backup again
+		errCh = make(chan error, 1)
+		go func() {
+			errCh <- Run(backupCtx, cfg)
+		}()
+
+		waitConsumerStart(ctx, t, kadmClient, groupID)
+
+		// a new local file should be started, as it changed the name
+		fileKey2 := fileKey(s3Prefix, topic, 0, 100)
+		waitLocalFileHasRecords(t, ctx, workingDir, fileKey2, 900)
+
+		// check that the old file was removed
+		_, err = os.Stat(filepath.Join(workingDir, fileKey1))
+		require.ErrorIs(t, err, os.ErrNotExist, "old file should not exist anymore")
+
+		// write more records
+		writeRecords(t, ctx, adminClient, topic, 0, 1000, 1000)
+
+		// wait until the new local file has the new records
+		waitLocalFileHasRecords(t, ctx, workingDir, fileKey2, 1900)
+		stopApp(ctx, t, cancel, errCh)
+	})
+
+	t.Run("remove leftover partitions folders", func(t *testing.T) {
+		t.Parallel()
+
+		topic1 := "delete-leftover-initial-topic"
+		_, err := kadmClient.CreateTopic(ctx, 1, 1, nil, topic1)
+		require.NoError(t, err)
+
+		// Setup backup application config
+		workingDir := t.TempDir()
+
+		groupID := newRandomName("delete-leftover-paritition-folders")
+		s3Prefix := "delete-leftover-paritition-folders/"
+		cfg := AppConfig{
+			Brokers:                kafkaBrokers,
+			TopicsRegex:            topic1,
+			ExcludeTopicsRegex:     "multiple-.*", // exclude the topics from the previous test
+			GroupID:                groupID,
+			PartitionIdleThreshold: 1 * time.Second,
+			MinFileSize:            100 * 1024 * 1024, // use a big limit, so we make sure no flush occurs
+			WorkingDir:             workingDir,
+			S3Bucket:               bucketName,
+			S3Prefix:               s3Prefix,
+			S3Endpoint:             s3Endpoint,
+			S3Region:               testutil.MinioRegion,
+		}
+
+		// Run backup with a cancellable context (no timeout, we'll cancel after second batch)
+		firstRunCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		// Run backup in a goroutine
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- Run(firstRunCtx, cfg)
+		}()
+
+		waitConsumerStart(ctx, t, kadmClient, groupID)
+		// write records, but offsets won't be committed, since the file size limit is very high
+		writeRecords(t, ctx, adminClient, topic1, 0, 1000, 1000)
+
+		fileKey1 := fileKey(s3Prefix, topic1, 0, 0)
+		waitLocalFileHasRecords(t, ctx, workingDir, fileKey1, 1000)
+
+		stopApp(ctx, t, cancel, errCh)
+
+		topic2 := "delete-leftover-second-topic"
+		_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, topic2)
+		require.NoError(t, err)
+
+		writeRecords(t, ctx, adminClient, topic2, 0, 1000, 1000)
+
+		// consume another topic
+		secondRunCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		// start the backup again to consume the second topic.
+		// The former partitions folder from topic1 should be deleted once the new partitions are assigned
+		cfg.TopicsRegex = topic2
+		errCh = make(chan error, 1)
+		go func() {
+			errCh <- Run(secondRunCtx, cfg)
+		}()
+
+		waitConsumerStart(ctx, t, kadmClient, groupID)
+
+		// check that the folder of topic1 partition 0 was removed
+		_, err = os.Stat(filepath.Dir(filepath.Join(workingDir, fileKey1)))
+		require.ErrorIs(t, err, os.ErrNotExist, "old file should not exist anymore")
+
+		stopApp(ctx, t, cancel, errCh)
 	})
 
 	t.Run("pause and resume local files", func(t *testing.T) {
 		t.Parallel()
 
 		topic4 := "pause-resume-1"
-		_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, topic4)
+		_, err := kadmClient.CreateTopic(ctx, 1, 1, nil, topic4)
 		require.NoError(t, err)
 
 		// Setup backup application config
@@ -249,13 +466,120 @@ func TestBackupIntegration(t *testing.T) {
 		// local file should be resumed
 		waitLocalFileHasRecords(t, ctx, workingDir, fileKey, 20)
 
-		// stop consuming & trigger the flush
+		// stop consuming
+		stopApp(ctx, t, cancel, errCh)
+	})
+
+	t.Run("unexpected leftover file", func(t *testing.T) {
+		t.Parallel()
+
+		// rig the meter provider, so we can check the counter value
+		origProvider := otel.GetMeterProvider()
+		defer func() { otel.SetMeterProvider(origProvider) }()
+
+		reader := metric.NewManualReader()
+		otel.SetMeterProvider(metric.NewMeterProvider(metric.WithReader(reader)))
+
+		initialValue := readCounterValue(t, reader, "kafka-data-keep", "kafka.data-keep.unexpected-leftover-files")
+
+		topic := "unexpected-leftover-file"
+		_, err := kadmClient.CreateTopic(ctx, 1, 1, nil, topic)
+		require.NoError(t, err)
+
+		// Setup backup application config
+		workingDir := t.TempDir()
+
+		groupID := newRandomName("unexpected-leftover-file")
+		s3Prefix := "unexpected-leftover-file/"
+		cfg := AppConfig{
+			Brokers:                kafkaBrokers,
+			TopicsRegex:            topic,
+			ExcludeTopicsRegex:     "multiple-.*",
+			GroupID:                groupID,
+			PartitionIdleThreshold: 1 * time.Second,
+			MinFileSize:            1, // use a small limit
+			WorkingDir:             workingDir,
+			S3Bucket:               bucketName,
+			S3Prefix:               s3Prefix,
+			S3Endpoint:             s3Endpoint,
+			S3Region:               testutil.MinioRegion,
+		}
+
+		// write 150 records
+		writeRecords(t, ctx, adminClient, topic, 0, 150, 1000)
+
+		// delete the first 100 records
+		delMap := make(kadm.Offsets)
+		delMap.Add(kadm.Offset{Topic: topic, Partition: 0, At: 100})
+		_, err = kadmClient.DeleteRecords(ctx, delMap)
+		require.NoError(t, err)
+
+		// Create a local avro file with zero entries corresponding to the zero offset
+		leftoverFileKey := fileKey(s3Prefix, topic, 0, 0)
+		leftoverLocalFile := filepath.Join(workingDir, leftoverFileKey)
+
+		createEmptyAvroFile(t, leftoverLocalFile)
+
+		// Run backup with a cancellable context
+		backupCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		// Run backup in a goroutine
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- Run(backupCtx, cfg)
+		}()
+
+		waitConsumerStart(ctx, t, kadmClient, groupID)
+
+		// The backup finds the local file starting at 0, that is less than the current offset (100).
+		// Since it's not in S3, it should just log a warning message and increase the counter
+
+		waitForGroupOffsets(t, ctx, kadmClient, groupID, map[string]int{topic: 150})
 		stopApp(ctx, t, cancel, errCh)
 
-		filesFound := listFilesOnBucket(ctx, t, s3Client, s3Prefix)
-		require.Len(t, filesFound, 1)
-		require.Equal(t, 20, filesFound[fileKey])
+		_, err = os.Stat(leftoverLocalFile)
+		require.NoError(t, err, "the unexpected local file should exist")
+
+		updatedValue := readCounterValue(t, reader, "kafka-data-keep", "kafka.data-keep.unexpected-leftover-files")
+		require.Equal(t, initialValue+1, updatedValue, "Counter should have been incremented")
 	})
+}
+
+// Helper to navigate the OTel data tree
+func readCounterValue(t *testing.T, reader *metric.ManualReader, scopeName string, metricName string) int64 {
+	t.Helper()
+	var rm metricdata.ResourceMetrics
+	require.NoError(t, reader.Collect(context.Background(), &rm))
+
+	for _, sm := range rm.ScopeMetrics {
+		if sm.Scope.Name == scopeName {
+			for _, m := range sm.Metrics {
+				if m.Name == metricName {
+					if data, ok := m.Data.(metricdata.Sum[int64]); ok {
+						if len(data.DataPoints) > 0 {
+							return data.DataPoints[0].Value
+						}
+					}
+				}
+			}
+		}
+	}
+	return 0
+}
+
+func createEmptyAvroFile(t *testing.T, file string) {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(filepath.Dir(file), 0o755))
+	f, err := os.Create(file)
+	require.NoError(t, err)
+
+	// Create a valid empty Avro file
+	encFactory := &avro.RecordEncoderFactory{}
+	enc, err := encFactory.New(f)
+	require.NoError(t, err)
+	require.NoError(t, enc.Close())
+	require.NoError(t, f.Close())
 }
 
 func waitLocalFileHasRecords(t *testing.T, ctx context.Context, dir string, fileKey string, howMany int) {
@@ -336,9 +660,6 @@ func listFilesOnBucket(ctx context.Context, t *testing.T, s3Client *s3.Client, s
 	// List files in S3
 	listResp, err := s3Client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: aws.String(bucketName), Prefix: aws.String(s3prefix)})
 	require.NoError(t, err)
-	require.NotEmpty(t, listResp.Contents, "expected files in S3 bucket")
-	require.NoError(t, err)
-	require.NotEmpty(t, listResp.Contents, "expected files in S3 bucket")
 
 	t.Logf("Found %d files in S3", len(listResp.Contents))
 

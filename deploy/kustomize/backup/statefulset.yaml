@@ -15,6 +15,13 @@ spec:
   # Initialize all pods at the same time, otherwise rebalances will happen each time a pod is started
   podManagementPolicy: Parallel
   replicas: 2
+  # Allow all pods to be updated at the same time to minimize the consumer group rebalances
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # It requires the MaxUnavailableStatefulSet feature gate set to true.
+      # This is supported since 1.24, and it defaults to true from 1.35
+      maxUnavailable: 100%
   selector:
     matchLabels:
       app: kafka-data-keep-backup

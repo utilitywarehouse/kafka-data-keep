@@ -5,6 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -22,23 +25,25 @@ type PartitionsWriterManager struct {
 	uploader       *Uploader
 	config         Config
 	encoderFactory codec.RecordEncoderFactory
+	decoderFactory codec.RecordDecoderFactory
 
 	mu      sync.Mutex
 	writers map[string]*PartitionWriter
 }
 
-func NewPartitionsWriterManager(uploader *Uploader, encoderFactory codec.RecordEncoderFactory, config Config) (*PartitionsWriterManager, error) {
+func NewPartitionsWriterManager(uploader *Uploader, encoderFactory codec.RecordEncoderFactory, decoderFactory codec.RecordDecoderFactory, config Config) (*PartitionsWriterManager, error) {
 	m := &PartitionsWriterManager{
 		uploader:       uploader,
 		config:         config,
 		encoderFactory: encoderFactory,
+		decoderFactory: decoderFactory,
 		writers:        make(map[string]*PartitionWriter),
 	}
 
 	return m, nil
 }
 
-func (m *PartitionsWriterManager) OnPartitionsAssigned(committer OffsetCommitter, partitions map[string][]int32) {
+func (m *PartitionsWriterManager) OnPartitionsAssigned(ctx context.Context, committer OffsetCommitter, partitions map[string][]int32) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -46,10 +51,69 @@ func (m *PartitionsWriterManager) OnPartitionsAssigned(committer OffsetCommitter
 		for _, partition := range parts {
 			key := partitionWriterKey(topic, partition)
 			if _, exists := m.writers[key]; !exists {
-				m.writers[key] = NewPartitionWriter(m.uploader, committer, m.config, m.encoderFactory, topic, partition)
+				m.writers[key] = NewPartitionWriter(m.uploader, committer, m.config, m.encoderFactory, m.decoderFactory, topic, partition)
 			}
 		}
 	}
+
+	// remove the folders for partitions that we do not currently own
+	if err := m.cleanupFormerPartitionFolders(ctx); err != nil {
+		slog.ErrorContext(ctx, "failed to cleanup stale folders", "error", err)
+	}
+}
+
+func (m *PartitionsWriterManager) cleanupFormerPartitionFolders(ctx context.Context) error {
+	baseDir := filepath.Join(m.config.RootPath, m.config.S3Prefix)
+
+	// If the directory doesn't exist, there's nothing to clean up
+	if _, err := os.Stat(baseDir); os.IsNotExist(err) {
+		return nil
+	}
+
+	topicEntries, err := os.ReadDir(baseDir)
+	if err != nil {
+		return fmt.Errorf("failed to read base directory %s: %w", baseDir, err)
+	}
+
+	for _, topicEntry := range topicEntries {
+		if !topicEntry.IsDir() {
+			continue
+		}
+		topic := topicEntry.Name()
+		topicDir := filepath.Join(baseDir, topic)
+
+		partEntries, err := os.ReadDir(topicDir)
+		if err != nil {
+			slog.WarnContext(ctx, "failed to read topic directory", "dir", topicDir, "error", err)
+			continue
+		}
+
+		for _, partEntry := range partEntries {
+			if !partEntry.IsDir() {
+				continue
+			}
+
+			// Partition directory names should be integers
+			partitionID, err := strconv.ParseInt(partEntry.Name(), 10, 32)
+			if err != nil {
+				// ignore non-integer directories as they might not be partition folders
+				slog.DebugContext(ctx, "skipping non-integer directory in topic folder", "dir", partEntry.Name(), "topic", topic)
+				continue
+			}
+
+			key := partitionWriterKey(topic, int32(partitionID))
+
+			// Check if we have a writer for this partition
+			if _, exists := m.writers[key]; !exists {
+				dirToRemove := filepath.Join(topicDir, partEntry.Name())
+				slog.InfoContext(ctx, "removing stale partition folder", "path", dirToRemove)
+				if err := os.RemoveAll(dirToRemove); err != nil {
+					slog.ErrorContext(ctx, "failed to remove stale partition folder", "path", dirToRemove, "error", err)
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func (m *PartitionsWriterManager) OnPartitionsRevoked(ctx context.Context, partitions map[string][]int32) {
@@ -61,7 +125,6 @@ func (m *PartitionsWriterManager) OnPartitionsRevoked(ctx context.Context, parti
 			key := partitionWriterKey(topic, partition)
 			w, exists := m.writers[key]
 			if exists {
-				//nolint: contextcheck
 				if err := w.Close(); err != nil {
 					slog.ErrorContext(ctx, "failed to close partition writer on revocation", "error", err)
 				}

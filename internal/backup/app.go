@@ -69,15 +69,14 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	}
 
 	// Create manager first
-	mgr, err := NewPartitionsWriterManager(uploader, &avro.RecordEncoderFactory{}, wConfig)
+	mgr, err := NewPartitionsWriterManager(uploader, &avro.RecordEncoderFactory{}, &avro.RecordDecoderFactory{}, wConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create writer manager: %w", err)
 	}
 	defer func() {
-		//nolint: contextcheck
-		if err := mgr.Close(); err != nil {
-			slog.ErrorContext(ctx, "failed to close manager", "error", err)
-		}
+		slog.InfoContext(ctx, "Closing partition manager ...")
+		err := mgr.Close()
+		slog.InfoContext(ctx, "Finished closing partition manager", "error", err)
 	}()
 
 	client, err := initKafkaClient(cfg, mgr)
@@ -97,7 +96,9 @@ func Run(ctx context.Context, cfg AppConfig) error {
 		return runPauseIdleWriters(ctx, mgr)
 	})
 
-	return eg.Wait()
+	err = eg.Wait()
+	slog.InfoContext(ctx, "Backup application exiting .... running cleanup", "error", err)
+	return err
 }
 
 const maxPollRecords = 10000 // this affects how many records are processed per poll, not how many are fetched from Kafka
@@ -112,7 +113,7 @@ func initKafkaClient(cfg AppConfig, mgr *PartitionsWriterManager) (*kafka.Client
 		kgo.DisableAutoCommit(),    // We will commit manually
 		kgo.BlockRebalanceOnPoll(), // block rebalance while processing records
 		kgo.OnPartitionsAssigned(func(ctx context.Context, c *kgo.Client, p map[string][]int32) {
-			mgr.OnPartitionsAssigned(c, p)
+			mgr.OnPartitionsAssigned(ctx, c, p)
 		}),
 		kgo.OnPartitionsRevoked(func(ctx context.Context, c *kgo.Client, p map[string][]int32) {
 			mgr.OnPartitionsRevoked(ctx, p)
