@@ -28,7 +28,7 @@ func TestRestoreE2E(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	// 1. Start Services
+	// Start Services
 	kafkaBrokers, tkf := testutil.StartKafkaService(ctx, t)
 	t.Cleanup(tkf)
 
@@ -49,7 +49,7 @@ func TestRestoreE2E(t *testing.T) {
 	kadmClient := kadm.NewClient(adminClient)
 	t.Cleanup(kadmClient.Close)
 
-	// 2. Create source topic with 15 partitions
+	// Create the source topic with 15 partitions
 	srcTopic := "e2e-source-topic"
 	partitions := 15
 	_, err = kadmClient.CreateTopic(ctx, int32(partitions), 1, nil, srcTopic)
@@ -65,7 +65,7 @@ func TestRestoreE2E(t *testing.T) {
 		TopicsRegex:            srcTopic,
 		GroupID:                backupGroup,
 		MinFileSize:            1, // minimum file size to force flush and commit after every batch read from kafka
-		PartitionIdleThreshold: 200 * time.Millisecond,
+		PartitionIdleThreshold: 50 * time.Millisecond,
 		WorkingDir:             workingDir,
 		S3Bucket:               bucketName,
 		S3Prefix:               s3Prefix,
@@ -96,7 +96,7 @@ func TestRestoreE2E(t *testing.T) {
 
 	stopApp(ctx, t, backupCancel, backupErrCh)
 
-	// Create Plan Topic (15 partitions)
+	// Create the plan Topic (15 partitions)
 	planTopic := "e2e-plan-topic"
 	_, err = kadmClient.CreateTopic(ctx, int32(partitions), 1, nil, planTopic)
 	require.NoError(t, err)
@@ -115,7 +115,7 @@ func TestRestoreE2E(t *testing.T) {
 	err = planrestore.Run(ctx, planCfg)
 	require.NoError(t, err)
 
-	// Create Restore Topic (15 partitions) with "restored" prefix
+	// Create the restore Topic (15 partitions) with the "restored" prefix
 	restoredTopic := "restored-" + srcTopic
 	_, err = kadmClient.CreateTopic(ctx, int32(partitions), 1, nil, restoredTopic)
 	require.NoError(t, err)
@@ -168,9 +168,22 @@ func TestRestoreE2E(t *testing.T) {
 			expectedKey := fmt.Sprintf("key-%d", p)
 			require.Equal(t, expectedKey, string(r.Key), "Key mismatch at partition %d index %d", p, currentIdx)
 			require.Equal(t, expectedVal, string(r.Value), "Value mismatch at partition %d index %d", p, currentIdx)
+
+			expectHeader(t, r, "test-header", fmt.Sprintf("header-value-%d", currentIdx))
+			expectHeader(t, r, "original_offset", fmt.Sprintf("%d", currentIdx))
 			currentIdx++
 		}
 	}
+}
+
+func expectHeader(t *testing.T, r *kgo.Record, headerName string, value string) {
+	for _, h := range r.Headers {
+		if h.Key == headerName {
+			require.Equal(t, value, string(h.Value), "Header value mismatch")
+			return
+		}
+	}
+	t.Fatalf("Header %s not found in record", headerName)
 }
 
 func total(valPerPartition map[int]int) int {
