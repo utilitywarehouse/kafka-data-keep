@@ -68,11 +68,11 @@ func TestRestore(t *testing.T) {
 
 	totalRecsPerPartition := feedTopicAndRunBackup(t, kadmClient, ctx, kafkaBrokers, s3Endpoint)
 
-	// Manually duplicate the file with 0 offset on S3 for several partitions.
+	// Manually duplicate the file with 0 offset on S3 for partitions.
 	// This simulates a scenario where an overlapping or duplicate file exists
-	duplicateFirstFileForPartition(ctx, t, s3Client, 0, 50)
-	duplicateFirstFileForPartition(ctx, t, s3Client, 2, 500)
-	duplicateFirstFileForPartition(ctx, t, s3Client, 3, 970)
+	for p := range srcTopicPartitions {
+		duplicateFirstFileForPartition(ctx, t, s3Client, p, randomInt(100, 3000))
+	}
 
 	runPlanRestore(ctx, t, kadmClient, kafkaBrokers, s3Endpoint)
 
@@ -101,14 +101,14 @@ func TestRestore(t *testing.T) {
 		restoreErrCh <- restore.Run(restoreCtx, restoreCfg)
 	}()
 
-	/*	pause the restore after some records were restored */
-	_, err = testutil.WaitForRecords(ctx, t, restoredTopic, kafkaBrokers, total(totalRecsPerPartition)/10)
+	// pause the restore after some records were restored. Stopping after processing between 10 and 70 percent.
+	_, err = testutil.WaitForRecords(ctx, t, restoredTopic, kafkaBrokers, total(totalRecsPerPartition)*randomInt(10, 70)/100)
 	require.NoError(t, err)
 
 	stopApp(ctx, t, restoreCancel, restoreErrCh)
 
 	// rewind the offsets in the plan topic to the beginning so that we force it to reconsume the messages to check the resume mechanism
-	resetConsumerGroup(t, ctx, kadmClient, restoreGroup, planTopic)
+	resetConsumerGroup(t, ctx, kadmClient, restoreGroup)
 
 	// start again the restore
 	resumeRestoreCtx, resumeRestoreCancel := context.WithCancel(ctx)
@@ -175,12 +175,11 @@ func validateRestoredRecords(t *testing.T, ctx context.Context, restoredTopic st
 	}
 }
 
-func resetConsumerGroup(t *testing.T, ctx context.Context, kadmClient *kadm.Client, group string, topic string) {
+func resetConsumerGroup(t *testing.T, ctx context.Context, kadmClient *kadm.Client, group string) {
 	t.Helper()
-	ts := make(kadm.TopicsSet)
-	ts.Add(topic)
-	_, err := kadmClient.DeleteOffsets(ctx, group, ts)
+	resp, err := kadmClient.DeleteGroup(ctx, group)
 	require.NoError(t, err)
+	require.NoError(t, resp.Err, "Failed to reset consumer group offsets")
 }
 
 func runPlanRestore(ctx context.Context, t *testing.T, kadmClient *kadm.Client, kafkaBrokers string, s3Endpoint string) {

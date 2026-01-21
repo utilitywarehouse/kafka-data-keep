@@ -58,7 +58,7 @@ func (r *kafkaS3Restorer) restoreFile(ctx context.Context, key string) error {
 		return fmt.Errorf("failed determining resume offset: %w", err)
 	}
 
-	recs, err := recordsInFile(ctx, getResp.Body, r.cfg.RestoreTopicPrefix, lastProcessedOffset)
+	recs, err := r.recordsInFile(ctx, getResp.Body, lastProcessedOffset)
 	if err != nil {
 		return fmt.Errorf("failed to decode Avro file: %w", err)
 	}
@@ -96,32 +96,41 @@ func (r *kafkaS3Restorer) getLastProcessedOffset(ctx context.Context, topic stri
 	}
 
 	// if we didn't cache this yet, try to look it up from the destination topic from the last restored record, to cover resumes
+	lastProcessedOffset, err = r.computeLastRestoredOffset(ctx, topic, partitionInt)
+	if err != nil {
+		return -1, err
+	}
+
+	r.lastProcessedOffsetByPartition[partitionKey] = lastProcessedOffset
+	slog.InfoContext(ctx, "Computed last restored offset", "topic", topic, "partition", partition, "offset", lastProcessedOffset)
+	return lastProcessedOffset, nil
+}
+
+func (r *kafkaS3Restorer) computeLastRestoredOffset(ctx context.Context, topic string, partitionInt int32) (int64, error) {
 	seedBrokers := r.consumer.OptValue(kgo.SeedBrokers).([]string) //nolint:errcheck
-	lastRecord, err := kafka2.ReadLatest(ctx, seedBrokers, r.cfg.PlanTopic, partitionInt)
+	lastRecord, err := kafka2.ReadLatest(ctx, seedBrokers, r.restoreTopicName(topic), partitionInt)
 	if err != nil {
 		return -1, fmt.Errorf("failed to read latest record for topic %s partition %d: %w", topic, partitionInt, err)
 	}
 
-	// if there is no last record, just start from -1
 	if lastRecord == nil {
-		r.lastProcessedOffsetByPartition[partitionKey] = -1
+		slog.DebugContext(ctx, "compute last restored offset: no last record found", "topic", topic, "partition", partitionInt)
 		return -1, nil
 	}
 
-	lastProcessedOffset, err = getOriginalOffsetFromHeader(lastRecord[partitionInt])
+	// if there is no last record, just start from -1
+	lastRestoredOffset, err := getOriginalOffsetFromHeader(ctx, lastRecord[partitionInt])
 	if err != nil {
 		return -1, fmt.Errorf("failed to get original offset from header: %w", err)
 	}
-
-	r.lastProcessedOffsetByPartition[partitionKey] = lastProcessedOffset
-	return lastProcessedOffset, nil
+	return lastRestoredOffset, nil
 }
 
 func partitionKey(topic string, partition string) string {
 	return fmt.Sprintf("%s/%s", topic, partition)
 }
 
-func getOriginalOffsetFromHeader(rec *kgo.Record) (int64, error) {
+func getOriginalOffsetFromHeader(ctx context.Context, rec *kgo.Record) (int64, error) {
 	for i := range rec.Headers {
 		if rec.Headers[i].Key == originalOffsetHeader {
 			offset, err := strconv.ParseInt(string(rec.Headers[i].Value), 10, 64)
@@ -132,19 +141,20 @@ func getOriginalOffsetFromHeader(rec *kgo.Record) (int64, error) {
 		}
 	}
 
+	slog.DebugContext(ctx, "compute last restored offset: restore header not found in last record", "headers", rec.Headers, "topic", rec.Topic, "partition", rec.Partition, "offset", rec.Offset)
 	return -1, nil
 }
 
 const originalOffsetHeader = "original_offset"
 
-func recordsInFile(ctx context.Context, r io.ReadCloser, topicPrefix string, lastProcessedOffset int64) ([]*kgo.Record, error) {
+func (r *kafkaS3Restorer) recordsInFile(ctx context.Context, is io.ReadCloser, lastProcessedOffset int64) ([]*kgo.Record, error) {
 	defer func() {
-		if err := r.Close(); err != nil {
+		if err := is.Close(); err != nil {
 			slog.ErrorContext(ctx, "Failed closing Avro file reader", "error", err)
 		}
 	}()
 	decFactory := &avro.RecordDecoderFactory{}
-	decoder, err := decFactory.New(r)
+	decoder, err := decFactory.New(is)
 	if err != nil {
 		return nil, fmt.Errorf("failed creating Avro decoder: %w", err)
 	}
@@ -159,7 +169,7 @@ func recordsInFile(ctx context.Context, r io.ReadCloser, topicPrefix string, las
 		if rec.Offset <= lastProcessedOffset {
 			continue
 		}
-		rec.Topic = topicPrefix + rec.Topic
+		rec.Topic = r.restoreTopicName(rec.Topic)
 		// set the original offset header -> we're using for dedup and consumer group restoring
 		setOriginalOffsetHeader(rec)
 		records = append(records, rec)
@@ -170,6 +180,10 @@ func recordsInFile(ctx context.Context, r io.ReadCloser, topicPrefix string, las
 	}
 
 	return records, nil
+}
+
+func (r *kafkaS3Restorer) restoreTopicName(initialTopic string) string {
+	return r.cfg.RestoreTopicPrefix + initialTopic
 }
 
 func setOriginalOffsetHeader(rec *kgo.Record) {
