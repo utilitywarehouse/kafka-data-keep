@@ -67,7 +67,14 @@ func TestRestore(t *testing.T) {
 	t.Cleanup(kadmClient.Close)
 
 	totalRecsPerPartition := feedTopicAndRunBackup(t, kadmClient, ctx, kafkaBrokers, s3Endpoint)
-	runPlanRestore(t, kadmClient, ctx, kafkaBrokers, s3Endpoint)
+
+	// Manually duplicate the file with 0 offset on S3 for several partitions.
+	// This simulates a scenario where an overlapping or duplicate file exists
+	duplicateFirstFileForPartition(ctx, t, s3Client, 0, 50)
+	duplicateFirstFileForPartition(ctx, t, s3Client, 2, 500)
+	duplicateFirstFileForPartition(ctx, t, s3Client, 3, 970)
+
+	runPlanRestore(ctx, t, kadmClient, kafkaBrokers, s3Endpoint)
 
 	// Create the restore Topic (15 partitions) with the "restored" prefix
 	restoredTopic := "restored-" + srcTopic
@@ -119,6 +126,17 @@ func TestRestore(t *testing.T) {
 	validateRestoredRecords(t, ctx, restoredTopic, kafkaBrokers, totalRecsPerPartition)
 }
 
+func duplicateFirstFileForPartition(ctx context.Context, t *testing.T, s3Client *s3.Client, partition int, newOffset int) {
+	srcKey := testutil.FileKey(s3Prefix, srcTopic, partition, 0)
+	destKey := testutil.FileKey(s3Prefix, srcTopic, partition, newOffset)
+	_, err := s3Client.CopyObject(ctx, &s3.CopyObjectInput{
+		Bucket:     aws.String(bucketName),
+		CopySource: aws.String(bucketName + "/" + srcKey),
+		Key:        aws.String(destKey),
+	})
+	require.NoError(t, err)
+}
+
 func validateRestoredRecords(t *testing.T, ctx context.Context, restoredTopic string, kafkaBrokers string, expectedRecsPerPartition map[int]int) {
 	t.Helper()
 	// Verify restored records
@@ -164,7 +182,7 @@ func resetConsumerGroup(t *testing.T, ctx context.Context, kadmClient *kadm.Clie
 	require.NoError(t, err)
 }
 
-func runPlanRestore(t *testing.T, kadmClient *kadm.Client, ctx context.Context, kafkaBrokers string, s3Endpoint string) {
+func runPlanRestore(ctx context.Context, t *testing.T, kadmClient *kadm.Client, kafkaBrokers string, s3Endpoint string) {
 	t.Helper()
 	// Create the plan Topic (5 partitions)
 	_, err := kadmClient.CreateTopic(ctx, 5, 1, nil, planTopic)

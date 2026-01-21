@@ -130,14 +130,14 @@ func TestBackupIntegration(t *testing.T) {
 		stopApp(ctx, t, cancel, errCh)
 
 		expectedFiles := map[string]int{
-			fileKey(s3Prefix, topic1, 0, 0):  10,
-			fileKey(s3Prefix, topic1, 0, 10): 20,
-			fileKey(s3Prefix, topic1, 1, 0):  20,
-			fileKey(s3Prefix, topic1, 1, 20): 10,
-			fileKey(s3Prefix, topic2, 0, 0):  20,
-			fileKey(s3Prefix, topic2, 0, 20): 30,
-			fileKey(s3Prefix, topic2, 1, 0):  30,
-			fileKey(s3Prefix, topic2, 1, 30): 40,
+			testutil.FileKey(s3Prefix, topic1, 0, 0):  10,
+			testutil.FileKey(s3Prefix, topic1, 0, 10): 20,
+			testutil.FileKey(s3Prefix, topic1, 1, 0):  20,
+			testutil.FileKey(s3Prefix, topic1, 1, 20): 10,
+			testutil.FileKey(s3Prefix, topic2, 0, 0):  20,
+			testutil.FileKey(s3Prefix, topic2, 0, 20): 30,
+			testutil.FileKey(s3Prefix, topic2, 1, 0):  30,
+			testutil.FileKey(s3Prefix, topic2, 1, 30): 40,
 		}
 
 		filesFound := listFilesOnBucket(ctx, t, s3Client, s3Prefix)
@@ -185,7 +185,7 @@ func TestBackupIntegration(t *testing.T) {
 		// write records, and the file won't be flushed since the file size limit is very high
 		writeRecords(t, ctx, adminClient, topic, 0, 1000, 1000)
 
-		fileKey := fileKey(s3Prefix, topic, 0, 0)
+		fileKey := testutil.FileKey(s3Prefix, topic, 0, 0)
 		waitLocalFileHasRecords(t, ctx, workingDir, fileKey, 1000)
 
 		stopApp(ctx, t, cancel, errCh)
@@ -239,7 +239,7 @@ func TestBackupIntegration(t *testing.T) {
 		require.NoError(t, adminClient.Flush(ctx))
 		t.Logf("Wrote records to topic %s", topic)
 
-		fileKey := fileKey(s3Prefix, topic, 0, 0)
+		fileKey := testutil.FileKey(s3Prefix, topic, 0, 0)
 		waitLocalFileHasRecords(t, ctx, workingDir, fileKey, 1000)
 
 		stopApp(ctx, t, cancel, errCh)
@@ -305,7 +305,7 @@ func TestBackupIntegration(t *testing.T) {
 		// write records continuously, but offsets won't be committed, since the file size limit is very high
 		writeRecords(t, ctx, adminClient, topic, 0, 1000, 1000)
 
-		fileKey1 := fileKey(s3Prefix, topic, 0, 0)
+		fileKey1 := testutil.FileKey(s3Prefix, topic, 0, 0)
 		waitLocalFileHasRecords(t, ctx, workingDir, fileKey1, 1000)
 
 		stopApp(ctx, t, cancel, errCh)
@@ -328,7 +328,7 @@ func TestBackupIntegration(t *testing.T) {
 		testutil.WaitConsumerStart(ctx, t, kadmClient, groupID)
 
 		// a new local file should be started, as it changed the name
-		fileKey2 := fileKey(s3Prefix, topic, 0, 100)
+		fileKey2 := testutil.FileKey(s3Prefix, topic, 0, 100)
 		waitLocalFileHasRecords(t, ctx, workingDir, fileKey2, 900)
 
 		// check that the old file was removed
@@ -383,7 +383,7 @@ func TestBackupIntegration(t *testing.T) {
 		// write records, but offsets won't be committed, since the file size limit is very high
 		writeRecords(t, ctx, adminClient, topic1, 0, 1000, 1000)
 
-		fileKey1 := fileKey(s3Prefix, topic1, 0, 0)
+		fileKey1 := testutil.FileKey(s3Prefix, topic1, 0, 0)
 		waitLocalFileHasRecords(t, ctx, workingDir, fileKey1, 1000)
 
 		stopApp(ctx, t, cancel, errCh)
@@ -454,7 +454,7 @@ func TestBackupIntegration(t *testing.T) {
 		testutil.WaitConsumerStart(ctx, t, kadmClient, groupID)
 		// write records, but offsets won't be committed, since the file size limit is very high
 		writeRecords(t, ctx, adminClient, topic4, 0, 10, 1000)
-		fileKey := fileKey(cfg.S3Prefix, topic4, 0, 0)
+		fileKey := testutil.FileKey(cfg.S3Prefix, topic4, 0, 0)
 
 		waitLocalFileHasRecords(t, ctx, workingDir, fileKey, 10)
 
@@ -515,7 +515,7 @@ func TestBackupIntegration(t *testing.T) {
 		require.NoError(t, err)
 
 		// Create a local avro file with zero entries corresponding to the zero offset
-		leftoverFileKey := fileKey(s3Prefix, topic, 0, 0)
+		leftoverFileKey := testutil.FileKey(s3Prefix, topic, 0, 0)
 		leftoverLocalFile := filepath.Join(workingDir, leftoverFileKey)
 
 		createEmptyAvroFile(t, leftoverLocalFile)
@@ -608,12 +608,6 @@ func waitLocalFileHasRecords(t *testing.T, ctx context.Context, dir string, file
 			}
 		}
 	}
-}
-
-func fileKey(s3Prefix string, topic4 string, partition int, offset int) string {
-	filename := fmt.Sprintf("%s-%d-%s.avro", topic4, partition, fmt.Sprintf("%019d", offset))
-	fileKey := filepath.Join(s3Prefix, topic4, fmt.Sprintf("%d", partition), filename)
-	return fileKey
 }
 
 func stopApp(ctx context.Context, t *testing.T, cancel context.CancelFunc, errCh chan error) {

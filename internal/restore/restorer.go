@@ -22,11 +22,11 @@ type kafkaS3Restorer struct {
 	cfg      AppConfig
 
 	// map containing the original offset of the last restored message per partition
-	resumedOffsetsPerPartition map[string]int64
+	lastProcessedOffsetByPartition map[string]int64
 }
 
 func (r *kafkaS3Restorer) Run(ctx context.Context) error {
-	r.resumedOffsetsPerPartition = make(map[string]int64)
+	r.lastProcessedOffsetByPartition = make(map[string]int64)
 	return r.consumer.Consume(ctx, func(ctx context.Context, rec *kgo.Record) error {
 		key := string(rec.Value)
 		err := r.restoreFile(ctx, key)
@@ -53,56 +53,72 @@ func (r *kafkaS3Restorer) restoreFile(ctx context.Context, key string) error {
 		return fmt.Errorf("failed to extract topic from file name: %w", err)
 	}
 
-	resumeOffset, err := r.getResumeOffset(ctx, topic, partition)
+	lastProcessedOffset, err := r.getLastProcessedOffset(ctx, topic, partition)
 	if err != nil {
 		return fmt.Errorf("failed determining resume offset: %w", err)
 	}
 
-	recs, err := recordsInFile(ctx, getResp.Body, r.cfg.RestoreTopicPrefix, resumeOffset)
+	recs, err := recordsInFile(ctx, getResp.Body, r.cfg.RestoreTopicPrefix, lastProcessedOffset)
 	if err != nil {
 		return fmt.Errorf("failed to decode Avro file: %w", err)
 	}
 
+	if len(recs) == 0 {
+		slog.InfoContext(ctx, "Restored file, but all records were skipped from it", "key", key, "last_processed_offset", lastProcessedOffset)
+		return nil
+	}
+
 	//nolint:contextcheck //use background context as we want to push the records through without stopping if the context was canceled.
 	res := r.consumer.ProduceSync(context.Background(), recs...)
+
+	// update the last processed offset for this partition
+	r.lastProcessedOffsetByPartition[partitionKey(topic, partition)] = recs[len(recs)-1].Offset
+
 	if res.FirstErr() != nil {
 		return fmt.Errorf("failed to produce records: %w", res.FirstErr())
 	}
-	slog.InfoContext(ctx, "Restored file", "key", key, "records", len(recs), "last_offset", recs[len(recs)-1].Offset)
+
+	slog.InfoContext(ctx, "Restored file", "key", key, "records", len(recs), "last_offset", recs[len(recs)-1].Offset, "last_processed_offset", lastProcessedOffset)
 	return nil
 }
 
-func (r *kafkaS3Restorer) getResumeOffset(ctx context.Context, topic string, partition string) (int64, error) {
+func (r *kafkaS3Restorer) getLastProcessedOffset(ctx context.Context, topic string, partition string) (int64, error) {
 	p, err := strconv.ParseInt(partition, 10, 32)
 	if err != nil {
 		return 0, fmt.Errorf("failed to parse partition number: %w", err)
 	}
 	partitionInt := int32(p)
 
-	resumeOffsetKey := fmt.Sprintf("%s/%s", topic, partition)
-	resumeOffset, exists := r.resumedOffsetsPerPartition[resumeOffsetKey]
+	partitionKey := partitionKey(topic, partition)
+	lastProcessedOffset, exists := r.lastProcessedOffsetByPartition[partitionKey]
 	if exists {
-		return resumeOffset, nil
+		return lastProcessedOffset, nil
 	}
 
+	// if we didn't cache this yet, try to look it up from the destination topic from the last restored record, to cover resumes
 	seedBrokers := r.consumer.OptValue(kgo.SeedBrokers).([]string) //nolint:errcheck
 	lastRecord, err := kafka2.ReadLatest(ctx, seedBrokers, r.cfg.PlanTopic, partitionInt)
 	if err != nil {
 		return -1, fmt.Errorf("failed to read latest record for topic %s partition %d: %w", topic, partitionInt, err)
 	}
 
+	// if there is no last record, just start from -1
 	if lastRecord == nil {
-		r.resumedOffsetsPerPartition[resumeOffsetKey] = -1
+		r.lastProcessedOffsetByPartition[partitionKey] = -1
 		return -1, nil
 	}
 
-	resumeOffset, err = getOriginalOffsetFromHeader(lastRecord[partitionInt])
+	lastProcessedOffset, err = getOriginalOffsetFromHeader(lastRecord[partitionInt])
 	if err != nil {
 		return -1, fmt.Errorf("failed to get original offset from header: %w", err)
 	}
 
-	r.resumedOffsetsPerPartition[resumeOffsetKey] = resumeOffset
-	return resumeOffset, nil
+	r.lastProcessedOffsetByPartition[partitionKey] = lastProcessedOffset
+	return lastProcessedOffset, nil
+}
+
+func partitionKey(topic string, partition string) string {
+	return fmt.Sprintf("%s/%s", topic, partition)
 }
 
 func getOriginalOffsetFromHeader(rec *kgo.Record) (int64, error) {
@@ -121,7 +137,7 @@ func getOriginalOffsetFromHeader(rec *kgo.Record) (int64, error) {
 
 const originalOffsetHeader = "original_offset"
 
-func recordsInFile(ctx context.Context, r io.ReadCloser, topicPrefix string, resumeOffset int64) ([]*kgo.Record, error) {
+func recordsInFile(ctx context.Context, r io.ReadCloser, topicPrefix string, lastProcessedOffset int64) ([]*kgo.Record, error) {
 	defer func() {
 		if err := r.Close(); err != nil {
 			slog.ErrorContext(ctx, "Failed closing Avro file reader", "error", err)
@@ -140,7 +156,7 @@ func recordsInFile(ctx context.Context, r io.ReadCloser, topicPrefix string, res
 			return nil, fmt.Errorf("failed decoding Avro record: %w", err)
 		}
 		// skip records that were already restored
-		if rec.Offset <= resumeOffset {
+		if rec.Offset <= lastProcessedOffset {
 			continue
 		}
 		rec.Topic = topicPrefix + rec.Topic
