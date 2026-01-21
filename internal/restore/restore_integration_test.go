@@ -127,6 +127,7 @@ func TestRestore(t *testing.T) {
 }
 
 func duplicateFirstFileForPartition(ctx context.Context, t *testing.T, s3Client *s3.Client, partition int, newOffset int) {
+	t.Helper()
 	srcKey := testutil.FileKey(s3Prefix, srcTopic, partition, 0)
 	destKey := testutil.FileKey(s3Prefix, srcTopic, partition, newOffset)
 	_, err := s3Client.CopyObject(ctx, &s3.CopyObjectInput{
