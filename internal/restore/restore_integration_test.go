@@ -30,7 +30,15 @@ func init() {
 	)
 }
 
-func TestRestoreE2E(t *testing.T) {
+const (
+	srcTopic           = "e2e-source-topic"
+	srcTopicPartitions = 15
+	s3Prefix           = "backup-data"
+	planTopic          = "e2e-plan-topic"
+	bucketName         = "e2e-bucket"
+)
+
+func TestRestore(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping e2e test in short mode")
 	}
@@ -47,7 +55,6 @@ func TestRestoreE2E(t *testing.T) {
 
 	testutil.SetupEnvS3Access()
 	s3Client := testutil.NewS3Client(ctx, t, s3Endpoint)
-	bucketName := "e2e-bucket"
 	_, err := s3Client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucketName)})
 	require.NoError(t, err)
 
@@ -59,16 +66,133 @@ func TestRestoreE2E(t *testing.T) {
 	kadmClient := kadm.NewClient(adminClient)
 	t.Cleanup(kadmClient.Close)
 
+	totalRecsPerPartition := feedTopicAndRunBackup(t, kadmClient, ctx, kafkaBrokers, s3Endpoint)
+	runPlanRestore(t, kadmClient, ctx, kafkaBrokers, s3Endpoint)
+
+	// Create the restore Topic (15 partitions) with the "restored" prefix
+	restoredTopic := "restored-" + srcTopic
+	_, err = kadmClient.CreateTopic(ctx, int32(srcTopicPartitions), 1, nil, restoredTopic)
+	require.NoError(t, err)
+
+	// 8. Run Restore
+	restoreGroup := newRandomName("e2e-restore")
+	restoreCfg := restore.AppConfig{
+		Brokers:            kafkaBrokers,
+		PlanTopic:          planTopic,
+		RestoreTopicPrefix: "restored-",
+		ConsumerGroup:      restoreGroup,
+		S3Bucket:           bucketName,
+		S3Endpoint:         s3Endpoint,
+		S3Region:           testutil.MinioRegion,
+	}
+
+	restoreCtx, restoreCancel := context.WithCancel(ctx)
+	defer restoreCancel()
+
+	restoreErrCh := make(chan error, 1)
+	go func() {
+		restoreErrCh <- restore.Run(restoreCtx, restoreCfg)
+	}()
+
+	/*	pause the restore after some records were restored */
+	_, err = testutil.WaitForRecords(ctx, t, restoredTopic, kafkaBrokers, total(totalRecsPerPartition)/10)
+	require.NoError(t, err)
+
+	stopApp(ctx, t, restoreCancel, restoreErrCh)
+
+	// rewind the offsets in the plan topic to the beginning so that we force it to reconsume the messages to check the resume mechanism
+	resetConsumerGroup(t, ctx, kadmClient, restoreGroup, planTopic)
+
+	// start again the restore
+	resumeRestoreCtx, resumeRestoreCancel := context.WithCancel(ctx)
+	defer resumeRestoreCancel()
+	resumeRestoreErrCh := make(chan error, 1)
+	go func() {
+		resumeRestoreErrCh <- restore.Run(resumeRestoreCtx, restoreCfg)
+	}()
+
+	// Wait for the restore group to finish consuming the plan topic
+	testutil.WaitConsumeAll(ctx, t, kadmClient, planTopic, restoreGroup)
+
+	stopApp(ctx, t, resumeRestoreCancel, resumeRestoreErrCh)
+
+	validateRestoredRecords(t, ctx, restoredTopic, kafkaBrokers, totalRecsPerPartition)
+}
+
+func validateRestoredRecords(t *testing.T, ctx context.Context, restoredTopic string, kafkaBrokers string, expectedRecsPerPartition map[int]int) {
+	t.Helper()
+	// Verify restored records
+	restoredRecs, err := testutil.ReadAll(ctx, t, restoredTopic, kafkaBrokers)
+	require.NoError(t, err)
+
+	// Check distribution and content
+	countsByPart := make(map[int]int)
+	recsByPart := make(map[int][]*kgo.Record)
+
+	for _, r := range restoredRecs {
+		countsByPart[int(r.Partition)]++
+		recsByPart[int(r.Partition)] = append(recsByPart[int(r.Partition)], r)
+	}
+
+	require.Len(t, countsByPart, srcTopicPartitions, "Should have messages in all partitions")
+	for p := range srcTopicPartitions {
+		require.Equal(t, expectedRecsPerPartition[p], countsByPart[p], "Partition %d count mismatch", p)
+
+		// check ordering and content
+		pRecs := recsByPart[p]
+
+		// We expect strict order per partition
+		currentIdx := 0
+		for _, r := range pRecs {
+			expectedVal := fmt.Sprintf("val-%d", currentIdx)
+			expectedKey := fmt.Sprintf("key-%d", p)
+			require.Equal(t, expectedKey, string(r.Key), "Key mismatch at partition %d index %d", p, currentIdx)
+			require.Equal(t, expectedVal, string(r.Value), "Value mismatch at partition %d index %d", p, currentIdx)
+
+			expectHeader(t, r, "test-header", fmt.Sprintf("header-value-%d", currentIdx))
+			expectHeader(t, r, "original_offset", fmt.Sprintf("%d", currentIdx))
+			currentIdx++
+		}
+	}
+}
+
+func resetConsumerGroup(t *testing.T, ctx context.Context, kadmClient *kadm.Client, group string, topic string) {
+	t.Helper()
+	ts := make(kadm.TopicsSet)
+	ts.Add(topic)
+	_, err := kadmClient.DeleteOffsets(ctx, group, ts)
+	require.NoError(t, err)
+}
+
+func runPlanRestore(t *testing.T, kadmClient *kadm.Client, ctx context.Context, kafkaBrokers string, s3Endpoint string) {
+	t.Helper()
+	// Create the plan Topic (5 partitions)
+	_, err := kadmClient.CreateTopic(ctx, 5, 1, nil, planTopic)
+	require.NoError(t, err)
+
+	// Run Plan Restore
+	planCfg := planrestore.AppConfig{
+		Brokers:            kafkaBrokers,
+		PlanTopic:          planTopic,
+		S3Bucket:           bucketName,
+		S3Prefix:           s3Prefix,
+		S3Endpoint:         s3Endpoint,
+		S3Region:           testutil.MinioRegion,
+		RestoreTopicsRegex: srcTopic, // Restore our source topic
+	}
+
+	require.NoError(t, planrestore.Run(ctx, planCfg))
+}
+
+func feedTopicAndRunBackup(t *testing.T, kadmClient *kadm.Client, ctx context.Context, kafkaBrokers string, s3Endpoint string) map[int]int {
+	t.Helper()
 	// Create the source topic with 15 partitions
-	srcTopic := "e2e-source-topic"
-	partitions := 15
-	_, err = kadmClient.CreateTopic(ctx, int32(partitions), 1, nil, srcTopic)
+	_, err := kadmClient.CreateTopic(ctx, int32(srcTopicPartitions), 1, nil, srcTopic)
 	require.NoError(t, err)
 
 	// Start Backup
 	backupGroup := newRandomName("e2e-backup")
 	workingDir := t.TempDir()
-	s3Prefix := "backup-data"
 
 	backupCfg := backup.AppConfig{
 		Brokers:                kafkaBrokers,
@@ -100,114 +224,11 @@ func TestRestoreE2E(t *testing.T) {
 	require.NoError(t, err)
 	defer producerClient.Close()
 
-	totalRecsPerPartition := writeSequencedRecords(t, ctx, producerClient, srcTopic, partitions, 10)
-	totalRecords := total(totalRecsPerPartition)
-	testutil.WaitForGroupOffsets(ctx, t, kadmClient, backupGroup, map[string]int{srcTopic: totalRecords})
+	totalRecsPerPartition := writeSequencedRecords(t, ctx, producerClient, srcTopic, srcTopicPartitions, 10)
+	testutil.WaitConsumeAll(ctx, t, kadmClient, srcTopic, backupGroup)
 
 	stopApp(ctx, t, backupCancel, backupErrCh)
-
-	// Create the plan Topic (5 partitions)
-	planTopic := "e2e-plan-topic"
-	_, err = kadmClient.CreateTopic(ctx, 5, 1, nil, planTopic)
-	require.NoError(t, err)
-
-	// Run Plan Restore
-	planCfg := planrestore.AppConfig{
-		Brokers:            kafkaBrokers,
-		PlanTopic:          planTopic,
-		S3Bucket:           bucketName,
-		S3Prefix:           s3Prefix,
-		S3Endpoint:         s3Endpoint,
-		S3Region:           testutil.MinioRegion,
-		RestoreTopicsRegex: srcTopic, // Restore our source topic
-	}
-
-	err = planrestore.Run(ctx, planCfg)
-	require.NoError(t, err)
-
-	// Create the restore Topic (15 partitions) with the "restored" prefix
-	restoredTopic := "restored-" + srcTopic
-	_, err = kadmClient.CreateTopic(ctx, int32(partitions), 1, nil, restoredTopic)
-	require.NoError(t, err)
-
-	// 8. Run Restore
-	restoreGroup := newRandomName("e2e-restore")
-	restoreCfg := restore.AppConfig{
-		Brokers:            kafkaBrokers,
-		PlanTopic:          planTopic,
-		RestoreTopicPrefix: "restored-",
-		ConsumerGroup:      restoreGroup,
-		S3Bucket:           bucketName,
-		S3Endpoint:         s3Endpoint,
-		S3Region:           testutil.MinioRegion,
-	}
-
-	restoreCtx, restoreCancel := context.WithCancel(ctx)
-	defer restoreCancel()
-
-	restoreErrCh := make(chan error, 1)
-	go func() {
-		restoreErrCh <- restore.Run(restoreCtx, restoreCfg)
-	}()
-
-	/*	pause the restore after some records were restored */
-	_, err = testutil.WaitForRecords(ctx, t, restoredTopic, kafkaBrokers, totalRecords/10)
-	require.NoError(t, err)
-
-	stopApp(ctx, t, restoreCancel, restoreErrCh)
-
-	// rewind the offsets in the plan topic to the beginning so that we force it to reconsume the messages to check the resume mechanism
-	ts := make(kadm.TopicsSet)
-	ts.Add(planTopic)
-	_, err = kadmClient.DeleteOffsets(ctx, restoreGroup, ts)
-	require.NoError(t, err)
-
-	// start again the restore
-	resumeRestoreCtx, resumeRestoreCancel := context.WithCancel(ctx)
-	defer resumeRestoreCancel()
-	resumeRestoreErrCh := make(chan error, 1)
-	go func() {
-		resumeRestoreErrCh <- restore.Run(resumeRestoreCtx, restoreCfg)
-	}()
-
-	// Wait for the restore group to finish consuming the plan topic
-	testutil.WaitConsumeAll(ctx, t, kadmClient, planTopic, restoreGroup)
-
-	stopApp(ctx, t, resumeRestoreCancel, resumeRestoreErrCh)
-
-	// Verify restored records
-	restoredRecs, err := testutil.ReadAll(ctx, t, restoredTopic, kafkaBrokers)
-	require.NoError(t, err)
-
-	// Check distribution and content
-	counts := make(map[int]int)
-	recsByPartition := make(map[int][]*kgo.Record)
-
-	for _, r := range restoredRecs {
-		counts[int(r.Partition)]++
-		recsByPartition[int(r.Partition)] = append(recsByPartition[int(r.Partition)], r)
-	}
-
-	require.Len(t, counts, partitions, "Should have messages in all partitions")
-	for p := range partitions {
-		require.Equal(t, totalRecsPerPartition[p], counts[p], "Partition %d count mismatch", p)
-
-		// check ordering and content
-		pRecs := recsByPartition[p]
-
-		// We expect strict order per partition
-		currentIdx := 0
-		for _, r := range pRecs {
-			expectedVal := fmt.Sprintf("val-%d", currentIdx)
-			expectedKey := fmt.Sprintf("key-%d", p)
-			require.Equal(t, expectedKey, string(r.Key), "Key mismatch at partition %d index %d", p, currentIdx)
-			require.Equal(t, expectedVal, string(r.Value), "Value mismatch at partition %d index %d", p, currentIdx)
-
-			expectHeader(t, r, "test-header", fmt.Sprintf("header-value-%d", currentIdx))
-			expectHeader(t, r, "original_offset", fmt.Sprintf("%d", currentIdx))
-			currentIdx++
-		}
-	}
+	return totalRecsPerPartition
 }
 
 func expectHeader(t *testing.T, r *kgo.Record, headerName string, value string) {
