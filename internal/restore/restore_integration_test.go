@@ -170,10 +170,14 @@ func TestRestoreE2E(t *testing.T) {
 		resumeRestoreErrCh <- restore.Run(resumeRestoreCtx, restoreCfg)
 	}()
 
-	restoredRecs, err := testutil.WaitForRecords(ctx, t, restoredTopic, kafkaBrokers, totalRecords)
-	require.NoError(t, err)
+	// Wait for the restore group to finish consuming the plan topic
+	testutil.WaitConsumeAll(ctx, t, kadmClient, planTopic, restoreGroup)
 
 	stopApp(ctx, t, resumeRestoreCancel, resumeRestoreErrCh)
+
+	// Verify restored records
+	restoredRecs, err := testutil.ReadAll(ctx, t, restoredTopic, kafkaBrokers)
+	require.NoError(t, err)
 
 	// Check distribution and content
 	counts := make(map[int]int)
