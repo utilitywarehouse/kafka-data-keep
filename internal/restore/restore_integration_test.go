@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -24,7 +25,6 @@ import (
 	"github.com/utilitywarehouse/kafka-data-keep/internal/planrestore"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/restore"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/testutil"
-	"slices"
 )
 
 func init() {
@@ -153,6 +153,7 @@ func duplicateRandomFilesForPartition(ctx context.Context, t *testing.T, s3Clien
 }
 
 func genRandomDestKey(t *testing.T, srcKey string, partition int, files []string) string {
+	t.Helper()
 	srcOffset := extractOffset(t, srcKey)
 
 	// Find a new offset that doesn't exist
@@ -178,7 +179,7 @@ func listS3FilesForPartition(ctx context.Context, t *testing.T, s3Client *s3.Cli
 	})
 	require.NoError(t, err)
 
-	var files []string
+	files := make([]string, 0, len(resp.Contents))
 	for _, obj := range resp.Contents {
 		files = append(files, *obj.Key)
 	}
@@ -188,6 +189,7 @@ func listS3FilesForPartition(ctx context.Context, t *testing.T, s3Client *s3.Cli
 }
 
 func extractOffset(t *testing.T, key string) int {
+	t.Helper()
 	// key: .../topic-partition-00000.avro
 	// we assume format ends with -offset.avro
 	base := filepath.Base(key)
