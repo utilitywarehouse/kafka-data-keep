@@ -8,6 +8,9 @@ import (
 	"log/slog"
 	"math/big"
 	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -21,6 +24,7 @@ import (
 	"github.com/utilitywarehouse/kafka-data-keep/internal/planrestore"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/restore"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/testutil"
+	"slices"
 )
 
 func init() {
@@ -71,7 +75,7 @@ func TestRestore(t *testing.T) {
 	// Manually duplicate the file with 0 offset on S3 for partitions.
 	// This simulates a scenario where an overlapping or duplicate file exists
 	for p := range srcTopicPartitions {
-		duplicateFirstFileForPartition(ctx, t, s3Client, p, randomInt(100, 3000))
+		duplicateRandomFilesForPartition(ctx, t, s3Client, p, randomInt(2, 5))
 	}
 
 	runPlanRestore(ctx, t, kadmClient, kafkaBrokers, s3Endpoint)
@@ -126,16 +130,77 @@ func TestRestore(t *testing.T) {
 	validateRestoredRecords(t, ctx, restoredTopic, kafkaBrokers, totalRecsPerPartition)
 }
 
-func duplicateFirstFileForPartition(ctx context.Context, t *testing.T, s3Client *s3.Client, partition int, newOffset int) {
+func duplicateRandomFilesForPartition(ctx context.Context, t *testing.T, s3Client *s3.Client, partition int, count int) {
 	t.Helper()
-	srcKey := testutil.FileKey(s3Prefix, srcTopic, partition, 0)
-	destKey := testutil.FileKey(s3Prefix, srcTopic, partition, newOffset)
-	_, err := s3Client.CopyObject(ctx, &s3.CopyObjectInput{
-		Bucket:     aws.String(bucketName),
-		CopySource: aws.String(bucketName + "/" + srcKey),
-		Key:        aws.String(destKey),
+
+	files := listS3FilesForPartition(ctx, t, s3Client, partition)
+
+	for range count {
+		// Pick random file
+		srcKey := files[randomInt(0, len(files)-1)]
+		destKey := genRandomDestKey(t, srcKey, partition, files)
+
+		_, err := s3Client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:     aws.String(bucketName),
+			CopySource: aws.String(bucketName + "/" + srcKey),
+			Key:        aws.String(destKey),
+		})
+		require.NoError(t, err)
+		files = append(files, destKey)
+
+		t.Logf("Duplicated %s to %s", srcKey, destKey)
+	}
+}
+
+func genRandomDestKey(t *testing.T, srcKey string, partition int, files []string) string {
+	srcOffset := extractOffset(t, srcKey)
+
+	// Find a new offset that doesn't exist
+	var destKey string
+	for {
+		// Ensure new offset is greater than source offset to avoid restoring future records early
+		// We add a random delta to the source offset
+		newOffset := srcOffset + randomInt(1, 1000)
+		destKey = testutil.FileKey(s3Prefix, srcTopic, partition, newOffset)
+
+		if !slices.Contains(files, destKey) {
+			return destKey
+		}
+	}
+}
+
+func listS3FilesForPartition(ctx context.Context, t *testing.T, s3Client *s3.Client, partition int) []string {
+	t.Helper()
+	prefix := filepath.Dir(testutil.FileKey(s3Prefix, srcTopic, partition, 0)) + "/"
+	resp, err := s3Client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+		Bucket: aws.String(bucketName),
+		Prefix: aws.String(prefix),
 	})
 	require.NoError(t, err)
+
+	var files []string
+	for _, obj := range resp.Contents {
+		files = append(files, *obj.Key)
+	}
+
+	require.NotEmpty(t, files, "no files found for partition %d", partition)
+	return files
+}
+
+func extractOffset(t *testing.T, key string) int {
+	// key: .../topic-partition-00000.avro
+	// we assume format ends with -offset.avro
+	base := filepath.Base(key)
+	ext := filepath.Ext(base)
+	name := strings.TrimSuffix(base, ext)
+
+	lastDash := strings.LastIndex(name, "-")
+	require.NotEqual(t, -1, lastDash, "invalid filename format %s", key)
+
+	offStr := name[lastDash+1:]
+	val, err := strconv.Atoi(offStr)
+	require.NoError(t, err, "failed to parse offset from %s", key)
+	return val
 }
 
 func validateRestoredRecords(t *testing.T, ctx context.Context, restoredTopic string, kafkaBrokers string, expectedRecsPerPartition map[int]int) {
