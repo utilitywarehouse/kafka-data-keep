@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -11,8 +12,8 @@ import (
 )
 
 // ReadLatest consumes the last message (tip) for the specified partitions in the specified topic. If no partition is specified, all are read.
-func ReadLatest(ctx context.Context, seedBrokers []string, topic string, onlyPartitions ...int32) (map[int32]*kgo.Record, error) {
-	client, err := kgo.NewClient(kgo.SeedBrokers(seedBrokers...))
+func ReadLatest(ctx context.Context, seedBrokers []string, tls *tls.Config, topic string, onlyPartitions ...int32) (map[int32]*kgo.Record, error) {
+	client, err := kgo.NewClient(kgo.SeedBrokers(seedBrokers...), kgo.DialTLSConfig(tls))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kafka client: %w", err)
 	}

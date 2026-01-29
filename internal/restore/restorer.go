@@ -2,6 +2,7 @@ package restore
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"log/slog"
@@ -107,8 +108,10 @@ func (r *kafkaS3Restorer) getLastProcessedOffset(ctx context.Context, topic stri
 }
 
 func (r *kafkaS3Restorer) computeLastRestoredOffset(ctx context.Context, topic string, partitionInt int32) (int64, error) {
-	seedBrokers := r.consumer.OptValue(kgo.SeedBrokers).([]string) //nolint:errcheck
-	lastRecord, err := kafka2.ReadLatest(ctx, seedBrokers, r.restoreTopicName(topic), partitionInt)
+	seedBrokers := r.consumer.OptValue(kgo.SeedBrokers).([]string)    //nolint:errcheck
+	tlsConfig := r.consumer.OptValue(kgo.DialTLSConfig).(*tls.Config) //nolint:errcheck
+
+	lastRecord, err := kafka2.ReadLatest(ctx, seedBrokers, tlsConfig, r.restoreTopicName(topic), partitionInt)
 	if err != nil {
 		return -1, fmt.Errorf("failed to read latest record for topic %s partition %d: %w", topic, partitionInt, err)
 	}

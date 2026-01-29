@@ -345,7 +345,7 @@ func writeSequencedRecords(t *testing.T, ctx context.Context, client *kgo.Client
 
 	// produce records in loops, each time writing a different number of records per partition
 	for range loops {
-		recs := make([]*kgo.Record, 0)
+		recs := make([]*kgo.Record, 0, 100)
 		for p := range partitions {
 			msgsPerPartition := randomInt(100, 1000)
 			for i := range msgsPerPartition {
