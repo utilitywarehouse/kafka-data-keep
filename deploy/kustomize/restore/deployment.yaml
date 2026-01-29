@@ -30,7 +30,7 @@ spec:
           imagePullPolicy: IfNotPresent
           command: ["/kafka-data-keep", "restore"]
           env:
-            - name: KAFKA_BROKERS_DNS_SRV
+            - name: KAFKA_BROKERS
               value: TBD
             - name: KAFKA_PLAN_TOPIC
               value: pubsub.plan-topic-restore
