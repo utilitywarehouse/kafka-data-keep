@@ -13,7 +13,7 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/minio v0.40.0
 	github.com/testcontainers/testcontainers-go/modules/redpanda v0.40.0
 	github.com/twmb/franz-go v1.20.6
-	github.com/twmb/franz-go/pkg/kadm v1.17.1
+	github.com/twmb/franz-go/pkg/kadm v1.17.2
 	github.com/twmb/franz-go/pkg/kmsg v1.12.0
 	github.com/utilitywarehouse/go-operational v0.0.0-20250423084238-c80547bcb12b
 	github.com/utilitywarehouse/uwos-go/pubsub/kafka v1.9.0
