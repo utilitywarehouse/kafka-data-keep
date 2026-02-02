@@ -1,23 +1,23 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: kafka-data-keep-plan-restore
+  name: kafka-data-plan-restore
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: kafka-data-keep-plan-restore
+  name: kafka-data-plan-restore
   labels:
-    app: kafka-data-keep-plan-restore
-    app.kubernetes.io/name: kafka-data-keep-plan-restore
+    app: kafka-data-plan-restore
+    app.kubernetes.io/name: kafka-data-plan-restore
 spec:
   # plan-restore supports resuming, so we can keep the default backoff limit of 6 times.
   template:
     spec:
-      serviceAccountName: kafka-data-keep-plan-restore
+      serviceAccountName: kafka-data-plan-restore
       restartPolicy: OnFailure
       containers:
-        - name: kafka-data-keep-plan-restore
+        - name: kafka-data-plan-restore
           image: quay.io/utilitywarehouse/kafka-data-keep:main
           imagePullPolicy: IfNotPresent
           command: ["/kafka-data-keep", "plan-restore"]
