@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -11,7 +12,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
-	"strings"
 )
 
 type AppConfig struct {
