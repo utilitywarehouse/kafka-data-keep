@@ -34,7 +34,7 @@ spec:
               value: TBD
             - name: KAFKA_PLAN_TOPIC
               value: pubsub.plan-topic-restore
-            - name: KAFKA_CONSUMER_GROUP
+            - name: KAFKA_GROUP_ID
               value: pubsub.kafka-restore
             - name: KAFKA_RESTORE_TOPIC_PREFIX
               value: ""

@@ -149,16 +149,16 @@ this ensures that all the files holding the data for a topic's partition will be
 
 The `restore` subcommand supports the following flags and environment variables. Flags take precedence over environment variables.
 
-| Flag | Environment Variable | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `-brokers` | `KAFKA_BROKERS` | `localhost:9092` | Kafka brokers (comma separated) |
-| `-brokersDNSSrv` | `KAFKA_BROKERS_DNS_SRV` | | DNS SRV record with the kafka seed brokers |
-| `-plan-topic` | `KAFKA_PLAN_TOPIC` | `pubsub.plan-topic-restore` | Kafka topic to consume the plan from |
+| Flag                    | Environment Variable         | Default | Description |
+|:------------------------|:-----------------------------| :--- | :--- |
+| `-brokers`              | `KAFKA_BROKERS`              | `localhost:9092` | Kafka brokers (comma separated) |
+| `-brokersDNSSrv`        | `KAFKA_BROKERS_DNS_SRV`      | | DNS SRV record with the kafka seed brokers |
+| `-plan-topic`           | `KAFKA_PLAN_TOPIC`           | `pubsub.plan-topic-restore` | Kafka topic to consume the plan from |
 | `-restore-topic-prefix` | `KAFKA_RESTORE_TOPIC_PREFIX` | `pubsub.restore-test.` | Prefix to add to the restored topics |
-| `-consumer-group` | `KAFKA_CONSUMER_GROUP` | `pubsub.msk-data-keep-restore` | Kafka consumer group ID |
-| `-s3-bucket` | `S3_BUCKET` | | S3 bucket name where the backups are stored |
-| `-s3-endpoint` | `AWS_ENDPOINT_URL` | | S3 endpoint URL (for LocalStack or custom S3-compatible storage) |
-| `-s3-region` | `AWS_REGION` | `eu-west-1` | S3 region |
+| `-group-id`             | `KAFKA_GROUP_ID`             | `pubsub.msk-data-keep-restore` | Kafka consumer group ID |
+| `-s3-bucket`            | `S3_BUCKET`                  | | S3 bucket name where the backups are stored |
+| `-s3-endpoint`          | `AWS_ENDPOINT_URL`           | | S3 endpoint URL (for LocalStack or custom S3-compatible storage) |
+| `-s3-region`            | `AWS_REGION`                 | `eu-west-1` | S3 region |
 
 ## Usage Example
 

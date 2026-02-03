@@ -343,8 +343,8 @@ func loadRestoreAppConfig(args []string) (restore.AppConfig, error) {
 	)
 	fs.StringVar(
 		&cfg.ConsumerGroup,
-		"consumer-group",
-		getEnv("KAFKA_CONSUMER_GROUP", "pubsub.msk-data-keep-restore"),
+		"group-id",
+		getEnv("KAFKA_GROUP_ID", "pubsub.msk-data-keep-restore"),
 		"Kafka consumer group ID",
 	)
 
