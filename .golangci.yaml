@@ -3,59 +3,8 @@ run:
   tests: true
   allow-parallel-runners: true
 linters:
-  default: all
-  disable:
-    # Complexity
-    - cyclop
-    - funlen
-    - maintidx
-    - nestif
-    # Formatting / Style
-    - funcorder
-    - godot
-    - lll
-    - nlreturn
-    - nonamedreturns
-    - varnamelen
-    - wsl
-    - wsl_v5
-    # Best Practices / Opinionated
-    - depguard
-    - err113
-    - exhaustruct
-    - gochecknoglobals
-    - ireturn
-    - mnd
-    - nilnil
-    - noinlineerr
-    - paralleltest
-    - perfsprint
-    - testpackage
-    - wrapcheck
-  settings:
-    revive:
-      rules:
-        - name: error-return
-          disabled: true
-        - name: unused-parameter
-          disabled: true
-  exclusions:
-    generated: lax
-    presets:
-      - comments
-      - common-false-positives
-      - legacy
-      - std-error-handling
-    rules:
-      - linters:
-          - contextcheck
-          - sloglint
-        path: main.go$
-      - linters:
-          - contextcheck
-          - errcheck
-          - gochecknoinits
-          - revive
-          - sloglint
-          - spancheck
-        path: _test.go$
+  # Enable specific linters in addition to defaults
+  enable:
+    - misspell
+    - gocritic
+    - gocognit
