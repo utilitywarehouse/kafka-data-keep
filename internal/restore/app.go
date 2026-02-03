@@ -48,7 +48,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 
 	planConsumer, err := initKafkaConsumer(cfg)
 	if err != nil {
-		return fmt.Errorf("failed to create kafka producer: %w", err)
+		return fmt.Errorf("failed to create kafka consumer: %w", err)
 	}
 	defer planConsumer.Close()
 
