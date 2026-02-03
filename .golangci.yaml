@@ -5,32 +5,33 @@ run:
 linters:
   default: all
   disable:
-    # Too strict style/complexity linters
+    # Complexity
     - cyclop
+    - funlen
+    - maintidx
+    - nestif
+    # Formatting / Style
+    - funcorder
+    - godot
+    - lll
+    - nlreturn
+    - nonamedreturns
+    - varnamelen
+    - wsl
+    - wsl_v5
+    # Best Practices / Opinionated
     - depguard
     - err113
     - exhaustruct
-    - funcorder
-    - funlen
     - gochecknoglobals
-    - gocognit
-    - godot
     - ireturn
-    - lll
-    - maintidx
     - mnd
-    - nestif
     - nilnil
-    - nlreturn
     - noinlineerr
-    - nonamedreturns
     - paralleltest
     - perfsprint
     - testpackage
-    - varnamelen
     - wrapcheck
-    - wsl
-    - wsl_v5
   settings:
     revive:
       rules:
