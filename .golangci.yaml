@@ -5,25 +5,16 @@ run:
 linters:
   default: all
   disable:
+    # Too strict style/complexity linters
     - cyclop
     - depguard
-    - dupl
-    - dupword
     - err113
-    - errorlint
     - exhaustruct
-    - forcetypeassert
     - funcorder
     - funlen
     - gochecknoglobals
     - gocognit
-    - goconst
-    - gocyclo
-    - godoclint
     - godot
-    - godox
-    - gosmopolitan
-    - inamedparam
     - ireturn
     - lll
     - maintidx
@@ -35,43 +26,18 @@ linters:
     - nonamedreturns
     - paralleltest
     - perfsprint
-    - tagliatelle
     - testpackage
-    - unqueryvet
     - varnamelen
     - wrapcheck
     - wsl
     - wsl_v5
   settings:
-    errcheck:
-      check-type-assertions: true
-      check-blank: true
-    exhaustive:
-      default-signifies-exhaustive: true
-    goconst:
-      min-len: 3
-      min-occurrences: 3
-    misspell:
-      mode: restricted
-      locale: UK
-    modernize:
-      disable:
-        - reflecttypefor
-    nolintlint:
-      require-specific: true
-    prealloc:
-      for-loops: true
     revive:
       rules:
-        - name: exported
+        - name: error-return
           disabled: true
-        - name: context-as-argument
-          disabled: false
-    sloglint:
-      context: "scope"
-    usetesting:
-      os-setenv: true
-      os-temp-dir: true
+        - name: unused-parameter
+          disabled: true
   exclusions:
     generated: lax
     presets:
@@ -83,51 +49,12 @@ linters:
       - linters:
           - contextcheck
           - sloglint
-        path: ^main.go$
-      - linters:
-          - contextcheck
-          - sloglint
-        path: (.+)/main.go
-      - linters:
-          - sloglint
-        path: (.+)/cmd/(.+).go
+        path: main.go$
       - linters:
           - contextcheck
           - errcheck
           - gochecknoinits
-          - noctx
+          - revive
           - sloglint
           - spancheck
-        path: (.+)_test.go
-      - linters:
-          - revive
-        path: (.+)_test.go
-        text: context-as-argument
-      - linters:
-          - goconst
-        path: (.+)_test\.go
-    paths:
-      - third_party$
-      - builtin$
-      - examples$
-formatters:
-  enable:
-    - gci
-    - gofmt
-    - gofumpt
-    - goimports
-  settings:
-    gci:
-      sections:
-        - standard
-        - default
-    gofmt:
-      rewrite-rules:
-        - pattern: interface{}
-          replacement: any
-  exclusions:
-    generated: lax
-    paths:
-      - third_party$
-      - builtin$
-      - examples$
+        path: _test.go$
