@@ -108,8 +108,8 @@ func (r *kafkaS3Restorer) getLastProcessedOffset(ctx context.Context, topic stri
 }
 
 func (r *kafkaS3Restorer) computeLastRestoredOffset(ctx context.Context, topic string, partitionInt int32) (int64, error) {
-	seedBrokers := r.consumer.OptValue(kgo.SeedBrokers).([]string)    //nolint:errcheck
-	tlsConfig := r.consumer.OptValue(kgo.DialTLSConfig).(*tls.Config) //nolint:errcheck
+	seedBrokers := r.consumer.OptValue(kgo.SeedBrokers).([]string)    //nolint:errcheck // this would fail only if the franz-go lib changes, and we'll catch that in integration tests
+	tlsConfig := r.consumer.OptValue(kgo.DialTLSConfig).(*tls.Config) //nolint:errcheck // this would fail only if the franz-go lib changes, and we'll catch that in integration tests
 
 	lastRecord, err := kafka2.ReadLatest(ctx, seedBrokers, tlsConfig, r.restoreTopicName(topic), partitionInt)
 	if err != nil {

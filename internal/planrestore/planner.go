@@ -38,8 +38,8 @@ func (p *Planner) Run(ctx context.Context) error {
 	}
 
 	slog.InfoContext(ctx, "Planning restore for topics", "count", len(topics), "topics", topics)
-	seedBrokers := p.kafkaClient.OptValue(kgo.SeedBrokers).([]string)    //nolint:errcheck
-	tlsConfig := p.kafkaClient.OptValue(kgo.DialTLSConfig).(*tls.Config) //nolint:errcheck
+	seedBrokers := p.kafkaClient.OptValue(kgo.SeedBrokers).([]string)    //nolint:errcheck // this would fail only if the franz-go lib changes, and we'll catch that in integration tests
+	tlsConfig := p.kafkaClient.OptValue(kgo.DialTLSConfig).(*tls.Config) //nolint:errcheck // this would fail only if the franz-go lib changes, and we'll catch that in integration tests
 	latestRecords, err := kafka2.ReadLatest(ctx, seedBrokers, tlsConfig, p.cfg.PlanTopic)
 	if err != nil {
 		return fmt.Errorf("failed to read latest records from plan topic: %w", err)
