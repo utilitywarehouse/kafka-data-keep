@@ -40,7 +40,7 @@ func (r *kafkaS3Restorer) Run(ctx context.Context) error {
 }
 
 func (r *kafkaS3Restorer) restoreFile(ctx context.Context, key string) error {
-	//nolint:contextcheck // use background context as otherwise, if the context is canceled, it fails when decoding the file
+	//nolint:contextcheck // use background context as otherwise, if the context is cancelled, it fails when decoding the file with a misleading error about the file format. The operation is quick and will finish within sigterm time
 	getResp, err := r.s3Client.GetObject(context.Background(), &s3.GetObjectInput{
 		Bucket: aws.String(r.cfg.S3Bucket),
 		Key:    aws.String(key),
@@ -69,8 +69,7 @@ func (r *kafkaS3Restorer) restoreFile(ctx context.Context, key string) error {
 		return nil
 	}
 
-	//nolint:contextcheck //use background context as we want to push the records through without stopping if the context was canceled.
-	res := r.consumer.ProduceSync(context.Background(), recs...)
+	res := r.consumer.ProduceSync(ctx, recs...)
 
 	// update the last processed offset for this partition
 	r.lastProcessedOffsetByPartition[partitionKey(topic, partition)] = recs[len(recs)-1].Offset
