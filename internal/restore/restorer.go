@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"io"
 	"log/slog"
 	"strconv"
 
@@ -12,7 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/codec/avro"
-	kafka2 "github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
+	kafkaint "github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/planrestore"
 	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
 )
@@ -40,15 +39,6 @@ func (r *kafkaS3Restorer) Run(ctx context.Context) error {
 }
 
 func (r *kafkaS3Restorer) restoreFile(ctx context.Context, key string) error {
-	//nolint:contextcheck // use background context as otherwise, if the context is cancelled, it fails when decoding the file with a misleading error about the file format. The operation is quick and will finish within sigterm time
-	getResp, err := r.s3Client.GetObject(context.Background(), &s3.GetObjectInput{
-		Bucket: aws.String(r.cfg.S3Bucket),
-		Key:    aws.String(key),
-	})
-	if err != nil {
-		return fmt.Errorf("failed to download file from S3: %w", err)
-	}
-
 	topic, partition, err := planrestore.TopicPartitionFromFileName(key)
 	if err != nil {
 		return fmt.Errorf("failed to extract topic from file name: %w", err)
@@ -59,7 +49,7 @@ func (r *kafkaS3Restorer) restoreFile(ctx context.Context, key string) error {
 		return fmt.Errorf("failed determining resume offset: %w", err)
 	}
 
-	recs, err := r.recordsInFile(ctx, getResp.Body, lastProcessedOffset)
+	recs, err := r.recordsInFile(ctx, key, lastProcessedOffset)
 	if err != nil {
 		return fmt.Errorf("failed to decode Avro file: %w", err)
 	}
@@ -110,7 +100,7 @@ func (r *kafkaS3Restorer) computeLastRestoredOffset(ctx context.Context, topic s
 	seedBrokers := r.consumer.OptValue(kgo.SeedBrokers).([]string)    //nolint:errcheck // this would fail only if the franz-go lib changes, and we'll catch that in integration tests
 	tlsConfig := r.consumer.OptValue(kgo.DialTLSConfig).(*tls.Config) //nolint:errcheck // this would fail only if the franz-go lib changes, and we'll catch that in integration tests
 
-	lastRecord, err := kafka2.ReadLatest(ctx, seedBrokers, tlsConfig, r.restoreTopicName(topic), partitionInt)
+	lastRecord, err := kafkaint.ReadLatest(ctx, seedBrokers, tlsConfig, r.restoreTopicName(topic), partitionInt)
 	if err != nil {
 		return -1, fmt.Errorf("failed to read latest record for topic %s partition %d: %w", topic, partitionInt, err)
 	}
@@ -149,14 +139,23 @@ func getOriginalOffsetFromHeader(ctx context.Context, rec *kgo.Record) (int64, e
 
 const originalOffsetHeader = "original_offset"
 
-func (r *kafkaS3Restorer) recordsInFile(ctx context.Context, is io.ReadCloser, lastProcessedOffset int64) ([]*kgo.Record, error) {
+func (r *kafkaS3Restorer) recordsInFile(ctx context.Context, key string, lastProcessedOffset int64) ([]*kgo.Record, error) {
+	//nolint:contextcheck // use background context as otherwise, if the context is cancelled, it fails when decoding the file with a misleading error about the file format. The operation is quick and will finish within sigterm time
+	getResp, err := r.s3Client.GetObject(context.Background(), &s3.GetObjectInput{
+		Bucket: aws.String(r.cfg.S3Bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to download file from S3: %w", err)
+	}
+
 	defer func() {
-		if err := is.Close(); err != nil {
+		if err := getResp.Body.Close(); err != nil {
 			slog.ErrorContext(ctx, "Failed closing Avro file reader", "error", err)
 		}
 	}()
 	decFactory := &avro.RecordDecoderFactory{}
-	decoder, err := decFactory.New(is)
+	decoder, err := decFactory.New(getResp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed creating Avro decoder: %w", err)
 	}
