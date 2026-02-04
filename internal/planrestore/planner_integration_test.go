@@ -4,14 +4,12 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/testutil"
 )
 
@@ -90,7 +88,7 @@ func TestPlanRestoreIntegration(t *testing.T) {
 		},
 	}
 
-	records, err := waitForRecords(t, ctx, planTopic, kafkaBrokers, totalMapValues(expectedMap))
+	records, err := testutil.WaitForRecords(ctx, t, planTopic, kafkaBrokers, totalMapValues(expectedMap))
 	require.NoError(t, err)
 
 	checkPlannedEntries(t, expectedMap, records)
@@ -133,7 +131,7 @@ func TestPlanRestoreIntegration(t *testing.T) {
 		},
 	}
 
-	records, err = waitForRecords(t, ctx, planTopic, kafkaBrokers, totalMapValues(expectedMap))
+	records, err = testutil.WaitForRecords(ctx, t, planTopic, kafkaBrokers, totalMapValues(expectedMap))
 	require.NoError(t, err)
 
 	checkPlannedEntries(t, expectedMap, records)
@@ -171,42 +169,5 @@ func createS3Objects(ctx context.Context, t *testing.T, bucketName string, files
 			Body:   strings.NewReader("dummy content"),
 		})
 		require.NoError(t, err)
-	}
-}
-
-func waitForRecords(t *testing.T, ctx context.Context, planTopic string, kafkaBrokers string, expectedCount int) ([]*kgo.Record, error) {
-	t.Helper()
-
-	client, err := kgo.NewClient(
-		kgo.SeedBrokers(kafkaBrokers),
-		kgo.ConsumeTopics(planTopic),
-		kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()),
-	)
-	require.NoError(t, err)
-	defer client.Close()
-
-	var records []*kgo.Record
-	timeout := time.After(10 * time.Second)
-
-	for {
-		select {
-		case <-timeout:
-			t.Fatalf("timed out waiting for %d records, got %d", expectedCount, len(records))
-		default:
-			if len(records) >= expectedCount {
-				return records, nil
-			}
-
-			fetches := client.PollFetches(ctx)
-			err, stopProcessing := kafka.HandleFetches(ctx, &fetches)
-			if stopProcessing || err != nil {
-				return nil, err
-			}
-
-			iter := fetches.RecordIter()
-			for !iter.Done() {
-				records = append(records, iter.Next())
-			}
-		}
 	}
 }

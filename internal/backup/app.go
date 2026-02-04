@@ -125,7 +125,7 @@ func initKafkaClient(cfg AppConfig, mgr *PartitionsWriterManager) (*kafka.Client
 	if cfg.BrokersDNSSrv != "" {
 		opts = append(opts, kafka.SeedBrokersFromDNS(cfg.BrokersDNSSrv))
 	} else {
-		opts = append(opts, kgo.SeedBrokers(cfg.Brokers))
+		opts = append(opts, kgo.SeedBrokers(splitAndTrim(cfg.Brokers, ",")...))
 	}
 	if cfg.ExcludeTopicsRegex != "" {
 		opts = append(opts, kgo.ConsumeExcludeTopics(splitAndTrim(cfg.ExcludeTopicsRegex, ",")...))

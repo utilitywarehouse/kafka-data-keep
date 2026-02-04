@@ -1,10 +1,11 @@
-package planrestore
+package restore
 
 import (
 	"context"
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -16,13 +17,12 @@ import (
 type AppConfig struct {
 	Brokers            string
 	BrokersDNSSrv      string
-	RestoreTopicsRegex string
-	ExcludeTopicsRegex string
 	PlanTopic          string
+	RestoreTopicPrefix string
+	ConsumerGroup      string
 	S3Bucket           string
 	S3Endpoint         string
 	S3Region           string
-	S3Prefix           string
 }
 
 func Run(ctx context.Context, cfg AppConfig) error {
@@ -30,7 +30,6 @@ func Run(ctx context.Context, cfg AppConfig) error {
 		return fmt.Errorf("bucket must be provided")
 	}
 
-	// Initialise S3 client and uploader
 	awsCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(cfg.S3Region))
 	if err != nil {
 		return fmt.Errorf("unable to load SDK config: %w", err)
@@ -47,26 +46,31 @@ func Run(ctx context.Context, cfg AppConfig) error {
 
 	s3Client := s3.NewFromConfig(awsCfg, s3ClientOpts...)
 
-	kafkaClient, err := initKafkaClient(cfg)
+	planConsumer, err := initKafkaConsumer(cfg)
 	if err != nil {
-		return fmt.Errorf("failed to create kafka producer: %w", err)
+		return fmt.Errorf("failed to create kafka consumer: %w", err)
 	}
-	defer kafkaClient.Close()
+	defer planConsumer.Close()
 
-	slog.InfoContext(ctx, "Starting plan restore application...")
-
-	planner := Planner{
-		s3Client:    s3Client,
-		kafkaClient: kafkaClient,
-		cfg:         cfg,
+	slog.InfoContext(ctx, "Starting restore application...")
+	restorer := kafkaS3Restorer{
+		consumer: planConsumer,
+		s3Client: s3Client,
+		cfg:      cfg,
 	}
-	return planner.Run(ctx)
+	return restorer.Run(ctx)
 }
 
-func initKafkaClient(cfg AppConfig) (*kafka.Client, error) {
+func initKafkaConsumer(cfg AppConfig) (*kafka.SimpleConsumer, error) {
 	opts := []kgo.Opt{
 		kafka.WithTracer(nil), // do not record traces
-		kgo.DefaultProduceTopic(cfg.PlanTopic),
+		kgo.ConsumeTopics(cfg.PlanTopic),
+		kafka.WithConsumeOldestOffset(),
+		kgo.ConsumerGroup(cfg.ConsumerGroup),
+		kafka.WithMaxPollRecords(10),                   // use a low max poll, as it takes ~1s to process one record, and we should give it a chance to process rebalances.
+		kgo.SessionTimeout(1 * time.Minute),            // session timeout is 1 minute
+		kgo.HeartbeatInterval(15 * time.Second),        // increase heartbeat interval to 15 seconds, as processing a record is slow (~1s / record)
+		kgo.RecordPartitioner(kgo.ManualPartitioner()), // use a manual partitioner, as all the restore records have a partition set and we should keep the same partition
 	}
 	if cfg.BrokersDNSSrv != "" {
 		opts = append(opts, kafka.SeedBrokersFromDNS(cfg.BrokersDNSSrv))
@@ -74,7 +78,7 @@ func initKafkaClient(cfg AppConfig) (*kafka.Client, error) {
 		opts = append(opts, kgo.SeedBrokers(splitAndTrim(cfg.Brokers, ",")...))
 	}
 
-	return kafka.NewClient(opts...)
+	return kafka.NewSimpleConsumer(opts...)
 }
 
 func splitAndTrim(s, sep string) []string {

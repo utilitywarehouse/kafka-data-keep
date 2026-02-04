@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -51,4 +52,10 @@ func SetupEnvS3Access() {
 	_ = os.Setenv("AWS_ACCESS_KEY_ID", S3User)
 	_ = os.Setenv("AWS_SECRET_ACCESS_KEY", s3pass)
 	_ = os.Setenv("AWS_REGION", MinioRegion)
+}
+
+func FileKey(s3Prefix string, topic string, partition int, offset int) string {
+	filename := fmt.Sprintf("%s-%d-%s.avro", topic, partition, fmt.Sprintf("%019d", offset))
+	fileKey := filepath.Join(s3Prefix, topic, fmt.Sprintf("%d", partition), filename)
+	return fileKey
 }

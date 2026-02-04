@@ -45,7 +45,6 @@ func TestReadLastRecords(t *testing.T) {
 
 	t.Run("FullConsumption", func(t *testing.T) {
 		t.Parallel()
-		// 2. Initialise Admin Client to create topic
 
 		topic := "test-topic-full"
 		partitions := int32(15)
@@ -68,11 +67,7 @@ func TestReadLastRecords(t *testing.T) {
 			}
 		}
 
-		consumeClient, err := kgo.NewClient(kgo.SeedBrokers(seedBroker))
-		require.NoError(t, err)
-		defer consumeClient.Close()
-
-		records, err := ReadLatest(ctx, consumeClient, topic)
+		records, err := ReadLatest(ctx, []string{seedBroker}, nil, topic)
 		require.NoError(t, err)
 
 		// 5. Validation
@@ -83,6 +78,15 @@ func TestReadLastRecords(t *testing.T) {
 			expectedVal := fmt.Sprintf("p%d-msg-%d", p, msgsPerPartition-1)
 			assert.Equal(t, expectedVal, string(r.Value), "Should have consumed the last message for partition %d", p)
 		}
+
+		//	consume a single partition
+		partition := int32(3)
+		records, err = ReadLatest(ctx, []string{seedBroker}, nil, topic, partition)
+		require.NoError(t, err)
+		assert.Len(t, records, 1, "Should have consumed only 1 partition")
+		rec := records[partition]
+		expectedVal := fmt.Sprintf("p%d-msg-%d", partition, msgsPerPartition-1)
+		assert.Equal(t, expectedVal, string(rec.Value), "Should have consumed the last message for partition %d", partition)
 	})
 
 	t.Run("WithDeletedRecords", func(t *testing.T) {
@@ -120,15 +124,7 @@ func TestReadLastRecords(t *testing.T) {
 		_, err = kadmClient.DeleteRecords(ctx, delMap)
 		require.NoError(t, err)
 
-		// 4. Consume to Tip
-		consumeClient, err := kgo.NewClient(
-			kgo.SeedBrokers(seedBroker),
-			kgo.RecordPartitioner(kgo.ManualPartitioner()),
-		)
-		require.NoError(t, err)
-		defer consumeClient.Close()
-
-		records, err := ReadLatest(ctx, consumeClient, topic)
+		records, err := ReadLatest(ctx, []string{seedBroker}, nil, topic)
 		require.NoError(t, err)
 
 		// Verification
@@ -142,6 +138,7 @@ func TestReadLastRecords(t *testing.T) {
 		assert.Equal(t, int64(9), r0.Offset, "Partition 0 should be at offset 9")
 		assert.Equal(t, "p0-msg-9", string(r0.Value))
 	})
+
 	t.Run("EmptyTopic", func(t *testing.T) {
 		t.Parallel()
 
@@ -150,16 +147,14 @@ func TestReadLastRecords(t *testing.T) {
 		_, err := kadmClient.CreateTopics(ctx, int32(5), 1, nil, topic)
 		require.NoError(t, err)
 
-		consumeClient, err := kgo.NewClient(
-			kgo.SeedBrokers(seedBroker),
-			kgo.RecordPartitioner(kgo.ManualPartitioner()),
-		)
-		require.NoError(t, err)
-		defer consumeClient.Close()
-
-		// Consume
-		records, err := ReadLatest(ctx, consumeClient, topic)
+		// Consume all partitions
+		records, err := ReadLatest(ctx, []string{seedBroker}, nil, topic)
 		require.NoError(t, err)
 		assert.Empty(t, records, "Should return empty map for empty topic")
+
+		// Consume a single partition
+		records, err = ReadLatest(ctx, []string{seedBroker}, nil, topic, int32(3))
+		require.NoError(t, err)
+		assert.Empty(t, records, "Should return empty map for empty topic when reading a single partition")
 	})
 }

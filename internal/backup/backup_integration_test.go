@@ -105,7 +105,7 @@ func TestBackupIntegration(t *testing.T) {
 			errCh <- Run(backupCtx, cfg)
 		}()
 
-		waitConsumerStart(ctx, t, kadmClient, groupID)
+		testutil.WaitConsumerStart(ctx, t, kadmClient, groupID)
 
 		// First batch of records
 		writeRecords(t, ctx, adminClient, topic1, 0, 10, cfg.MinFileSize)
@@ -115,7 +115,7 @@ func TestBackupIntegration(t *testing.T) {
 		require.NoError(t, adminClient.Flush(ctx))
 
 		// Wait until these records are consumed
-		waitForGroupOffsets(t, ctx, kadmClient, groupID, map[string]int{topic1: 30, topic2: 50})
+		testutil.WaitForGroupOffsets(ctx, t, kadmClient, groupID, map[string]int{topic1: 30, topic2: 50})
 
 		// Second batch of records
 		writeRecords(t, ctx, adminClient, topic1, 0, 20, cfg.MinFileSize)
@@ -125,19 +125,19 @@ func TestBackupIntegration(t *testing.T) {
 		require.NoError(t, adminClient.Flush(ctx))
 
 		// Wait until the second batch is consumed
-		waitForGroupOffsets(t, ctx, kadmClient, groupID, map[string]int{topic1: 60, topic2: 120})
+		testutil.WaitForGroupOffsets(ctx, t, kadmClient, groupID, map[string]int{topic1: 60, topic2: 120})
 
 		stopApp(ctx, t, cancel, errCh)
 
 		expectedFiles := map[string]int{
-			fileKey(s3Prefix, topic1, 0, 0):  10,
-			fileKey(s3Prefix, topic1, 0, 10): 20,
-			fileKey(s3Prefix, topic1, 1, 0):  20,
-			fileKey(s3Prefix, topic1, 1, 20): 10,
-			fileKey(s3Prefix, topic2, 0, 0):  20,
-			fileKey(s3Prefix, topic2, 0, 20): 30,
-			fileKey(s3Prefix, topic2, 1, 0):  30,
-			fileKey(s3Prefix, topic2, 1, 30): 40,
+			testutil.FileKey(s3Prefix, topic1, 0, 0):  10,
+			testutil.FileKey(s3Prefix, topic1, 0, 10): 20,
+			testutil.FileKey(s3Prefix, topic1, 1, 0):  20,
+			testutil.FileKey(s3Prefix, topic1, 1, 20): 10,
+			testutil.FileKey(s3Prefix, topic2, 0, 0):  20,
+			testutil.FileKey(s3Prefix, topic2, 0, 20): 30,
+			testutil.FileKey(s3Prefix, topic2, 1, 0):  30,
+			testutil.FileKey(s3Prefix, topic2, 1, 30): 40,
 		}
 
 		filesFound := listFilesOnBucket(ctx, t, s3Client, s3Prefix)
@@ -181,11 +181,11 @@ func TestBackupIntegration(t *testing.T) {
 			errCh <- Run(backupCtx, cfg)
 		}()
 
-		waitConsumerStart(ctx, t, kadmClient, groupID)
+		testutil.WaitConsumerStart(ctx, t, kadmClient, groupID)
 		// write records, and the file won't be flushed since the file size limit is very high
 		writeRecords(t, ctx, adminClient, topic, 0, 1000, 1000)
 
-		fileKey := fileKey(s3Prefix, topic, 0, 0)
+		fileKey := testutil.FileKey(s3Prefix, topic, 0, 0)
 		waitLocalFileHasRecords(t, ctx, workingDir, fileKey, 1000)
 
 		stopApp(ctx, t, cancel, errCh)
@@ -233,13 +233,13 @@ func TestBackupIntegration(t *testing.T) {
 			errCh <- Run(backupCtx, cfg)
 		}()
 
-		waitConsumerStart(ctx, t, kadmClient, groupID)
+		testutil.WaitConsumerStart(ctx, t, kadmClient, groupID)
 		// write records, but offsets won't be committed, since the file size limit is very high
 		writeRecords(t, ctx, adminClient, topic, 0, 1000, 1000)
 		require.NoError(t, adminClient.Flush(ctx))
 		t.Logf("Wrote records to topic %s", topic)
 
-		fileKey := fileKey(s3Prefix, topic, 0, 0)
+		fileKey := testutil.FileKey(s3Prefix, topic, 0, 0)
 		waitLocalFileHasRecords(t, ctx, workingDir, fileKey, 1000)
 
 		stopApp(ctx, t, cancel, errCh)
@@ -253,7 +253,7 @@ func TestBackupIntegration(t *testing.T) {
 			errCh <- Run(backupCtx, cfg)
 		}()
 
-		waitConsumerStart(ctx, t, kadmClient, groupID)
+		testutil.WaitConsumerStart(ctx, t, kadmClient, groupID)
 		// wait until the local file refills with all the records
 		waitLocalFileHasRecords(t, ctx, workingDir, fileKey, 1000)
 
@@ -301,11 +301,11 @@ func TestBackupIntegration(t *testing.T) {
 			errCh <- Run(backupCtx, cfg)
 		}()
 
-		waitConsumerStart(ctx, t, kadmClient, groupID)
+		testutil.WaitConsumerStart(ctx, t, kadmClient, groupID)
 		// write records continuously, but offsets won't be committed, since the file size limit is very high
 		writeRecords(t, ctx, adminClient, topic, 0, 1000, 1000)
 
-		fileKey1 := fileKey(s3Prefix, topic, 0, 0)
+		fileKey1 := testutil.FileKey(s3Prefix, topic, 0, 0)
 		waitLocalFileHasRecords(t, ctx, workingDir, fileKey1, 1000)
 
 		stopApp(ctx, t, cancel, errCh)
@@ -325,10 +325,10 @@ func TestBackupIntegration(t *testing.T) {
 			errCh <- Run(backupCtx, cfg)
 		}()
 
-		waitConsumerStart(ctx, t, kadmClient, groupID)
+		testutil.WaitConsumerStart(ctx, t, kadmClient, groupID)
 
 		// a new local file should be started, as it changed the name
-		fileKey2 := fileKey(s3Prefix, topic, 0, 100)
+		fileKey2 := testutil.FileKey(s3Prefix, topic, 0, 100)
 		waitLocalFileHasRecords(t, ctx, workingDir, fileKey2, 900)
 
 		// check that the old file was removed
@@ -379,11 +379,11 @@ func TestBackupIntegration(t *testing.T) {
 			errCh <- Run(firstRunCtx, cfg)
 		}()
 
-		waitConsumerStart(ctx, t, kadmClient, groupID)
+		testutil.WaitConsumerStart(ctx, t, kadmClient, groupID)
 		// write records, but offsets won't be committed, since the file size limit is very high
 		writeRecords(t, ctx, adminClient, topic1, 0, 1000, 1000)
 
-		fileKey1 := fileKey(s3Prefix, topic1, 0, 0)
+		fileKey1 := testutil.FileKey(s3Prefix, topic1, 0, 0)
 		waitLocalFileHasRecords(t, ctx, workingDir, fileKey1, 1000)
 
 		stopApp(ctx, t, cancel, errCh)
@@ -406,7 +406,7 @@ func TestBackupIntegration(t *testing.T) {
 			errCh <- Run(secondRunCtx, cfg)
 		}()
 
-		waitConsumerStart(ctx, t, kadmClient, groupID)
+		testutil.WaitConsumerStart(ctx, t, kadmClient, groupID)
 
 		// check that the folder of topic1 partition 0 was removed
 		_, err = os.Stat(filepath.Dir(filepath.Join(workingDir, fileKey1)))
@@ -451,10 +451,10 @@ func TestBackupIntegration(t *testing.T) {
 			errCh <- Run(backupCtx, cfg)
 		}()
 
-		waitConsumerStart(ctx, t, kadmClient, groupID)
+		testutil.WaitConsumerStart(ctx, t, kadmClient, groupID)
 		// write records, but offsets won't be committed, since the file size limit is very high
 		writeRecords(t, ctx, adminClient, topic4, 0, 10, 1000)
-		fileKey := fileKey(cfg.S3Prefix, topic4, 0, 0)
+		fileKey := testutil.FileKey(cfg.S3Prefix, topic4, 0, 0)
 
 		waitLocalFileHasRecords(t, ctx, workingDir, fileKey, 10)
 
@@ -515,7 +515,7 @@ func TestBackupIntegration(t *testing.T) {
 		require.NoError(t, err)
 
 		// Create a local avro file with zero entries corresponding to the zero offset
-		leftoverFileKey := fileKey(s3Prefix, topic, 0, 0)
+		leftoverFileKey := testutil.FileKey(s3Prefix, topic, 0, 0)
 		leftoverLocalFile := filepath.Join(workingDir, leftoverFileKey)
 
 		createEmptyAvroFile(t, leftoverLocalFile)
@@ -530,12 +530,11 @@ func TestBackupIntegration(t *testing.T) {
 			errCh <- Run(backupCtx, cfg)
 		}()
 
-		waitConsumerStart(ctx, t, kadmClient, groupID)
+		testutil.WaitConsumerStart(ctx, t, kadmClient, groupID)
 
 		// The backup finds the local file starting at 0, that is less than the current offset (100).
 		// Since it's not in S3, it should just log a warning message and increase the counter
-
-		waitForGroupOffsets(t, ctx, kadmClient, groupID, map[string]int{topic: 150})
+		testutil.WaitForGroupOffsets(ctx, t, kadmClient, groupID, map[string]int{topic: 150})
 		stopApp(ctx, t, cancel, errCh)
 
 		_, err = os.Stat(leftoverLocalFile)
@@ -611,12 +610,6 @@ func waitLocalFileHasRecords(t *testing.T, ctx context.Context, dir string, file
 	}
 }
 
-func fileKey(s3Prefix string, topic4 string, partition int, offset int) string {
-	filename := fmt.Sprintf("%s-%d-%s.avro", topic4, partition, fmt.Sprintf("%019d", offset))
-	fileKey := filepath.Join(s3Prefix, topic4, fmt.Sprintf("%d", partition), filename)
-	return fileKey
-}
-
 func stopApp(ctx context.Context, t *testing.T, cancel context.CancelFunc, errCh chan error) {
 	t.Helper()
 	cancel()
@@ -627,26 +620,6 @@ func stopApp(ctx context.Context, t *testing.T, cancel context.CancelFunc, errCh
 		require.NoError(t, err, "backup returned unexpected error")
 	case <-time.After(10 * time.Second):
 		t.Fatal("backup did not finish after cancellation")
-	}
-}
-
-func waitConsumerStart(ctx context.Context, t *testing.T, client *kadm.Client, groupId string) {
-	t.Helper()
-	timeoutC := time.After(10 * time.Second)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-timeoutC:
-			t.Fatalf("consumer group %s did not start in 10 seconds", groupId)
-		case <-time.Tick(100 * time.Millisecond):
-			dg, err := client.DescribeGroups(ctx, groupId)
-			require.NoError(t, err)
-			if dg[groupId].State == "Stable" {
-				t.Logf("consumer group %s started consuming", groupId)
-				return
-			}
-		}
 	}
 }
 
@@ -676,63 +649,6 @@ func listFilesOnBucket(ctx context.Context, t *testing.T, s3Client *s3.Client, s
 		t.Logf("Found file: %s (size: %d), recs: %d", key, obj.Size, len(records))
 	}
 	return filesFound
-}
-
-// Helper to wait for consumer group offsets
-func waitForGroupOffsets(t *testing.T, ctx context.Context, client *kadm.Client, group string, expected map[string]int) {
-	t.Helper()
-	timeoutC := time.After(30 * time.Second)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-timeoutC:
-			t.Fatalf("consumer group %s did not reach expected offsets: %+v", group, expected)
-			return
-		case <-time.Tick(100 * time.Millisecond):
-			if isGroupAt(t, ctx, client, group, expected) {
-				return
-			}
-		}
-	}
-}
-
-func isGroupAt(t *testing.T, ctx context.Context, client *kadm.Client, group string, expected map[string]int) bool {
-	t.Helper()
-	topics := make([]string, 0, len(expected))
-	for t := range expected {
-		topics = append(topics, t)
-	}
-
-	offsets, err := client.FetchOffsetsForTopics(ctx, group, topics...)
-	require.NoError(t, err)
-
-	for topic, exp := range expected {
-		topicOffsets, hasTopicOffset := offsets[topic]
-		if !hasTopicOffset {
-			t.Logf("Topic %s: no offsets found", topic)
-			return false
-		}
-
-		currentOffset := getOffsetForTopic(topicOffsets)
-		t.Logf("Topic %s: current offset sum: %d, expected: %d", topic, currentOffset, exp)
-		if currentOffset < exp {
-			return false
-		}
-	}
-
-	return true
-}
-
-func getOffsetForTopic(topicOffsets map[int32]kadm.OffsetResponse) int {
-	// Sum offsets for all partitions of the topic
-	currentOffsetSum := 0
-	for _, pOff := range topicOffsets {
-		if pOff.At > 0 {
-			currentOffsetSum += int(pOff.At)
-		}
-	}
-	return currentOffsetSum
 }
 
 func writeRecords(t *testing.T, ctx context.Context, client *kgo.Client, topic string, partition int32, count int, totalBytes int64) {

@@ -114,3 +114,59 @@ The `plan-restore` subcommand supports the following flags and environment varia
   -s3-bucket "my-backup-bucket" \
   -s3-region "us-east-1"
 ```
+
+# Restore
+
+The `restore` command consumes restore plan records from the plan topic (created by `plan-restore`) and restores the data from S3 backup files back to Kafka topics.
+
+## Key Features
+
+### Data
+It restores the records in their original partition, keeping the order of the messages. 
+It keeps all the data from the original record: key, value, timestamp, headers.
+In addition, it adds the `original_offset` header to each restored message pointing to the original Kafka offset in the source topic. Uses this for resuming and deduplication.
+
+### Deduplication
+
+The restore command automatically handles duplicate S3 backup files with different offsets. When multiple files exist for the same partition with overlapping data (e.g., due to backup process failures and retries), the restore process will:
+- Detect duplicate records based on their original Kafka offsets (stored in the `original_offset` header)
+- Skip records that have already been restored based on their original offset to prevent duplicates in the target topic.
+
+This ensures that even if S3 contains redundant backup files, the restored Kafka topic will contain each message exactly once.
+
+### Resuming
+
+The restore process supports resuming from where it left off if interrupted. Since the restore command uses a Kafka consumer group to read from the plan topic, it automatically tracks progress via committed offsets. If the restore process is stopped and restarted, it will continue from the last committed offset, ensuring no data is lost or duplicated during restoration.
+In addition, to avoid duplicate records due to redeliveries from the plan topic, upon resuming, it will read the last restored message in each partition to determine the last restored offset from the "original_offset" header.
+
+### Parallelism
+It supports launching as many instances as the number of partitions in the plan topic.
+Each instance will consume a single partition from the plan topic and restore its data from S3.
+In the plan topic, the partitioning is done based on the source topic name and partition; 
+this ensures that all the files holding the data for a topic's partition will be restored in order by the same instance.
+
+## Configuration
+
+The `restore` subcommand supports the following flags and environment variables. Flags take precedence over environment variables.
+
+| Flag                    | Environment Variable         | Default | Description |
+|:------------------------|:-----------------------------| :--- | :--- |
+| `-brokers`              | `KAFKA_BROKERS`              | `localhost:9092` | Kafka brokers (comma separated) |
+| `-brokersDNSSrv`        | `KAFKA_BROKERS_DNS_SRV`      | | DNS SRV record with the kafka seed brokers |
+| `-plan-topic`           | `KAFKA_PLAN_TOPIC`           | `pubsub.plan-topic-restore` | Kafka topic to consume the plan from |
+| `-restore-topic-prefix` | `KAFKA_RESTORE_TOPIC_PREFIX` | `pubsub.restore-test.` | Prefix to add to the restored topics |
+| `-group-id`             | `KAFKA_GROUP_ID`             | `pubsub.msk-data-keep-restore` | Kafka consumer group ID |
+| `-s3-bucket`            | `S3_BUCKET`                  | | S3 bucket name where the backups are stored |
+| `-s3-endpoint`          | `AWS_ENDPOINT_URL`           | | S3 endpoint URL (for LocalStack or custom S3-compatible storage) |
+| `-s3-region`            | `AWS_REGION`                 | `eu-west-1` | S3 region |
+
+## Usage Example
+
+```console
+./kafka-data-keep restore \
+  -brokers "kafka:9092" \
+  -plan-topic "pubsub.plan-topic-restore" \
+  -restore-topic-prefix "pubsub.restored." \
+  -s3-bucket "my-backup-bucket" \
+  -s3-region "us-east-1"
+```
