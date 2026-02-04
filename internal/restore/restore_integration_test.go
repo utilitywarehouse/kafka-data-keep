@@ -70,7 +70,7 @@ func TestRestore(t *testing.T) {
 	kadmClient := kadm.NewClient(adminClient)
 	t.Cleanup(kadmClient.Close)
 
-	totalRecsPerPartition := feedTopicAndRunBackup(t, kadmClient, ctx, kafkaBrokers, s3Endpoint)
+	totalRecsPerPartition, deletedRecsPerPartition := feedTopicAndRunBackup(t, kadmClient, ctx, kafkaBrokers, s3Endpoint)
 
 	// Manually duplicate the file with 0 offset on S3 for partitions.
 	// This simulates a scenario where an overlapping or duplicate file exists
@@ -127,7 +127,7 @@ func TestRestore(t *testing.T) {
 
 	stopApp(ctx, t, resumeRestoreCancel, resumeRestoreErrCh)
 
-	validateRestoredRecords(t, ctx, restoredTopic, kafkaBrokers, totalRecsPerPartition)
+	validateRestoredRecords(t, ctx, restoredTopic, kafkaBrokers, totalRecsPerPartition, deletedRecsPerPartition)
 }
 
 func duplicateRandomFilesForPartition(ctx context.Context, t *testing.T, s3Client *s3.Client, partition int, count int) {
@@ -205,7 +205,7 @@ func extractOffset(t *testing.T, key string) int {
 	return val
 }
 
-func validateRestoredRecords(t *testing.T, ctx context.Context, restoredTopic string, kafkaBrokers string, expectedRecsPerPartition map[int]int) {
+func validateRestoredRecords(t *testing.T, ctx context.Context, restoredTopic string, kafkaBrokers string, expectedRecsPerPartition map[int]int, deletedRecsPerPartition map[int]int) {
 	t.Helper()
 	// Verify restored records
 	restoredRecs, err := testutil.ReadAll(ctx, t, restoredTopic, kafkaBrokers)
@@ -236,7 +236,7 @@ func validateRestoredRecords(t *testing.T, ctx context.Context, restoredTopic st
 			require.Equal(t, expectedVal, string(r.Value), "Value mismatch at partition %d index %d", p, currentIdx)
 
 			expectHeader(t, r, "test-header", fmt.Sprintf("header-value-%d", currentIdx))
-			expectHeader(t, r, "original_offset", fmt.Sprintf("%d", currentIdx))
+			expectHeader(t, r, "original_offset", fmt.Sprintf("%d", currentIdx+deletedRecsPerPartition[p]))
 			currentIdx++
 		}
 	}
@@ -269,10 +269,32 @@ func runPlanRestore(ctx context.Context, t *testing.T, kadmClient *kadm.Client, 
 	require.NoError(t, planrestore.Run(ctx, planCfg))
 }
 
-func feedTopicAndRunBackup(t *testing.T, kadmClient *kadm.Client, ctx context.Context, kafkaBrokers string, s3Endpoint string) map[int]int {
+func feedTopicAndRunBackup(t *testing.T, kadmClient *kadm.Client, ctx context.Context, kafkaBrokers string, s3Endpoint string) (map[int]int, map[int]int) {
 	t.Helper()
 	// Create the source topic with 15 partitions
 	_, err := kadmClient.CreateTopic(ctx, int32(srcTopicPartitions), 1, nil, srcTopic)
+	require.NoError(t, err)
+
+	producerClient, err := kgo.NewClient(
+		kgo.SeedBrokers(kafkaBrokers),
+		kgo.RecordPartitioner(kgo.ManualPartitioner()),
+	)
+	require.NoError(t, err)
+	defer producerClient.Close()
+
+	// create and delete messages from the topic, to advance the start offset of the topic, so the offsets won't match on restore
+	deleteRecordsPerPartition := writeSequencedRecords(t, ctx, producerClient, srcTopic, srcTopicPartitions, 1)
+
+	delOffsets := make(kadm.Offsets)
+	for p, count := range deleteRecordsPerPartition {
+		delOffsets.Add(kadm.Offset{
+			Topic: srcTopic,
+			//nolint:gosec // partitions count is small enough to fit in int32
+			Partition: int32(p),
+			At:        int64(count),
+		})
+	}
+	_, err = kadmClient.DeleteRecords(ctx, delOffsets)
 	require.NoError(t, err)
 
 	// Start Backup
@@ -302,18 +324,11 @@ func feedTopicAndRunBackup(t *testing.T, kadmClient *kadm.Client, ctx context.Co
 
 	testutil.WaitConsumerStart(ctx, t, kadmClient, backupGroup)
 
-	producerClient, err := kgo.NewClient(
-		kgo.SeedBrokers(kafkaBrokers),
-		kgo.RecordPartitioner(kgo.ManualPartitioner()),
-	)
-	require.NoError(t, err)
-	defer producerClient.Close()
-
 	totalRecsPerPartition := writeSequencedRecords(t, ctx, producerClient, srcTopic, srcTopicPartitions, 10)
 	testutil.WaitConsumeAll(ctx, t, kadmClient, srcTopic, backupGroup)
 
 	stopApp(ctx, t, backupCancel, backupErrCh)
-	return totalRecsPerPartition
+	return totalRecsPerPartition, deleteRecordsPerPartition
 }
 
 func expectHeader(t *testing.T, r *kgo.Record, headerName string, value string) {

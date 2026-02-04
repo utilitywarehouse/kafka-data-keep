@@ -58,17 +58,19 @@ func (r *kafkaS3Restorer) restoreFile(ctx context.Context, key string) error {
 		slog.InfoContext(ctx, "Restored file, but all records were skipped from it", "key", key, "last_processed_offset", lastProcessedOffset)
 		return nil
 	}
+	// getting the original topic offset before calling ProduceSync, as on this method the offset will be overwritten with the actual offset in the target topic
+	lastRecordOffset := recs[len(recs)-1].Offset
 
 	res := r.consumer.ProduceSync(ctx, recs...)
 
 	// update the last processed offset for this partition
-	r.lastProcessedOffsetByPartition[partitionKey(topic, partition)] = recs[len(recs)-1].Offset
+	r.lastProcessedOffsetByPartition[partitionKey(topic, partition)] = lastRecordOffset
 
 	if res.FirstErr() != nil {
 		return fmt.Errorf("failed to produce records: %w", res.FirstErr())
 	}
 
-	slog.InfoContext(ctx, "Restored file", "key", key, "records", len(recs), "last_offset", recs[len(recs)-1].Offset, "last_processed_offset", lastProcessedOffset)
+	slog.InfoContext(ctx, "Restored file", "key", key, "records", len(recs), "last_offset", lastRecordOffset, "last_processed_offset", lastProcessedOffset)
 	return nil
 }
 
