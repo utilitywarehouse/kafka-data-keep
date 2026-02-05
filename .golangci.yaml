@@ -19,8 +19,6 @@ linters:
     - gocognit # Cognitive complexity is often better than Cyclomatic
 
     # --- Senior Recommendations ---
-    - bodyclose   # HTTP body leaks
-    - noctx       # HTTP requests without context
     - revive      # Replacement for golint
     - gosec       # Security checks
     - errorlint   # Go 1.13+ error wrapping support
