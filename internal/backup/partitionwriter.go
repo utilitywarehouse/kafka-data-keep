@@ -131,7 +131,7 @@ func (p *PartitionWriter) open(ctx context.Context, offset int64) error {
 
 	// Ensure directory exists
 	dir := filepath.Dir(localPath)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return fmt.Errorf("failed to create directory %s: %w", dir, err)
 	}
 
@@ -141,7 +141,7 @@ func (p *PartitionWriter) open(ctx context.Context, offset int64) error {
 	}
 
 	// overwrite file if it exists already
-	f, err := os.Create(localPath)
+	f, err := os.Create(filepath.Clean(localPath))
 	if err != nil {
 		return fmt.Errorf("failed to create file %s: %w", localPath, err)
 	}
@@ -237,7 +237,7 @@ func (p *PartitionWriter) checkLeftoverLocalFile(ctx context.Context, dir string
 }
 
 func fileContainsOffset(filePath string, offset int64, decoderFact codec.RecordDecoderFactory) (bool, error) {
-	f, err := os.Open(filePath)
+	f, err := os.Open(filepath.Clean(filePath))
 	if err != nil {
 		return false, fmt.Errorf("failed to open file %s: %w", filePath, err)
 	}
@@ -269,7 +269,7 @@ func fileContainsOffset(filePath string, offset int64, decoderFact codec.RecordD
 func (p *PartitionWriter) resumeLocalFile(ctx context.Context) error {
 	slog.DebugContext(ctx, "resuming local file", "filename", p.currentFilePath)
 
-	f, err := os.OpenFile(p.currentFilePath, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0o644)
+	f, err := os.OpenFile(filepath.Clean(p.currentFilePath), os.O_APPEND|os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return fmt.Errorf("failed to open file for resuming %s: %w", p.currentFilePath, err)
 	}

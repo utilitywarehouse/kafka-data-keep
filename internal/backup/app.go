@@ -56,7 +56,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	uploader := NewUploader(s3Client, cfg.S3Bucket)
 
 	// Create working dir for local files
-	if err := os.MkdirAll(cfg.WorkingDir, 0o755); err != nil {
+	if err := os.MkdirAll(cfg.WorkingDir, 0o750); err != nil {
 		return fmt.Errorf("failed to create working dir: %w", err)
 	}
 	slog.InfoContext(ctx, "Using working dir for local files", "path", cfg.WorkingDir)

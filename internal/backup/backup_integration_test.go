@@ -569,8 +569,8 @@ func readCounterValue(t *testing.T, reader *metric.ManualReader, scopeName strin
 
 func createEmptyAvroFile(t *testing.T, file string) {
 	t.Helper()
-	require.NoError(t, os.MkdirAll(filepath.Dir(file), 0o755))
-	f, err := os.Create(file)
+	require.NoError(t, os.MkdirAll(filepath.Dir(file), 0o750))
+	f, err := os.Create(filepath.Clean(file))
 	require.NoError(t, err)
 
 	// Create a valid empty Avro file
@@ -599,7 +599,7 @@ func waitLocalFileHasRecords(t *testing.T, ctx context.Context, dir string, file
 				t.Logf("Local file %s does not exist yet", filePath)
 				continue
 			}
-			f, err := os.Open(filePath)
+			f, err := os.Open(filepath.Clean(filePath))
 			require.NoError(t, err)
 			recs := decodeAvroFile(t, f)
 			t.Logf("Local file %s has %d records. Expected %d", fileKey, len(recs), howMany)

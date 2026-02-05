@@ -13,7 +13,7 @@ linters:
     - bodyclose   # HTTP body leaks
     - noctx       # HTTP requests without context
 #    - revive      # Replacement for golint
-#    - gosec       # Security checks
+    - gosec       # Security checks
     - errorlint   # Go 1.13+ error wrapping support
     - unconvert   # Remove unnecessary conversions
     - prealloc    # Performance: slice pre-allocation
