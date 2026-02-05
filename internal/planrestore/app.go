@@ -55,7 +55,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 
 	slog.InfoContext(ctx, "Starting plan restore application...")
 
-	planner := Planner{
+	planner := planner{
 		s3Client:    s3Client,
 		kafkaClient: kafkaClient,
 		cfg:         cfg,

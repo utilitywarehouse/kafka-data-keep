@@ -66,7 +66,7 @@ func TestPlanner_filterTopics(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := &Planner{
+			p := &planner{
 				cfg: AppConfig{
 					RestoreTopicsRegex: tt.topicsRegex,
 					ExcludeTopicsRegex: tt.excludeTopicsRegex,
