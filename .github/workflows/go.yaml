@@ -39,5 +39,10 @@ jobs:
         run: |
           make mod
           git add . && git diff --staged --exit-code
+      - name: Lint
+        id: lint
+        run: |
+          make lint
+          git add . && git diff --staged --exit-code
       - name: Test
         run: make test
