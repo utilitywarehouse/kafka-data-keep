@@ -45,8 +45,10 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            # use branch name as image tag 
-            type=ref,event=branch
+            # tag with the source branch name (only on PRs)
+            type=raw,value={{head_ref}},enable=${{ github.event_name == 'pull_request' }}
+            # tag as 'latest' (only on pushes/merges to main)
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
             # use git tag as image tag
             type=ref,event=tag
       - name: Login to Quay.io Container Registry
