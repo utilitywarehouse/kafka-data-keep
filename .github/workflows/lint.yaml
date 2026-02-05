@@ -3,12 +3,14 @@ name: go
 on:
   push:
     branches:
-      - "*"
+      - "main"
+  pull_request:
+
 env:
   GOPRIVATE: "github.com/utilitywarehouse/*"
 
 jobs:
-  test:
+  lint:
     runs-on: ubuntu-latest
     permissions:
       id-token: write # allows the workflow to request an OIDC token for vault auth
@@ -34,5 +36,9 @@ jobs:
         with:
           go-version-file: 'go.mod'
           cache: true
-      - name: Test
-        run: make test
+      - name: Modules
+        run: |
+          make mod
+          git add . && git diff --staged --exit-code
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
