@@ -14,17 +14,26 @@ formatters:
 linters:
   # Enable specific linters in addition to defaults
   enable:
+     # Core Safety & Correctness
+    - nilerr
+    - noctx
+
+    # Style & Consistency
     - misspell
+    - revive      # Replacement for golint
+    - errorlint   # Go 1.13+ error wrapping support
+    - prealloc
     - gocritic
+
+    # Complexity & Code Quality
     - gocognit # Cognitive complexity is often better than Cyclomatic
 
-    # --- Senior Recommendations ---
-    - revive      # Replacement for golint
-    - gosec       # Security checks
-    - errorlint   # Go 1.13+ error wrapping support
-    - unconvert   # Remove unnecessary conversions
-    - prealloc    # Performance: slice pre-allocation
-    - nakedret    # Disallow naked returns in long functions
+    # Security
+    - gosec
+
+    # Testing & Concurrency
+    - testifylint
+    - tparallel
 
   settings:
     revive:
