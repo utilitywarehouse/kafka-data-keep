@@ -44,6 +44,11 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            # use branch name as image tag 
+            type=ref,event=branch
+            # use git tag as image tag
+            type=ref,event=tag
       - name: Login to Quay.io Container Registry
         uses: docker/login-action@v3
         with:
