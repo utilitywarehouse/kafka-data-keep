@@ -2,6 +2,15 @@ version: "2"
 run:
   tests: true
   allow-parallel-runners: true
+
+# Enable formatters explicitly. None is enabled by default
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - gofumpt
+    - goimports
+
 linters:
   # Enable specific linters in addition to defaults
   enable:
@@ -12,17 +21,18 @@ linters:
     # --- Senior Recommendations ---
     - bodyclose   # HTTP body leaks
     - noctx       # HTTP requests without context
-#    - revive      # Replacement for golint
+    - revive      # Replacement for golint
     - gosec       # Security checks
     - errorlint   # Go 1.13+ error wrapping support
     - unconvert   # Remove unnecessary conversions
     - prealloc    # Performance: slice pre-allocation
     - nakedret    # Disallow naked returns in long functions
 
-# Enable formtters explicitly. None is enabled by default
-formatters:
-  enable:
-    - gci
-    - gofmt
-    - gofumpt
-    - goimports
+  settings:
+    revive:
+      enable-default-rules: true
+      rules:
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true

@@ -115,10 +115,10 @@ func initKafkaClient(cfg AppConfig, mgr *PartitionsWriterManager) (*kafka.Client
 		kgo.OnPartitionsAssigned(func(ctx context.Context, c *kgo.Client, p map[string][]int32) {
 			mgr.OnPartitionsAssigned(ctx, c, p)
 		}),
-		kgo.OnPartitionsRevoked(func(ctx context.Context, c *kgo.Client, p map[string][]int32) {
+		kgo.OnPartitionsRevoked(func(ctx context.Context, _ *kgo.Client, p map[string][]int32) {
 			mgr.OnPartitionsRevoked(ctx, p)
 		}),
-		kgo.OnPartitionsLost(func(ctx context.Context, c *kgo.Client, p map[string][]int32) {
+		kgo.OnPartitionsLost(func(ctx context.Context, _ *kgo.Client, p map[string][]int32) {
 			mgr.OnPartitionLost(ctx, p)
 		}),
 	}

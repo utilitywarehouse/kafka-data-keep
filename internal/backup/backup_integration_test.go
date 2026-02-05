@@ -108,20 +108,20 @@ func TestBackupIntegration(t *testing.T) {
 		testutil.WaitConsumerStart(ctx, t, kadmClient, groupID)
 
 		// First batch of records
-		writeRecords(t, ctx, adminClient, topic1, 0, 10, cfg.MinFileSize)
-		writeRecords(t, ctx, adminClient, topic1, 1, 20, cfg.MinFileSize)
-		writeRecords(t, ctx, adminClient, topic2, 0, 20, cfg.MinFileSize)
-		writeRecords(t, ctx, adminClient, topic2, 1, 30, cfg.MinFileSize)
+		writeRecords(ctx, t, adminClient, topic1, 0, 10, cfg.MinFileSize)
+		writeRecords(ctx, t, adminClient, topic1, 1, 20, cfg.MinFileSize)
+		writeRecords(ctx, t, adminClient, topic2, 0, 20, cfg.MinFileSize)
+		writeRecords(ctx, t, adminClient, topic2, 1, 30, cfg.MinFileSize)
 		require.NoError(t, adminClient.Flush(ctx))
 
 		// Wait until these records are consumed
 		testutil.WaitForGroupOffsets(ctx, t, kadmClient, groupID, map[string]int{topic1: 30, topic2: 50})
 
 		// Second batch of records
-		writeRecords(t, ctx, adminClient, topic1, 0, 20, cfg.MinFileSize)
-		writeRecords(t, ctx, adminClient, topic1, 1, 10, cfg.MinFileSize)
-		writeRecords(t, ctx, adminClient, topic2, 0, 30, cfg.MinFileSize)
-		writeRecords(t, ctx, adminClient, topic2, 1, 40, cfg.MinFileSize)
+		writeRecords(ctx, t, adminClient, topic1, 0, 20, cfg.MinFileSize)
+		writeRecords(ctx, t, adminClient, topic1, 1, 10, cfg.MinFileSize)
+		writeRecords(ctx, t, adminClient, topic2, 0, 30, cfg.MinFileSize)
+		writeRecords(ctx, t, adminClient, topic2, 1, 40, cfg.MinFileSize)
 		require.NoError(t, adminClient.Flush(ctx))
 
 		// Wait until the second batch is consumed
@@ -183,10 +183,10 @@ func TestBackupIntegration(t *testing.T) {
 
 		testutil.WaitConsumerStart(ctx, t, kadmClient, groupID)
 		// write records, and the file won't be flushed since the file size limit is very high
-		writeRecords(t, ctx, adminClient, topic, 0, 1000, 1000)
+		writeRecords(ctx, t, adminClient, topic, 0, 1000, 1000)
 
 		fileKey := testutil.FileKey(s3Prefix, topic, 0, 0)
-		waitLocalFileHasRecords(t, ctx, workingDir, fileKey, 1000)
+		waitLocalFileHasRecords(ctx, t, workingDir, fileKey, 1000)
 
 		stopApp(ctx, t, cancel, errCh)
 
@@ -235,12 +235,12 @@ func TestBackupIntegration(t *testing.T) {
 
 		testutil.WaitConsumerStart(ctx, t, kadmClient, groupID)
 		// write records, but offsets won't be committed, since the file size limit is very high
-		writeRecords(t, ctx, adminClient, topic, 0, 1000, 1000)
+		writeRecords(ctx, t, adminClient, topic, 0, 1000, 1000)
 		require.NoError(t, adminClient.Flush(ctx))
 		t.Logf("Wrote records to topic %s", topic)
 
 		fileKey := testutil.FileKey(s3Prefix, topic, 0, 0)
-		waitLocalFileHasRecords(t, ctx, workingDir, fileKey, 1000)
+		waitLocalFileHasRecords(ctx, t, workingDir, fileKey, 1000)
 
 		stopApp(ctx, t, cancel, errCh)
 
@@ -255,13 +255,13 @@ func TestBackupIntegration(t *testing.T) {
 
 		testutil.WaitConsumerStart(ctx, t, kadmClient, groupID)
 		// wait until the local file refills with all the records
-		waitLocalFileHasRecords(t, ctx, workingDir, fileKey, 1000)
+		waitLocalFileHasRecords(ctx, t, workingDir, fileKey, 1000)
 
 		// write more records
-		writeRecords(t, ctx, adminClient, topic, 0, 1000, 1000)
+		writeRecords(ctx, t, adminClient, topic, 0, 1000, 1000)
 
 		// wait until the local file has the new records
-		waitLocalFileHasRecords(t, ctx, workingDir, fileKey, 2000)
+		waitLocalFileHasRecords(ctx, t, workingDir, fileKey, 2000)
 		stopApp(ctx, t, cancel, errCh)
 	})
 
@@ -303,10 +303,10 @@ func TestBackupIntegration(t *testing.T) {
 
 		testutil.WaitConsumerStart(ctx, t, kadmClient, groupID)
 		// write records continuously, but offsets won't be committed, since the file size limit is very high
-		writeRecords(t, ctx, adminClient, topic, 0, 1000, 1000)
+		writeRecords(ctx, t, adminClient, topic, 0, 1000, 1000)
 
 		fileKey1 := testutil.FileKey(s3Prefix, topic, 0, 0)
-		waitLocalFileHasRecords(t, ctx, workingDir, fileKey1, 1000)
+		waitLocalFileHasRecords(ctx, t, workingDir, fileKey1, 1000)
 
 		stopApp(ctx, t, cancel, errCh)
 
@@ -329,17 +329,17 @@ func TestBackupIntegration(t *testing.T) {
 
 		// a new local file should be started, as it changed the name
 		fileKey2 := testutil.FileKey(s3Prefix, topic, 0, 100)
-		waitLocalFileHasRecords(t, ctx, workingDir, fileKey2, 900)
+		waitLocalFileHasRecords(ctx, t, workingDir, fileKey2, 900)
 
 		// check that the old file was removed
 		_, err = os.Stat(filepath.Join(workingDir, fileKey1))
 		require.ErrorIs(t, err, os.ErrNotExist, "old file should not exist anymore")
 
 		// write more records
-		writeRecords(t, ctx, adminClient, topic, 0, 1000, 1000)
+		writeRecords(ctx, t, adminClient, topic, 0, 1000, 1000)
 
 		// wait until the new local file has the new records
-		waitLocalFileHasRecords(t, ctx, workingDir, fileKey2, 1900)
+		waitLocalFileHasRecords(ctx, t, workingDir, fileKey2, 1900)
 		stopApp(ctx, t, cancel, errCh)
 	})
 
@@ -381,10 +381,10 @@ func TestBackupIntegration(t *testing.T) {
 
 		testutil.WaitConsumerStart(ctx, t, kadmClient, groupID)
 		// write records, but offsets won't be committed, since the file size limit is very high
-		writeRecords(t, ctx, adminClient, topic1, 0, 1000, 1000)
+		writeRecords(ctx, t, adminClient, topic1, 0, 1000, 1000)
 
 		fileKey1 := testutil.FileKey(s3Prefix, topic1, 0, 0)
-		waitLocalFileHasRecords(t, ctx, workingDir, fileKey1, 1000)
+		waitLocalFileHasRecords(ctx, t, workingDir, fileKey1, 1000)
 
 		stopApp(ctx, t, cancel, errCh)
 
@@ -392,7 +392,7 @@ func TestBackupIntegration(t *testing.T) {
 		_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, topic2)
 		require.NoError(t, err)
 
-		writeRecords(t, ctx, adminClient, topic2, 0, 1000, 1000)
+		writeRecords(ctx, t, adminClient, topic2, 0, 1000, 1000)
 
 		// consume another topic
 		secondRunCtx, cancel := context.WithCancel(ctx)
@@ -453,18 +453,18 @@ func TestBackupIntegration(t *testing.T) {
 
 		testutil.WaitConsumerStart(ctx, t, kadmClient, groupID)
 		// write records, but offsets won't be committed, since the file size limit is very high
-		writeRecords(t, ctx, adminClient, topic4, 0, 10, 1000)
+		writeRecords(ctx, t, adminClient, topic4, 0, 10, 1000)
 		fileKey := testutil.FileKey(cfg.S3Prefix, topic4, 0, 0)
 
-		waitLocalFileHasRecords(t, ctx, workingDir, fileKey, 10)
+		waitLocalFileHasRecords(ctx, t, workingDir, fileKey, 10)
 
 		//  Wait for the partition writer to go idle and be paused
 		time.Sleep(1 * time.Second)
 
 		// write second batch
-		writeRecords(t, ctx, adminClient, topic4, 0, 10, 1000)
+		writeRecords(ctx, t, adminClient, topic4, 0, 10, 1000)
 		// local file should be resumed
-		waitLocalFileHasRecords(t, ctx, workingDir, fileKey, 20)
+		waitLocalFileHasRecords(ctx, t, workingDir, fileKey, 20)
 
 		// stop consuming
 		stopApp(ctx, t, cancel, errCh)
@@ -506,7 +506,7 @@ func TestBackupIntegration(t *testing.T) {
 		}
 
 		// write 150 records
-		writeRecords(t, ctx, adminClient, topic, 0, 150, 1000)
+		writeRecords(ctx, t, adminClient, topic, 0, 150, 1000)
 
 		// delete the first 100 records
 		delMap := make(kadm.Offsets)
@@ -581,7 +581,7 @@ func createEmptyAvroFile(t *testing.T, file string) {
 	require.NoError(t, f.Close())
 }
 
-func waitLocalFileHasRecords(t *testing.T, ctx context.Context, dir string, fileKey string, howMany int) {
+func waitLocalFileHasRecords(ctx context.Context, t *testing.T, dir string, fileKey string, howMany int) {
 	t.Helper()
 	filePath := filepath.Join(dir, fileKey)
 	timeoutC := time.After(5 * time.Second)
@@ -651,7 +651,7 @@ func listFilesOnBucket(ctx context.Context, t *testing.T, s3Client *s3.Client, s
 	return filesFound
 }
 
-func writeRecords(t *testing.T, ctx context.Context, client *kgo.Client, topic string, partition int32, count int, totalBytes int64) {
+func writeRecords(ctx context.Context, t *testing.T, client *kgo.Client, topic string, partition int32, count int, totalBytes int64) {
 	t.Helper()
 	recs := make([]*kgo.Record, 0, count)
 	for i := range count {
