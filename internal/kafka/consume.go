@@ -12,28 +12,28 @@ import (
 
 // These functions are copied over from the uwos-go kafka package as they deal also with reconnections.
 
-func HandleFetches(ctx context.Context, fetches *kgo.Fetches) (err error, stopProcessing bool) {
+func HandleFetches(ctx context.Context, fetches *kgo.Fetches) (stopProcessing bool, err error) {
 	// Err0 is a quicker way to check for common errors.
 	err = fetches.Err0()
 	switch {
 	// if the context is Done while polling it will exit with an error
 	case errors.Is(err, context.Canceled):
 		slog.InfoContext(ctx, "stop processing due to context cancelled")
-		return nil, true
+		return true, nil
 	case errors.Is(err, kgo.ErrClientClosed):
 		slog.InfoContext(ctx, "stop processing due to client closed")
-		return nil, true
+		return true, nil
 	case isBrokerGone(err):
 		/*	when a broker goes down it should be safe to keep retrying as the metadata refresh was triggered. See https://github.com/twmb/franz-go/issues/784
 			we don't need to implement a backoff with this retry at this point, as the loop calls the poll method that will not fail continuously with this error  */
 		slog.WarnContext(ctx, "retry fetching due to partitions leader down", slog.Any("error", err))
-		return nil, false
+		return false, nil
 	}
 
 	if errs := fetches.Errors(); len(errs) > 0 {
-		return fmt.Errorf("failed when fetching from kafka. errors: %v", errs), true
+		return true, fmt.Errorf("failed when fetching from kafka. errors: %v", errs)
 	}
-	return nil, false
+	return false, nil
 }
 
 func isBrokerGone(err error) bool {

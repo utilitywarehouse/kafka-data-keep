@@ -12,7 +12,7 @@ func runConsumer(ctx context.Context, client *kafka.Client, pwManager *Partition
 	for {
 		fetches := client.PollMaxRecords(ctx)
 
-		err, stopProcessing := kafkaint.HandleFetches(ctx, &fetches)
+		stopProcessing, err := kafkaint.HandleFetches(ctx, &fetches)
 		if stopProcessing || err != nil {
 			return err
 		}

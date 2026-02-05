@@ -139,7 +139,7 @@ func WaitForRecords(ctx context.Context, t *testing.T, topic string, kafkaBroker
 			}
 
 			fetches := client.PollFetches(ctx)
-			err, stopProcessing := kafka.HandleFetches(ctx, &fetches)
+			stopProcessing, err := kafka.HandleFetches(ctx, &fetches)
 			if stopProcessing || err != nil {
 				return nil, err
 			}
@@ -204,7 +204,7 @@ func ReadAll(ctx context.Context, t *testing.T, topic string, kafkaBrokers strin
 		default:
 			// Poll
 			fetches := client.PollFetches(ctx)
-			err, stopProcessing := kafka.HandleFetches(ctx, &fetches)
+			stopProcessing, err := kafka.HandleFetches(ctx, &fetches)
 			if stopProcessing || err != nil {
 				return nil, err
 			}
