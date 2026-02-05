@@ -15,25 +15,24 @@ linters:
   # Enable specific linters in addition to defaults
   enable:
      # Core Safety & Correctness
-    - nilerr
-    - noctx
+    - nilerr      # Finds code that returns nil even if it checks that the error is not nil
 
     # Style & Consistency
-    - misspell
-    - revive      # Replacement for golint
+    - misspell    # Finds commonly misspelled English words
+    - revive      # Fast, configurable, extensible, flexible, and drop-in replacement for golint
     - errorlint   # Go 1.13+ error wrapping support
-    - prealloc
-    - gocritic
+    - prealloc    # Finds slice declarations that could potentially be pre-allocated
+    - gocritic    # Provides diagnostics that check for bugs, performance and style issues
 
     # Complexity & Code Quality
-    - gocognit # Cognitive complexity is often better than Cyclomatic
+    - gocognit    # Computes and checks the cognitive complexity of functions
 
     # Security
-    - gosec
+    - gosec       # Inspects source code for security problems
 
     # Testing & Concurrency
-    - testifylint
-    - tparallel
+    - testifylint # Checks usage of github.com/stretchr/testify
+    - tparallel   # Detects inappropriate usage of t.Parallel() method in your Go test codes
 
   settings:
     revive:
