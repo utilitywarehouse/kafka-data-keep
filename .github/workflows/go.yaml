@@ -3,7 +3,9 @@ name: go
 on:
   push:
     branches:
-      - "*"
+      - "main"
+  pull_request:
+
 env:
   GOPRIVATE: "github.com/utilitywarehouse/*"
 
