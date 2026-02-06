@@ -128,6 +128,7 @@ func TestRestore(t *testing.T) {
 	stopApp(t, resumeRestoreCancel, resumeRestoreErrCh)
 
 	validateRestoredRecords(t, restoredTopic, kafkaBrokers, totalRecsPerPartition, deletedRecsPerPartition)
+	t.Log("finished test successfully")
 }
 
 func duplicateRandomFilesForPartition(ctx context.Context, t *testing.T, s3Client *s3.Client, partition int, count int) {
