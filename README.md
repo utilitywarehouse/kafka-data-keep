@@ -124,12 +124,12 @@ The `restore` command consumes restore plan records from the plan topic (created
 ### Data
 It restores the records in their original partition, keeping the order of the messages. 
 It keeps all the data from the original record: key, value, timestamp, headers.
-In addition, it adds the `original_offset` header to each restored message pointing to the original Kafka offset in the source topic. Uses this for resuming and deduplication.
+In addition, it adds the `restore.source-offset` header to each restored message pointing to the original Kafka offset in the source topic. Uses this for resuming and deduplication.
 
 ### Deduplication
 
 The restore command automatically handles duplicate S3 backup files with different offsets. When multiple files exist for the same partition with overlapping data (e.g., due to backup process failures and retries), the restore process will:
-- Detect duplicate records based on their original Kafka offsets (stored in the `original_offset` header)
+- Detect duplicate records based on their original Kafka offsets (stored in the `restore.source-offset` header)
 - Skip records that have already been restored based on their original offset to prevent duplicates in the target topic.
 
 This ensures that even if S3 contains redundant backup files, the restored Kafka topic will contain each message exactly once.
@@ -137,7 +137,7 @@ This ensures that even if S3 contains redundant backup files, the restored Kafka
 ### Resuming
 
 The restore process supports resuming from where it left off if interrupted. Since the restore command uses a Kafka consumer group to read from the plan topic, it automatically tracks progress via committed offsets. If the restore process is stopped and restarted, it will continue from the last committed offset, ensuring no data is lost or duplicated during restoration.
-In addition, to avoid duplicate records due to redeliveries from the plan topic, upon resuming, it will read the last restored message in each partition to determine the last restored offset from the "original_offset" header.
+In addition, to avoid duplicate records due to redeliveries from the plan topic, upon resuming, it will read the last restored message in each partition to determine the last restored offset from the "restore.source-offset" header.
 
 ### Parallelism
 It supports launching as many instances as the number of partitions in the plan topic.

@@ -139,7 +139,7 @@ func getOriginalOffsetFromHeader(ctx context.Context, rec *kgo.Record) (int64, e
 	return -1, nil
 }
 
-const originalOffsetHeader = "original_offset"
+const originalOffsetHeader = "restore.source-offset"
 
 func (r *kafkaS3Restorer) recordsInFile(ctx context.Context, key string, lastProcessedOffset int64) ([]*kgo.Record, error) {
 	//nolint:contextcheck // use background context as otherwise, if the context is cancelled, it fails when decoding the file with a misleading error about the file format. The operation is quick and will finish within sigterm time

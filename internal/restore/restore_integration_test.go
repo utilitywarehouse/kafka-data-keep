@@ -237,7 +237,7 @@ func validateRestoredRecords(t *testing.T, restoredTopic string, kafkaBrokers st
 			require.Equal(t, expectedVal, string(r.Value), "Value mismatch at partition %d index %d", p, currentIdx)
 
 			expectHeader(t, r, "test-header", fmt.Sprintf("header-value-%d", currentIdx))
-			expectHeader(t, r, "original_offset", fmt.Sprintf("%d", currentIdx+deletedRecsPerPartition[p]))
+			expectHeader(t, r, "restore.source-offset", fmt.Sprintf("%d", currentIdx+deletedRecsPerPartition[p]))
 			currentIdx++
 		}
 	}
