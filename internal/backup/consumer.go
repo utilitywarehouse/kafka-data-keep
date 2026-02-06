@@ -8,11 +8,11 @@ import (
 	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
 )
 
-func runConsumer(ctx context.Context, client *kafka.Client, pwManager *PartitionsWriterManager) error {
+func runConsumer(ctx context.Context, client *kafka.Client, pwManager *partitionsWriterManager) error {
 	for {
 		fetches := client.PollMaxRecords(ctx)
 
-		err, stopProcessing := kafkaint.HandleFetches(ctx, &fetches)
+		stopProcessing, err := kafkaint.HandleFetches(ctx, &fetches)
 		if stopProcessing || err != nil {
 			return err
 		}

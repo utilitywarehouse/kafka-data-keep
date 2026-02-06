@@ -24,10 +24,10 @@ type OffsetCommitter interface {
 	CommitOffsets(ctx context.Context, offsets map[string]map[int32]kgo.EpochOffset, onDone func(*kgo.Client, *kmsg.OffsetCommitRequest, *kmsg.OffsetCommitResponse, error))
 }
 
-type PartitionWriter struct {
+type partitionWriter struct {
 	uploader        *Uploader
 	offsetCommitter OffsetCommitter
-	config          Config
+	config          writerConfig
 	encoderFactory  codec.RecordEncoderFactory
 	decoderFactory  codec.RecordDecoderFactory
 	topic           string
@@ -60,8 +60,8 @@ func initUnexpectedLeftoverFilesCounter() metric.Int64Counter {
 	return c
 }
 
-func NewPartitionWriter(uploader *Uploader, offsetCommitter OffsetCommitter, config Config, encoderFactory codec.RecordEncoderFactory, decoderFactory codec.RecordDecoderFactory, topic string, partition int32) *PartitionWriter {
-	return &PartitionWriter{
+func newPartitionWriter(uploader *Uploader, offsetCommitter OffsetCommitter, config writerConfig, encoderFactory codec.RecordEncoderFactory, decoderFactory codec.RecordDecoderFactory, topic string, partition int32) *partitionWriter {
+	return &partitionWriter{
 		uploader:        uploader,
 		offsetCommitter: offsetCommitter,
 		config:          config,
@@ -72,7 +72,7 @@ func NewPartitionWriter(uploader *Uploader, offsetCommitter OffsetCommitter, con
 	}
 }
 
-func (p *PartitionWriter) WriteRecords(ctx context.Context, records []*kgo.Record) error {
+func (p *partitionWriter) WriteRecords(ctx context.Context, records []*kgo.Record) error {
 	if len(records) == 0 {
 		return nil
 	}
@@ -115,7 +115,7 @@ func (p *PartitionWriter) WriteRecords(ctx context.Context, records []*kgo.Recor
 	return nil
 }
 
-func (p *PartitionWriter) open(ctx context.Context, offset int64) error {
+func (p *partitionWriter) open(ctx context.Context, offset int64) error {
 	// Simple masking with 0 padding so that we get the file names in alphabetical order. 19 digits is the maximum we can have in kafka offsets.
 	// Using the first offset in the file name to ensure idempotence when something fails during execution until we commit the offsets after file upload.
 	maskedOffset := fmt.Sprintf("%019d", offset)
@@ -131,7 +131,7 @@ func (p *PartitionWriter) open(ctx context.Context, offset int64) error {
 
 	// Ensure directory exists
 	dir := filepath.Dir(localPath)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return fmt.Errorf("failed to create directory %s: %w", dir, err)
 	}
 
@@ -141,7 +141,7 @@ func (p *PartitionWriter) open(ctx context.Context, offset int64) error {
 	}
 
 	// overwrite file if it exists already
-	f, err := os.Create(localPath)
+	f, err := os.Create(filepath.Clean(localPath))
 	if err != nil {
 		return fmt.Errorf("failed to create file %s: %w", localPath, err)
 	}
@@ -164,7 +164,7 @@ func (p *PartitionWriter) open(ctx context.Context, offset int64) error {
 	return nil
 }
 
-func (p *PartitionWriter) checkLeftoverLocalFiles(ctx context.Context, currentOffset int64, dir string) error {
+func (p *partitionWriter) checkLeftoverLocalFiles(ctx context.Context, currentOffset int64, dir string) error {
 	// Check for existing files in the directory
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -186,7 +186,7 @@ func (p *PartitionWriter) checkLeftoverLocalFiles(ctx context.Context, currentOf
 	return nil
 }
 
-func (p *PartitionWriter) checkLeftoverLocalFile(ctx context.Context, dir string, info fs.FileInfo, currentOffset int64) error {
+func (p *partitionWriter) checkLeftoverLocalFile(ctx context.Context, dir string, info fs.FileInfo, currentOffset int64) error {
 	// check if the file matches the pattern
 	// %s-%d-%s.avro
 	// we are expecting the filename to end with .avro
@@ -237,7 +237,7 @@ func (p *PartitionWriter) checkLeftoverLocalFile(ctx context.Context, dir string
 }
 
 func fileContainsOffset(filePath string, offset int64, decoderFact codec.RecordDecoderFactory) (bool, error) {
-	f, err := os.Open(filePath)
+	f, err := os.Open(filepath.Clean(filePath))
 	if err != nil {
 		return false, fmt.Errorf("failed to open file %s: %w", filePath, err)
 	}
@@ -266,10 +266,10 @@ func fileContainsOffset(filePath string, offset int64, decoderFact codec.RecordD
 	return false, nil
 }
 
-func (p *PartitionWriter) resumeLocalFile(ctx context.Context) error {
+func (p *partitionWriter) resumeLocalFile(ctx context.Context) error {
 	slog.DebugContext(ctx, "resuming local file", "filename", p.currentFilePath)
 
-	f, err := os.OpenFile(p.currentFilePath, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0o644)
+	f, err := os.OpenFile(filepath.Clean(p.currentFilePath), os.O_APPEND|os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return fmt.Errorf("failed to open file for resuming %s: %w", p.currentFilePath, err)
 	}
@@ -288,7 +288,7 @@ func (p *PartitionWriter) resumeLocalFile(ctx context.Context) error {
 	return nil
 }
 
-func (p *PartitionWriter) shouldFlush() (bool, error) {
+func (p *partitionWriter) shouldFlush() (bool, error) {
 	if !p.isOpen {
 		return false, nil
 	}
@@ -302,7 +302,7 @@ func (p *PartitionWriter) shouldFlush() (bool, error) {
 	return fstat.Size() >= p.config.MinFileSize, nil
 }
 
-func (p *PartitionWriter) flushLocked(ctx context.Context) error {
+func (p *partitionWriter) flushLocked(ctx context.Context) error {
 	if !p.isOpen {
 		return nil
 	}
@@ -336,11 +336,11 @@ func (p *PartitionWriter) flushLocked(ctx context.Context) error {
 	return nil
 }
 
-func (p *PartitionWriter) isPaused() bool {
+func (p *partitionWriter) isPaused() bool {
 	return p.currentEncoder == nil
 }
 
-func (p *PartitionWriter) commitOffset(ctx context.Context) error {
+func (p *partitionWriter) commitOffset(ctx context.Context) error {
 	offsets := map[string]map[int32]kgo.EpochOffset{
 		p.topic: {
 			p.partition: {
@@ -362,7 +362,7 @@ func (p *PartitionWriter) commitOffset(ctx context.Context) error {
 	return commitErr
 }
 
-func (p *PartitionWriter) PauseWhenIdle(ctx context.Context) error {
+func (p *partitionWriter) PauseWhenIdle(ctx context.Context) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if !p.isOpen || !p.isIdle() {
@@ -379,7 +379,7 @@ func (p *PartitionWriter) PauseWhenIdle(ctx context.Context) error {
 	return nil
 }
 
-func (p *PartitionWriter) closeLocalFileLocked() error {
+func (p *partitionWriter) closeLocalFileLocked() error {
 	// close the encoder first, so that it will flush
 	if err := p.currentEncoder.Close(); err != nil {
 		return fmt.Errorf("failed closing local encoder: %w", err)
@@ -395,12 +395,12 @@ func (p *PartitionWriter) closeLocalFileLocked() error {
 	return nil
 }
 
-func (p *PartitionWriter) isIdle() bool {
+func (p *partitionWriter) isIdle() bool {
 	return p.currentEncoder != nil && !p.lastWriteAt.IsZero() &&
 		p.lastWriteAt.Add(p.config.PartitionIdleThreshold).Before(time.Now())
 }
 
-func (p *PartitionWriter) Close() error {
+func (p *partitionWriter) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 

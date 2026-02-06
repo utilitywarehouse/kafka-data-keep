@@ -56,12 +56,12 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	uploader := NewUploader(s3Client, cfg.S3Bucket)
 
 	// Create working dir for local files
-	if err := os.MkdirAll(cfg.WorkingDir, 0o755); err != nil {
+	if err := os.MkdirAll(cfg.WorkingDir, 0o750); err != nil {
 		return fmt.Errorf("failed to create working dir: %w", err)
 	}
 	slog.InfoContext(ctx, "Using working dir for local files", "path", cfg.WorkingDir)
 
-	wConfig := Config{
+	wConfig := writerConfig{
 		MinFileSize:            cfg.MinFileSize,
 		PartitionIdleThreshold: cfg.PartitionIdleThreshold,
 		RootPath:               cfg.WorkingDir,
@@ -69,7 +69,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	}
 
 	// Create manager first
-	mgr, err := NewPartitionsWriterManager(uploader, &avro.RecordEncoderFactory{}, &avro.RecordDecoderFactory{}, wConfig)
+	mgr, err := newPartitionsWriterManager(uploader, &avro.RecordEncoderFactory{}, &avro.RecordDecoderFactory{}, wConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create writer manager: %w", err)
 	}
@@ -102,7 +102,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 }
 
 const maxPollRecords = 10000 // this affects how many records are processed per poll, not how many are fetched from Kafka
-func initKafkaClient(cfg AppConfig, mgr *PartitionsWriterManager) (*kafka.Client, error) {
+func initKafkaClient(cfg AppConfig, mgr *partitionsWriterManager) (*kafka.Client, error) {
 	opts := []kgo.Opt{
 		kgo.ConsumeRegex(), // use regex to consume topics
 		kgo.ConsumeTopics(splitAndTrim(cfg.TopicsRegex, ",")...),
@@ -115,10 +115,10 @@ func initKafkaClient(cfg AppConfig, mgr *PartitionsWriterManager) (*kafka.Client
 		kgo.OnPartitionsAssigned(func(ctx context.Context, c *kgo.Client, p map[string][]int32) {
 			mgr.OnPartitionsAssigned(ctx, c, p)
 		}),
-		kgo.OnPartitionsRevoked(func(ctx context.Context, c *kgo.Client, p map[string][]int32) {
+		kgo.OnPartitionsRevoked(func(ctx context.Context, _ *kgo.Client, p map[string][]int32) {
 			mgr.OnPartitionsRevoked(ctx, p)
 		}),
-		kgo.OnPartitionsLost(func(ctx context.Context, c *kgo.Client, p map[string][]int32) {
+		kgo.OnPartitionsLost(func(ctx context.Context, _ *kgo.Client, p map[string][]int32) {
 			mgr.OnPartitionLost(ctx, p)
 		}),
 	}
@@ -142,7 +142,7 @@ func splitAndTrim(s, sep string) []string {
 	return parts
 }
 
-func runPauseIdleWriters(ctx context.Context, pwManager *PartitionsWriterManager) error {
+func runPauseIdleWriters(ctx context.Context, pwManager *partitionsWriterManager) error {
 	tickerMillis := min(pwManager.config.PartitionIdleThreshold.Milliseconds(), time.Minute.Milliseconds())
 	slog.InfoContext(ctx, "Start pausing idle writers", "interval", tickerMillis)
 

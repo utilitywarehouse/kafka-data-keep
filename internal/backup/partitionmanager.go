@@ -14,36 +14,36 @@ import (
 	"github.com/utilitywarehouse/kafka-data-keep/internal/codec"
 )
 
-type Config struct {
+type writerConfig struct {
 	MinFileSize            int64
 	PartitionIdleThreshold time.Duration
 	RootPath               string
 	S3Prefix               string
 }
 
-type PartitionsWriterManager struct {
+type partitionsWriterManager struct {
 	uploader       *Uploader
-	config         Config
+	config         writerConfig
 	encoderFactory codec.RecordEncoderFactory
 	decoderFactory codec.RecordDecoderFactory
 
 	mu      sync.Mutex
-	writers map[string]*PartitionWriter
+	writers map[string]*partitionWriter
 }
 
-func NewPartitionsWriterManager(uploader *Uploader, encoderFactory codec.RecordEncoderFactory, decoderFactory codec.RecordDecoderFactory, config Config) (*PartitionsWriterManager, error) {
-	m := &PartitionsWriterManager{
+func newPartitionsWriterManager(uploader *Uploader, encoderFactory codec.RecordEncoderFactory, decoderFactory codec.RecordDecoderFactory, config writerConfig) (*partitionsWriterManager, error) {
+	m := &partitionsWriterManager{
 		uploader:       uploader,
 		config:         config,
 		encoderFactory: encoderFactory,
 		decoderFactory: decoderFactory,
-		writers:        make(map[string]*PartitionWriter),
+		writers:        make(map[string]*partitionWriter),
 	}
 
 	return m, nil
 }
 
-func (m *PartitionsWriterManager) OnPartitionsAssigned(ctx context.Context, committer OffsetCommitter, partitions map[string][]int32) {
+func (m *partitionsWriterManager) OnPartitionsAssigned(ctx context.Context, committer OffsetCommitter, partitions map[string][]int32) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -51,7 +51,7 @@ func (m *PartitionsWriterManager) OnPartitionsAssigned(ctx context.Context, comm
 		for _, partition := range parts {
 			key := partitionWriterKey(topic, partition)
 			if _, exists := m.writers[key]; !exists {
-				m.writers[key] = NewPartitionWriter(m.uploader, committer, m.config, m.encoderFactory, m.decoderFactory, topic, partition)
+				m.writers[key] = newPartitionWriter(m.uploader, committer, m.config, m.encoderFactory, m.decoderFactory, topic, partition)
 			}
 		}
 	}
@@ -62,7 +62,7 @@ func (m *PartitionsWriterManager) OnPartitionsAssigned(ctx context.Context, comm
 	}
 }
 
-func (m *PartitionsWriterManager) cleanupFormerPartitionFolders(ctx context.Context) error {
+func (m *partitionsWriterManager) cleanupFormerPartitionFolders(ctx context.Context) error {
 	baseDir := filepath.Join(m.config.RootPath, m.config.S3Prefix)
 
 	// If the directory doesn't exist, there's nothing to clean up
@@ -116,7 +116,7 @@ func (m *PartitionsWriterManager) cleanupFormerPartitionFolders(ctx context.Cont
 	return nil
 }
 
-func (m *PartitionsWriterManager) OnPartitionsRevoked(ctx context.Context, partitions map[string][]int32) {
+func (m *partitionsWriterManager) OnPartitionsRevoked(ctx context.Context, partitions map[string][]int32) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -136,11 +136,11 @@ func (m *PartitionsWriterManager) OnPartitionsRevoked(ctx context.Context, parti
 	}
 }
 
-func (m *PartitionsWriterManager) OnPartitionLost(ctx context.Context, partitions map[string][]int32) {
+func (m *partitionsWriterManager) OnPartitionLost(ctx context.Context, partitions map[string][]int32) {
 	m.OnPartitionsRevoked(ctx, partitions)
 }
 
-func (m *PartitionsWriterManager) GetWriter(topic string, partition int32) (*PartitionWriter, error) {
+func (m *partitionsWriterManager) GetWriter(topic string, partition int32) (*partitionWriter, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	key := partitionWriterKey(topic, partition)
@@ -155,7 +155,7 @@ func partitionWriterKey(topic string, partition int32) string {
 	return fmt.Sprintf("%s-%d", topic, partition)
 }
 
-func (m *PartitionsWriterManager) Close() error {
+func (m *partitionsWriterManager) Close() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -168,7 +168,7 @@ func (m *PartitionsWriterManager) Close() error {
 	return errors.Join(errs...)
 }
 
-func (m *PartitionsWriterManager) PauseIdleWriters(ctx context.Context) error {
+func (m *partitionsWriterManager) PauseIdleWriters(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

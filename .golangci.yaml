@@ -2,132 +2,43 @@ version: "2"
 run:
   tests: true
   allow-parallel-runners: true
-linters:
-  default: all
-  disable:
-    - cyclop
-    - depguard
-    - dupl
-    - dupword
-    - err113
-    - errorlint
-    - exhaustruct
-    - forcetypeassert
-    - funcorder
-    - funlen
-    - gochecknoglobals
-    - gocognit
-    - goconst
-    - gocyclo
-    - godoclint
-    - godot
-    - godox
-    - gosmopolitan
-    - inamedparam
-    - ireturn
-    - lll
-    - maintidx
-    - mnd
-    - nestif
-    - nilnil
-    - nlreturn
-    - noinlineerr
-    - nonamedreturns
-    - paralleltest
-    - perfsprint
-    - tagliatelle
-    - testpackage
-    - unqueryvet
-    - varnamelen
-    - wrapcheck
-    - wsl
-    - wsl_v5
-  settings:
-    errcheck:
-      check-type-assertions: true
-      check-blank: true
-    exhaustive:
-      default-signifies-exhaustive: true
-    goconst:
-      min-len: 3
-      min-occurrences: 3
-    misspell:
-      mode: restricted
-      locale: UK
-    modernize:
-      disable:
-        - reflecttypefor
-    nolintlint:
-      require-specific: true
-    prealloc:
-      for-loops: true
-    revive:
-      rules:
-        - name: exported
-          disabled: true
-        - name: context-as-argument
-          disabled: false
-    sloglint:
-      context: "scope"
-    usetesting:
-      os-setenv: true
-      os-temp-dir: true
-  exclusions:
-    generated: lax
-    presets:
-      - comments
-      - common-false-positives
-      - legacy
-      - std-error-handling
-    rules:
-      - linters:
-          - contextcheck
-          - sloglint
-        path: ^main.go$
-      - linters:
-          - contextcheck
-          - sloglint
-        path: (.+)/main.go
-      - linters:
-          - sloglint
-        path: (.+)/cmd/(.+).go
-      - linters:
-          - contextcheck
-          - errcheck
-          - gochecknoinits
-          - noctx
-          - sloglint
-          - spancheck
-        path: (.+)_test.go
-      - linters:
-          - revive
-        path: (.+)_test.go
-        text: context-as-argument
-      - linters:
-          - goconst
-        path: (.+)_test\.go
-    paths:
-      - third_party$
-      - builtin$
-      - examples$
+
+# Enable formatters explicitly. None is enabled by default
 formatters:
   enable:
     - gci
     - gofmt
     - gofumpt
     - goimports
+
+linters:
+  # Enable specific linters in addition to defaults
+  enable:
+     # Core Safety & Correctness
+    - nilerr      # Finds code that returns nil even if it checks that the error is not nil
+
+    # Style & Consistency
+    - misspell    # Finds commonly misspelled English words
+    - revive      # Fast, configurable, extensible, flexible, and drop-in replacement for golint
+    - errorlint   # Go 1.13+ error wrapping support
+    - prealloc    # Finds slice declarations that could potentially be pre-allocated
+    - gocritic    # Provides diagnostics that check for bugs, performance and style issues
+
+    # Complexity & Code Quality
+    - gocognit    # Computes and checks the cognitive complexity of functions
+
+    # Security
+    - gosec       # Inspects source code for security problems
+
+    # Testing & Concurrency
+    - testifylint # Checks usage of github.com/stretchr/testify
+    - tparallel   # Detects inappropriate usage of t.Parallel() method in your Go test codes
+
   settings:
-    gci:
-      sections:
-        - standard
-        - default
-    gofmt:
-      rewrite-rules:
-        - pattern: interface{}
-          replacement: any
-  exclusions:
-    generated: lax
-    paths:
-      - third_party$
-      - builtin$
-      - examples$
+    revive:
+      enable-default-rules: true
+      rules:
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true

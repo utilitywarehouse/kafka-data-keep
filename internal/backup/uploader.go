@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
@@ -26,7 +27,7 @@ func NewUploader(client manager.UploadAPIClient, bucket string) *Uploader {
 
 // Upload uploads a local file to S3.
 func (u *Uploader) Upload(ctx context.Context, localPath, key string) (err error) {
-	f, err := os.Open(localPath)
+	f, err := os.Open(filepath.Clean(localPath))
 	if err != nil {
 		return fmt.Errorf("failed to open file %s: %w", localPath, err)
 	}

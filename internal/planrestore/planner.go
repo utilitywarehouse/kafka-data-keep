@@ -15,13 +15,13 @@ import (
 	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
 )
 
-type Planner struct {
+type planner struct {
 	s3Client    *s3.Client
 	kafkaClient *kafka.Client
 	cfg         AppConfig
 }
 
-func (p *Planner) Run(ctx context.Context) error {
+func (p *planner) Run(ctx context.Context) error {
 	topics, err := p.listTopicsFromS3(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list topics from S3: %w", err)
@@ -109,7 +109,7 @@ func computeResume(latestRecords map[int32]*kgo.Record, topicsOrder []string) (s
 	return lastTopic, resumeMap[lastTopic], nil
 }
 
-func (p *Planner) filterTopics(topics []string) ([]string, error) {
+func (p *planner) filterTopics(topics []string) ([]string, error) {
 	includeRegexes, err := compileRegexes(p.cfg.RestoreTopicsRegex)
 	if err != nil {
 		return nil, fmt.Errorf("invalid include regex: %w", err)
@@ -143,7 +143,7 @@ func matchesAny(s string, regexes []*regexp.Regexp) bool {
 	return false
 }
 
-func (p *Planner) listTopicsFromS3(ctx context.Context) ([]string, error) {
+func (p *planner) listTopicsFromS3(ctx context.Context) ([]string, error) {
 	prefix := p.cfg.S3Prefix
 	if !strings.HasSuffix(prefix, "/") {
 		prefix += "/"
@@ -185,7 +185,7 @@ func (p *Planner) listTopicsFromS3(ctx context.Context) ([]string, error) {
 	return topics, nil
 }
 
-func (p *Planner) planForTopic(ctx context.Context, topic string, resumeFile string) error {
+func (p *planner) planForTopic(ctx context.Context, topic string, resumeFile string) error {
 	input := &s3.ListObjectsV2Input{
 		Bucket: aws.String(p.cfg.S3Bucket),
 		Prefix: aws.String(p.cfg.S3Prefix + "/" + topic + "/"),

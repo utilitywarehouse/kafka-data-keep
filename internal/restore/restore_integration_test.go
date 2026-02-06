@@ -70,7 +70,7 @@ func TestRestore(t *testing.T) {
 	kadmClient := kadm.NewClient(adminClient)
 	t.Cleanup(kadmClient.Close)
 
-	totalRecsPerPartition, deletedRecsPerPartition := feedTopicAndRunBackup(t, kadmClient, ctx, kafkaBrokers, s3Endpoint)
+	totalRecsPerPartition, deletedRecsPerPartition := feedTopicAndRunBackup(ctx, t, kadmClient, kafkaBrokers, s3Endpoint)
 
 	// Manually duplicate the file with 0 offset on S3 for partitions.
 	// This simulates a scenario where an overlapping or duplicate file exists
@@ -112,7 +112,7 @@ func TestRestore(t *testing.T) {
 	stopApp(ctx, t, restoreCancel, restoreErrCh)
 
 	// rewind the offsets in the plan topic to the beginning so that we force it to reconsume the messages to check the resume mechanism
-	resetConsumerGroup(t, ctx, kadmClient, restoreGroup)
+	resetConsumerGroup(ctx, t, kadmClient, restoreGroup)
 
 	// start again the restore
 	resumeRestoreCtx, resumeRestoreCancel := context.WithCancel(ctx)
@@ -127,7 +127,7 @@ func TestRestore(t *testing.T) {
 
 	stopApp(ctx, t, resumeRestoreCancel, resumeRestoreErrCh)
 
-	validateRestoredRecords(t, ctx, restoredTopic, kafkaBrokers, totalRecsPerPartition, deletedRecsPerPartition)
+	validateRestoredRecords(ctx, t, restoredTopic, kafkaBrokers, totalRecsPerPartition, deletedRecsPerPartition)
 }
 
 func duplicateRandomFilesForPartition(ctx context.Context, t *testing.T, s3Client *s3.Client, partition int, count int) {
@@ -205,7 +205,7 @@ func extractOffset(t *testing.T, key string) int {
 	return val
 }
 
-func validateRestoredRecords(t *testing.T, ctx context.Context, restoredTopic string, kafkaBrokers string, expectedRecsPerPartition map[int]int, deletedRecsPerPartition map[int]int) {
+func validateRestoredRecords(ctx context.Context, t *testing.T, restoredTopic string, kafkaBrokers string, expectedRecsPerPartition map[int]int, deletedRecsPerPartition map[int]int) {
 	t.Helper()
 	// Verify restored records
 	restoredRecs, err := testutil.ReadAll(ctx, t, restoredTopic, kafkaBrokers)
@@ -242,7 +242,7 @@ func validateRestoredRecords(t *testing.T, ctx context.Context, restoredTopic st
 	}
 }
 
-func resetConsumerGroup(t *testing.T, ctx context.Context, kadmClient *kadm.Client, group string) {
+func resetConsumerGroup(ctx context.Context, t *testing.T, kadmClient *kadm.Client, group string) {
 	t.Helper()
 	resp, err := kadmClient.DeleteGroup(ctx, group)
 	require.NoError(t, err)
@@ -269,7 +269,7 @@ func runPlanRestore(ctx context.Context, t *testing.T, kadmClient *kadm.Client, 
 	require.NoError(t, planrestore.Run(ctx, planCfg))
 }
 
-func feedTopicAndRunBackup(t *testing.T, kadmClient *kadm.Client, ctx context.Context, kafkaBrokers string, s3Endpoint string) (map[int]int, map[int]int) {
+func feedTopicAndRunBackup(ctx context.Context, t *testing.T, kadmClient *kadm.Client, kafkaBrokers string, s3Endpoint string) (map[int]int, map[int]int) {
 	t.Helper()
 	// Create the source topic with 15 partitions
 	_, err := kadmClient.CreateTopic(ctx, int32(srcTopicPartitions), 1, nil, srcTopic)
@@ -283,7 +283,7 @@ func feedTopicAndRunBackup(t *testing.T, kadmClient *kadm.Client, ctx context.Co
 	defer producerClient.Close()
 
 	// create and delete messages from the topic, to advance the start offset of the topic, so the offsets won't match on restore
-	deleteRecordsPerPartition := writeSequencedRecords(t, ctx, producerClient, srcTopic, srcTopicPartitions, 1)
+	deleteRecordsPerPartition := writeSequencedRecords(ctx, t, producerClient, srcTopic, srcTopicPartitions, 1)
 
 	delOffsets := make(kadm.Offsets)
 	for p, count := range deleteRecordsPerPartition {
@@ -324,7 +324,7 @@ func feedTopicAndRunBackup(t *testing.T, kadmClient *kadm.Client, ctx context.Co
 
 	testutil.WaitConsumerStart(ctx, t, kadmClient, backupGroup)
 
-	totalRecsPerPartition := writeSequencedRecords(t, ctx, producerClient, srcTopic, srcTopicPartitions, 10)
+	totalRecsPerPartition := writeSequencedRecords(ctx, t, producerClient, srcTopic, srcTopicPartitions, 10)
 	testutil.WaitConsumeAll(ctx, t, kadmClient, srcTopic, backupGroup)
 
 	stopApp(ctx, t, backupCancel, backupErrCh)
@@ -354,7 +354,7 @@ func newRandomName(baseName string) string {
 	return baseName + "-" + uuid.NewString()
 }
 
-func writeSequencedRecords(t *testing.T, ctx context.Context, client *kgo.Client, topic string, partitions int, loops int) map[int]int {
+func writeSequencedRecords(ctx context.Context, t *testing.T, client *kgo.Client, topic string, partitions int, loops int) map[int]int {
 	t.Helper()
 	totalRecsPerPartition := make(map[int]int)
 

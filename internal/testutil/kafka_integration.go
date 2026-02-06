@@ -27,7 +27,7 @@ func StartKafkaService(ctx context.Context, t *testing.T) (string, func()) {
 	return kafkaBrokers, terminateFunc
 }
 
-func WaitConsumerStart(ctx context.Context, t *testing.T, client *kadm.Client, groupId string) {
+func WaitConsumerStart(ctx context.Context, t *testing.T, client *kadm.Client, groupID string) {
 	t.Helper()
 	timeoutC := time.After(10 * time.Second)
 	for {
@@ -35,12 +35,12 @@ func WaitConsumerStart(ctx context.Context, t *testing.T, client *kadm.Client, g
 		case <-ctx.Done():
 			return
 		case <-timeoutC:
-			t.Fatalf("consumer group %s did not start in 10 seconds", groupId)
+			t.Fatalf("consumer group %s did not start in 10 seconds", groupID)
 		case <-time.Tick(100 * time.Millisecond):
-			dg, err := client.DescribeGroups(ctx, groupId)
+			dg, err := client.DescribeGroups(ctx, groupID)
 			require.NoError(t, err)
-			if dg[groupId].State == "Stable" {
-				t.Logf("consumer group %s started consuming", groupId)
+			if dg[groupID].State == "Stable" {
+				t.Logf("consumer group %s started consuming", groupID)
 				return
 			}
 		}
@@ -139,7 +139,7 @@ func WaitForRecords(ctx context.Context, t *testing.T, topic string, kafkaBroker
 			}
 
 			fetches := client.PollFetches(ctx)
-			err, stopProcessing := kafka.HandleFetches(ctx, &fetches)
+			stopProcessing, err := kafka.HandleFetches(ctx, &fetches)
 			if stopProcessing || err != nil {
 				return nil, err
 			}
@@ -204,7 +204,7 @@ func ReadAll(ctx context.Context, t *testing.T, topic string, kafkaBrokers strin
 		default:
 			// Poll
 			fetches := client.PollFetches(ctx)
-			err, stopProcessing := kafka.HandleFetches(ctx, &fetches)
+			stopProcessing, err := kafka.HandleFetches(ctx, &fetches)
 			if stopProcessing || err != nil {
 				return nil, err
 			}

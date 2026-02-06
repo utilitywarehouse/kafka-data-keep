@@ -58,7 +58,7 @@ func TestPlanRestoreIntegration(t *testing.T) {
 
 	createS3Objects(ctx, t, bucketName, files, s3Client)
 
-	// 3. Run Planner
+	// 3. Run planner
 	cfg := AppConfig{
 		Brokers:            kafkaBrokers,
 		PlanTopic:          planTopic,
