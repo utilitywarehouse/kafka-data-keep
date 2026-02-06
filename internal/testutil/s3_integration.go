@@ -1,6 +1,7 @@
 package testutil
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -27,7 +28,8 @@ func StartS3Service(t *testing.T) (string, func()) {
 	require.NoError(t, err)
 
 	terminateFunc := func() {
-		if err := minioContainer.Terminate(ctx); err != nil {
+		// use the background context to terminate, as the test context is cancelled already at this point
+		if err := minioContainer.Terminate(context.Background()); err != nil {
 			t.Logf("Failed to terminate MinIO container: %v", err)
 		}
 	}

@@ -1,6 +1,7 @@
 package testutil
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -17,7 +18,8 @@ func StartKafkaService(t *testing.T) (string, func()) {
 	redpandaContainer, err := redpanda.Run(ctx, "redpandadata/redpanda:v25.1.1")
 	require.NoError(t, err)
 	terminateFunc := func() {
-		if err := redpandaContainer.Terminate(ctx); err != nil {
+		// use the background context to terminate, as the test context is cancelled already at this point
+		if err := redpandaContainer.Terminate(context.Background()); err != nil {
 			t.Logf("Failed to terminate Redpanda container: %v", err)
 		}
 	}

@@ -19,13 +19,14 @@ func TestReadLastRecords(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// 1. Start Redpanda container (Shared)
 	container, err := redpanda.Run(ctx, "docker.io/redpandadata/redpanda:v23.3.10")
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		if err := container.Terminate(ctx); err != nil {
+		// use the background context to terminate, as the test context is cancelled already at this point
+		if err := container.Terminate(context.Background()); err != nil {
 			t.Fatalf("failed to terminate container: %s", err)
 		}
 	})

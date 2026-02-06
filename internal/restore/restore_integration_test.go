@@ -48,7 +48,7 @@ func TestRestore(t *testing.T) {
 	}
 
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Start Services
 	kafkaBrokers, tkf := testutil.StartKafkaService(t)
@@ -70,7 +70,7 @@ func TestRestore(t *testing.T) {
 	kadmClient := kadm.NewClient(adminClient)
 	t.Cleanup(kadmClient.Close)
 
-	totalRecsPerPartition, deletedRecsPerPartition := feedTopicAndRunBackup(ctx, t, kadmClient, kafkaBrokers, s3Endpoint)
+	totalRecsPerPartition, deletedRecsPerPartition := feedTopicAndRunBackup(t, kadmClient, kafkaBrokers, s3Endpoint)
 
 	// Manually duplicate the file with 0 offset on S3 for partitions.
 	// This simulates a scenario where an overlapping or duplicate file exists
@@ -109,7 +109,7 @@ func TestRestore(t *testing.T) {
 	_, err = testutil.WaitForRecords(t, restoredTopic, kafkaBrokers, total(totalRecsPerPartition)*randomInt(10, 70)/100)
 	require.NoError(t, err)
 
-	stopApp(ctx, t, restoreCancel, restoreErrCh)
+	stopApp(t, restoreCancel, restoreErrCh)
 
 	// rewind the offsets in the plan topic to the beginning so that we force it to reconsume the messages to check the resume mechanism
 	resetConsumerGroup(ctx, t, kadmClient, restoreGroup)
@@ -125,9 +125,10 @@ func TestRestore(t *testing.T) {
 	// Wait for the restore group to finish consuming the plan topic
 	testutil.WaitConsumeAll(t, kadmClient, planTopic, restoreGroup)
 
-	stopApp(ctx, t, resumeRestoreCancel, resumeRestoreErrCh)
+	stopApp(t, resumeRestoreCancel, resumeRestoreErrCh)
 
 	validateRestoredRecords(t, restoredTopic, kafkaBrokers, totalRecsPerPartition, deletedRecsPerPartition)
+	t.Log("finished test successfully")
 }
 
 func duplicateRandomFilesForPartition(ctx context.Context, t *testing.T, s3Client *s3.Client, partition int, count int) {
@@ -269,8 +270,9 @@ func runPlanRestore(ctx context.Context, t *testing.T, kadmClient *kadm.Client, 
 	require.NoError(t, planrestore.Run(ctx, planCfg))
 }
 
-func feedTopicAndRunBackup(ctx context.Context, t *testing.T, kadmClient *kadm.Client, kafkaBrokers string, s3Endpoint string) (map[int]int, map[int]int) {
+func feedTopicAndRunBackup(t *testing.T, kadmClient *kadm.Client, kafkaBrokers string, s3Endpoint string) (map[int]int, map[int]int) {
 	t.Helper()
+	ctx := t.Context()
 	// Create the source topic with 15 partitions
 	_, err := kadmClient.CreateTopic(ctx, int32(srcTopicPartitions), 1, nil, srcTopic)
 	require.NoError(t, err)
@@ -283,7 +285,7 @@ func feedTopicAndRunBackup(ctx context.Context, t *testing.T, kadmClient *kadm.C
 	defer producerClient.Close()
 
 	// create and delete messages from the topic, to advance the start offset of the topic, so the offsets won't match on restore
-	deleteRecordsPerPartition := writeSequencedRecords(ctx, t, producerClient, srcTopic, srcTopicPartitions, 1)
+	deleteRecordsPerPartition := writeSequencedRecords(t, producerClient, srcTopic, srcTopicPartitions, 1)
 
 	delOffsets := make(kadm.Offsets)
 	for p, count := range deleteRecordsPerPartition {
@@ -324,10 +326,10 @@ func feedTopicAndRunBackup(ctx context.Context, t *testing.T, kadmClient *kadm.C
 
 	testutil.WaitConsumerStart(t, kadmClient, backupGroup)
 
-	totalRecsPerPartition := writeSequencedRecords(ctx, t, producerClient, srcTopic, srcTopicPartitions, 10)
+	totalRecsPerPartition := writeSequencedRecords(t, producerClient, srcTopic, srcTopicPartitions, 10)
 	testutil.WaitConsumeAll(t, kadmClient, srcTopic, backupGroup)
 
-	stopApp(ctx, t, backupCancel, backupErrCh)
+	stopApp(t, backupCancel, backupErrCh)
 	return totalRecsPerPartition, deleteRecordsPerPartition
 }
 
@@ -354,7 +356,7 @@ func newRandomName(baseName string) string {
 	return baseName + "-" + uuid.NewString()
 }
 
-func writeSequencedRecords(ctx context.Context, t *testing.T, client *kgo.Client, topic string, partitions int, loops int) map[int]int {
+func writeSequencedRecords(t *testing.T, client *kgo.Client, topic string, partitions int, loops int) map[int]int {
 	t.Helper()
 	totalRecsPerPartition := make(map[int]int)
 
@@ -380,8 +382,8 @@ func writeSequencedRecords(ctx context.Context, t *testing.T, client *kgo.Client
 			totalRecsPerPartition[p] += msgsPerPartition
 		}
 
-		require.NoError(t, client.ProduceSync(ctx, recs...).FirstErr(), "failed to produce records")
-		require.NoError(t, client.Flush(ctx))
+		require.NoError(t, client.ProduceSync(t.Context(), recs...).FirstErr(), "failed to produce records")
+		require.NoError(t, client.Flush(t.Context()))
 		// give the consumer time to consume the records
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -397,11 +399,11 @@ func randomInt(minVal, maxVal int) int {
 	return int(bigInt.Int64()) + minVal
 }
 
-func stopApp(ctx context.Context, t *testing.T, cancel context.CancelFunc, errCh chan error) {
+func stopApp(t *testing.T, cancel context.CancelFunc, errCh chan error) {
 	t.Helper()
 	cancel()
 	select {
-	case <-ctx.Done():
+	case <-t.Context().Done():
 		return
 	case err := <-errCh:
 		if errors.Is(err, context.Canceled) {
