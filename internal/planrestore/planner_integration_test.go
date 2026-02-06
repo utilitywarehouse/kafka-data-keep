@@ -21,13 +21,13 @@ func TestPlanRestoreIntegration(t *testing.T) {
 	ctx := context.Background()
 
 	// 1. Start Services
-	kafkaBrokers, tkf := testutil.StartKafkaService(ctx, t)
+	kafkaBrokers, tkf := testutil.StartKafkaService(t)
 	defer tkf()
 
-	s3Endpoint, ts3f := testutil.StartS3Service(ctx, t)
+	s3Endpoint, ts3f := testutil.StartS3Service(t)
 	defer ts3f()
 	testutil.SetupEnvS3Access()
-	s3Client := testutil.NewS3Client(ctx, t, s3Endpoint)
+	s3Client := testutil.NewS3Client(t, s3Endpoint)
 
 	bucketName := "test-restore-bucket"
 	_, err := s3Client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucketName)})
@@ -88,7 +88,7 @@ func TestPlanRestoreIntegration(t *testing.T) {
 		},
 	}
 
-	records, err := testutil.WaitForRecords(ctx, t, planTopic, kafkaBrokers, totalMapValues(expectedMap))
+	records, err := testutil.WaitForRecords(t, planTopic, kafkaBrokers, totalMapValues(expectedMap))
 	require.NoError(t, err)
 
 	checkPlannedEntries(t, expectedMap, records)
@@ -131,7 +131,7 @@ func TestPlanRestoreIntegration(t *testing.T) {
 		},
 	}
 
-	records, err = testutil.WaitForRecords(ctx, t, planTopic, kafkaBrokers, totalMapValues(expectedMap))
+	records, err = testutil.WaitForRecords(t, planTopic, kafkaBrokers, totalMapValues(expectedMap))
 	require.NoError(t, err)
 
 	checkPlannedEntries(t, expectedMap, records)

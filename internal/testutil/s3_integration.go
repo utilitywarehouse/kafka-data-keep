@@ -1,7 +1,6 @@
 package testutil
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -20,8 +19,10 @@ const (
 	s3pass      = "uwadminpass"
 )
 
-func StartS3Service(ctx context.Context, t *testing.T) (string, func()) {
+func StartS3Service(t *testing.T) (string, func()) {
 	t.Helper()
+	ctx := t.Context()
+
 	minioContainer, err := minio.Run(ctx, "minio/minio:latest", minio.WithUsername(S3User), minio.WithPassword(s3pass))
 	require.NoError(t, err)
 
@@ -37,9 +38,9 @@ func StartS3Service(ctx context.Context, t *testing.T) (string, func()) {
 	return fmt.Sprintf("http://%s", connString), terminateFunc
 }
 
-func NewS3Client(ctx context.Context, t *testing.T, s3Endpoint string) *s3.Client {
+func NewS3Client(t *testing.T, s3Endpoint string) *s3.Client {
 	t.Helper()
-	awsCfg, err := config.LoadDefaultConfig(ctx)
+	awsCfg, err := config.LoadDefaultConfig(t.Context())
 	require.NoError(t, err)
 
 	return s3.NewFromConfig(awsCfg, func(o *s3.Options) {
