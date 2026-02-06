@@ -51,14 +51,14 @@ func TestRestore(t *testing.T) {
 	ctx := context.Background()
 
 	// Start Services
-	kafkaBrokers, tkf := testutil.StartKafkaService(ctx, t)
+	kafkaBrokers, tkf := testutil.StartKafkaService(t)
 	t.Cleanup(tkf)
 
-	s3Endpoint, ts3f := testutil.StartS3Service(ctx, t)
+	s3Endpoint, ts3f := testutil.StartS3Service(t)
 	t.Cleanup(ts3f)
 
 	testutil.SetupEnvS3Access()
-	s3Client := testutil.NewS3Client(ctx, t, s3Endpoint)
+	s3Client := testutil.NewS3Client(t, s3Endpoint)
 	_, err := s3Client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucketName)})
 	require.NoError(t, err)
 
@@ -106,7 +106,7 @@ func TestRestore(t *testing.T) {
 	}()
 
 	// pause the restore after some records were restored. Stopping after processing between 10 and 70 percent.
-	_, err = testutil.WaitForRecords(ctx, t, restoredTopic, kafkaBrokers, total(totalRecsPerPartition)*randomInt(10, 70)/100)
+	_, err = testutil.WaitForRecords(t, restoredTopic, kafkaBrokers, total(totalRecsPerPartition)*randomInt(10, 70)/100)
 	require.NoError(t, err)
 
 	stopApp(ctx, t, restoreCancel, restoreErrCh)
@@ -123,11 +123,11 @@ func TestRestore(t *testing.T) {
 	}()
 
 	// Wait for the restore group to finish consuming the plan topic
-	testutil.WaitConsumeAll(ctx, t, kadmClient, planTopic, restoreGroup)
+	testutil.WaitConsumeAll(t, kadmClient, planTopic, restoreGroup)
 
 	stopApp(ctx, t, resumeRestoreCancel, resumeRestoreErrCh)
 
-	validateRestoredRecords(ctx, t, restoredTopic, kafkaBrokers, totalRecsPerPartition, deletedRecsPerPartition)
+	validateRestoredRecords(t, restoredTopic, kafkaBrokers, totalRecsPerPartition, deletedRecsPerPartition)
 }
 
 func duplicateRandomFilesForPartition(ctx context.Context, t *testing.T, s3Client *s3.Client, partition int, count int) {
@@ -205,10 +205,10 @@ func extractOffset(t *testing.T, key string) int {
 	return val
 }
 
-func validateRestoredRecords(ctx context.Context, t *testing.T, restoredTopic string, kafkaBrokers string, expectedRecsPerPartition map[int]int, deletedRecsPerPartition map[int]int) {
+func validateRestoredRecords(t *testing.T, restoredTopic string, kafkaBrokers string, expectedRecsPerPartition map[int]int, deletedRecsPerPartition map[int]int) {
 	t.Helper()
 	// Verify restored records
-	restoredRecs, err := testutil.ReadAll(ctx, t, restoredTopic, kafkaBrokers)
+	restoredRecs, err := testutil.ReadAll(t, restoredTopic, kafkaBrokers)
 	require.NoError(t, err)
 
 	// Check distribution and content
@@ -322,10 +322,10 @@ func feedTopicAndRunBackup(ctx context.Context, t *testing.T, kadmClient *kadm.C
 		backupErrCh <- backup.Run(backupCtx, backupCfg)
 	}()
 
-	testutil.WaitConsumerStart(ctx, t, kadmClient, backupGroup)
+	testutil.WaitConsumerStart(t, kadmClient, backupGroup)
 
 	totalRecsPerPartition := writeSequencedRecords(ctx, t, producerClient, srcTopic, srcTopicPartitions, 10)
-	testutil.WaitConsumeAll(ctx, t, kadmClient, srcTopic, backupGroup)
+	testutil.WaitConsumeAll(t, kadmClient, srcTopic, backupGroup)
 
 	stopApp(ctx, t, backupCancel, backupErrCh)
 	return totalRecsPerPartition, deleteRecordsPerPartition

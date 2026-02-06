@@ -1,7 +1,6 @@
 package testutil
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -12,8 +11,9 @@ import (
 	"github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 )
 
-func StartKafkaService(ctx context.Context, t *testing.T) (string, func()) {
+func StartKafkaService(t *testing.T) (string, func()) {
 	t.Helper()
+	ctx := t.Context()
 	redpandaContainer, err := redpanda.Run(ctx, "redpandadata/redpanda:v25.1.1")
 	require.NoError(t, err)
 	terminateFunc := func() {
@@ -27,8 +27,9 @@ func StartKafkaService(ctx context.Context, t *testing.T) (string, func()) {
 	return kafkaBrokers, terminateFunc
 }
 
-func WaitConsumerStart(ctx context.Context, t *testing.T, client *kadm.Client, groupID string) {
+func WaitConsumerStart(t *testing.T, client *kadm.Client, groupID string) {
 	t.Helper()
+	ctx := t.Context()
 	timeoutC := time.After(10 * time.Second)
 	for {
 		select {
@@ -47,19 +48,22 @@ func WaitConsumerStart(ctx context.Context, t *testing.T, client *kadm.Client, g
 	}
 }
 
-func WaitConsumeAll(ctx context.Context, t *testing.T, kadmClient *kadm.Client, topic string, group string) {
+func WaitConsumeAll(t *testing.T, kadmClient *kadm.Client, topic string, group string) {
 	t.Helper()
+	ctx := t.Context()
 	endOffsets, err := kadmClient.ListEndOffsets(ctx, topic)
 	require.NoError(t, err)
 	totalOffsets := 0
 	for _, off := range endOffsets[topic] {
 		totalOffsets += int(off.Offset)
 	}
-	WaitForGroupOffsets(ctx, t, kadmClient, group, map[string]int{topic: totalOffsets})
+	WaitForGroupOffsets(t, kadmClient, group, map[string]int{topic: totalOffsets})
 }
 
-func WaitForGroupOffsets(ctx context.Context, t *testing.T, client *kadm.Client, group string, expected map[string]int) {
+func WaitForGroupOffsets(t *testing.T, client *kadm.Client, group string, expected map[string]int) {
 	t.Helper()
+	ctx := t.Context()
+
 	timeoutC := time.After(30 * time.Second)
 	for {
 		select {
@@ -69,15 +73,16 @@ func WaitForGroupOffsets(ctx context.Context, t *testing.T, client *kadm.Client,
 			t.Fatalf("consumer group %s did not reach expected offsets: %+v", group, expected)
 			return
 		case <-time.Tick(100 * time.Millisecond):
-			if isGroupAt(ctx, t, client, group, expected) {
+			if isGroupAt(t, client, group, expected) {
 				return
 			}
 		}
 	}
 }
 
-func isGroupAt(ctx context.Context, t *testing.T, client *kadm.Client, group string, expected map[string]int) bool {
+func isGroupAt(t *testing.T, client *kadm.Client, group string, expected map[string]int) bool {
 	t.Helper()
+	ctx := t.Context()
 	topics := make([]string, 0, len(expected))
 	for t := range expected {
 		topics = append(topics, t)
@@ -114,8 +119,10 @@ func getOffsetForTopic(topicOffsets map[int32]kadm.OffsetResponse) int {
 	return currentOffsetSum
 }
 
-func WaitForRecords(ctx context.Context, t *testing.T, topic string, kafkaBrokers string, expectedCount int) ([]*kgo.Record, error) {
+func WaitForRecords(t *testing.T, topic string, kafkaBrokers string, expectedCount int) ([]*kgo.Record, error) {
 	t.Helper()
+
+	ctx := t.Context()
 
 	client, err := kgo.NewClient(
 		kgo.SeedBrokers(kafkaBrokers),
@@ -153,8 +160,9 @@ func WaitForRecords(ctx context.Context, t *testing.T, topic string, kafkaBroker
 }
 
 // ReadAll reads all records from the topic up to the high watermark at start.
-func ReadAll(ctx context.Context, t *testing.T, topic string, kafkaBrokers string) ([]*kgo.Record, error) {
+func ReadAll(t *testing.T, topic string, kafkaBrokers string) ([]*kgo.Record, error) {
 	t.Helper()
+	ctx := t.Context()
 
 	client, err := kgo.NewClient(
 		kgo.SeedBrokers(kafkaBrokers),
