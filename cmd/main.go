@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"github.com/utilitywarehouse/go-operational/op"
-	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/backup"
-	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/planrestore"
-	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/restore"
+	topicsbackup "github.com/utilitywarehouse/kafka-data-keep/internal/topics/backup"
+	topicsplanrestore "github.com/utilitywarehouse/kafka-data-keep/internal/topics/planrestore"
+	topicsrestore "github.com/utilitywarehouse/kafka-data-keep/internal/topics/restore"
 	"github.com/utilitywarehouse/uwos-go/telemetry"
 	"github.com/utilitywarehouse/uwos-go/telemetry/log"
 	"github.com/utilitywarehouse/uwos-go/x/build"
@@ -45,20 +45,20 @@ func mainWrap() error {
 	}
 
 	switch os.Args[1] {
-	case "backup":
-		return runCmd(ctx, os.Args[2:], true, backupCmd)
-	case "plan-restore":
-		return runCmd(ctx, os.Args[2:], false, planRestoreCmd)
-	case "restore":
-		return runCmd(ctx, os.Args[2:], true, restoreCmd)
+	case "topics-backup":
+		return runCmd(ctx, os.Args[2:], true, topicsBackupCmd)
+	case "topics-plan-restore":
+		return runCmd(ctx, os.Args[2:], false, topicsPlanRestoreCmd)
+	case "topics-restore":
+		return runCmd(ctx, os.Args[2:], true, topicsRestoreCmd)
 	default:
-		return fmt.Errorf("expected 'backup|plan-restore|restore' subcommand")
+		return fmt.Errorf("expected 'topics-backup|topics-plan-restore|topics-restore' subcommand")
 	}
 }
 
-func loadBackupAppConfig(args []string) (backup.AppConfig, error) {
-	var cfg backup.AppConfig
-	fs := flag.NewFlagSet("backup", flag.ExitOnError)
+func loadTopicsBackupAppConfig(args []string) (topicsbackup.AppConfig, error) {
+	var cfg topicsbackup.AppConfig
+	fs := flag.NewFlagSet("topics-backup", flag.ExitOnError)
 
 	// Kafka Connection
 	fs.StringVar(
@@ -205,33 +205,33 @@ func runOpsServer(ctx context.Context, operationalAddr string, opStatus *op.Stat
 	return eg.Wait()
 }
 
-func backupCmd(ctx context.Context, args []string) error {
-	cfg, err := loadBackupAppConfig(args)
+func topicsBackupCmd(ctx context.Context, args []string) error {
+	cfg, err := loadTopicsBackupAppConfig(args)
 	if err != nil {
 		return fmt.Errorf("failed parsing backup config: %w", err)
 	}
 
-	if err := backup.Run(ctx, cfg); err != nil {
+	if err := topicsbackup.Run(ctx, cfg); err != nil {
 		return fmt.Errorf("error running backup: %w", err)
 	}
 	return nil
 }
 
-func planRestoreCmd(ctx context.Context, args []string) error {
-	cfg, err := loadPlanRestoreAppConfig(args)
+func topicsPlanRestoreCmd(ctx context.Context, args []string) error {
+	cfg, err := loadTopicsPlanRestoreAppConfig(args)
 	if err != nil {
 		return fmt.Errorf("failed parsing plan-restore config: %w", err)
 	}
 
-	if err := planrestore.Run(ctx, cfg); err != nil {
+	if err := topicsplanrestore.Run(ctx, cfg); err != nil {
 		return fmt.Errorf("error running plan-restore: %w", err)
 	}
 	return nil
 }
 
-func loadPlanRestoreAppConfig(args []string) (planrestore.AppConfig, error) {
-	var cfg planrestore.AppConfig
-	fs := flag.NewFlagSet("plan-restore", flag.ExitOnError)
+func loadTopicsPlanRestoreAppConfig(args []string) (topicsplanrestore.AppConfig, error) {
+	var cfg topicsplanrestore.AppConfig
+	fs := flag.NewFlagSet("topics-plan-restore", flag.ExitOnError)
 
 	fs.StringVar(
 		&cfg.Brokers,
@@ -298,21 +298,21 @@ func loadPlanRestoreAppConfig(args []string) (planrestore.AppConfig, error) {
 	return cfg, nil
 }
 
-func restoreCmd(ctx context.Context, args []string) error {
-	cfg, err := loadRestoreAppConfig(args)
+func topicsRestoreCmd(ctx context.Context, args []string) error {
+	cfg, err := loadTopicsRestoreAppConfig(args)
 	if err != nil {
 		return fmt.Errorf("failed parsing restore config: %w", err)
 	}
 
-	if err := restore.Run(ctx, cfg); err != nil {
+	if err := topicsrestore.Run(ctx, cfg); err != nil {
 		return fmt.Errorf("error running restore: %w", err)
 	}
 	return nil
 }
 
-func loadRestoreAppConfig(args []string) (restore.AppConfig, error) {
-	var cfg restore.AppConfig
-	fs := flag.NewFlagSet("restore", flag.ExitOnError)
+func loadTopicsRestoreAppConfig(args []string) (topicsrestore.AppConfig, error) {
+	var cfg topicsrestore.AppConfig
+	fs := flag.NewFlagSet("topics-restore", flag.ExitOnError)
 
 	// Kafka Connection
 	fs.StringVar(
