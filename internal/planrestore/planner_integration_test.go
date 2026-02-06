@@ -1,7 +1,6 @@
 package planrestore
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -18,7 +17,7 @@ func TestPlanRestoreIntegration(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// 1. Start Services
 	kafkaBrokers, tkf := testutil.StartKafkaService(t)
@@ -56,7 +55,7 @@ func TestPlanRestoreIntegration(t *testing.T) {
 		"kafka-backup/topic-excluded/0/topic-excluded-0-0000000000000000000.avro",
 	}
 
-	createS3Objects(ctx, t, bucketName, files, s3Client)
+	createS3Objects(t, bucketName, files, s3Client)
 
 	// 3. Run planner
 	cfg := AppConfig{
@@ -101,7 +100,7 @@ func TestPlanRestoreIntegration(t *testing.T) {
 		"kafka-backup/topic-c/1/topic-c-1-0000000000000000000.avro",
 	}
 
-	createS3Objects(ctx, t, bucketName, files, s3Client)
+	createS3Objects(t, bucketName, files, s3Client)
 
 	// run it a second time -> it should read what's already in the topic and resume from there
 	err = Run(ctx, cfg)
@@ -160,10 +159,10 @@ func checkPlannedEntries(t *testing.T, expectedMap map[string][]string, records 
 	}
 }
 
-func createS3Objects(ctx context.Context, t *testing.T, bucketName string, files []string, s3Client *s3.Client) {
+func createS3Objects(t *testing.T, bucketName string, files []string, s3Client *s3.Client) {
 	t.Helper()
 	for _, f := range files {
-		_, err := s3Client.PutObject(ctx, &s3.PutObjectInput{
+		_, err := s3Client.PutObject(t.Context(), &s3.PutObjectInput{
 			Bucket: aws.String(bucketName),
 			Key:    aws.String(f),
 			Body:   strings.NewReader("dummy content"),

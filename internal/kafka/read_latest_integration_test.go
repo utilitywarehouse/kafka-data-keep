@@ -1,7 +1,6 @@
 package kafka
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
@@ -19,7 +18,7 @@ func TestReadLastRecords(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// 1. Start Redpanda container (Shared)
 	container, err := redpanda.Run(ctx, "docker.io/redpandadata/redpanda:v23.3.10")
