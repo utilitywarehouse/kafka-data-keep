@@ -21,10 +21,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/utilitywarehouse/kafka-data-keep/internal/backup"
-	"github.com/utilitywarehouse/kafka-data-keep/internal/planrestore"
-	"github.com/utilitywarehouse/kafka-data-keep/internal/restore"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/testutil"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/backup"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/planrestore"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/restore"
 )
 
 func init() {

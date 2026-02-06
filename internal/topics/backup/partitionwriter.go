@@ -14,7 +14,7 @@ import (
 
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
-	"github.com/utilitywarehouse/kafka-data-keep/internal/codec"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/codec"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"
 )

@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"github.com/utilitywarehouse/go-operational/op"
-	"github.com/utilitywarehouse/kafka-data-keep/internal/backup"
-	"github.com/utilitywarehouse/kafka-data-keep/internal/planrestore"
-	"github.com/utilitywarehouse/kafka-data-keep/internal/restore"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/backup"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/planrestore"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/restore"
 	"github.com/utilitywarehouse/uwos-go/telemetry"
 	"github.com/utilitywarehouse/uwos-go/telemetry/log"
 	"github.com/utilitywarehouse/uwos-go/x/build"
