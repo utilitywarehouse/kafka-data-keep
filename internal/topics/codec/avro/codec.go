@@ -8,7 +8,7 @@ import (
 
 	"github.com/hamba/avro/v2/ocf"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/utilitywarehouse/kafka-data-keep/internal/codec"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/codec"
 )
 
 //go:embed schema.json

@@ -10,9 +10,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/utilitywarehouse/kafka-data-keep/internal/codec/avro"
 	kafkaint "github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
-	"github.com/utilitywarehouse/kafka-data-keep/internal/planrestore"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/codec/avro"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/planrestore"
 	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
 )
 

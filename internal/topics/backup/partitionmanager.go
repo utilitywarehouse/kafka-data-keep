@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/utilitywarehouse/kafka-data-keep/internal/codec"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/codec"
 )
 
 type writerConfig struct {
