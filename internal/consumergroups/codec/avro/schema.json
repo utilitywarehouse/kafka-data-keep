@@ -1,0 +1,37 @@
+{
+  "type": "record",
+  "name": "ConsumerGroupOffsets",
+  "namespace": "github.utilitywarehouse.kafka_backup_restore",
+  "fields": [
+    {"name": "group_id", "type": "string"},
+    {
+      "name": "topics",
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "record",
+          "name": "TopicOffset",
+          "fields": [
+            {"name": "topic", "type": "string"},
+            {
+              "name": "partitions",
+              "type": {
+                "type": "array",
+                "items": {
+                  "type": "record",
+                  "name": "PartitionOffset",
+                  "fields": [
+                    {"name": "partition", "type": "int"},
+                    {"name": "offset", "type": "long"},
+                    {"name": "leader_epoch", "type": ["null", "int"], "default": null},
+                    {"name": "metadata", "type": ["null", "string"], "default": null}
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
