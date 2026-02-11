@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/utilitywarehouse/go-operational/op"
+	consumergroupsbackup "github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/backup"
 	topicsbackup "github.com/utilitywarehouse/kafka-data-keep/internal/topics/backup"
 	topicsplanrestore "github.com/utilitywarehouse/kafka-data-keep/internal/topics/planrestore"
 	topicsrestore "github.com/utilitywarehouse/kafka-data-keep/internal/topics/restore"
@@ -51,8 +52,10 @@ func mainWrap() error {
 		return runCmd(ctx, os.Args[2:], false, topicsPlanRestoreCmd)
 	case "topics-restore":
 		return runCmd(ctx, os.Args[2:], true, topicsRestoreCmd)
+	case "consumer-groups-backup":
+		return runCmd(ctx, os.Args[2:], true, consumerGroupsBackupCmd)
 	default:
-		return fmt.Errorf("expected 'topics-backup|topics-plan-restore|topics-restore' subcommand")
+		return fmt.Errorf("expected 'topics-backup|topics-plan-restore|topics-restore|consumer-groups-backup' subcommand")
 	}
 }
 
@@ -401,4 +404,72 @@ func getEnvDuration(key string, fallback time.Duration) time.Duration {
 		return i
 	}
 	return fallback
+}
+
+func consumerGroupsBackupCmd(ctx context.Context, args []string) error {
+	cfg, err := loadConsumerGroupsBackupAppConfig(args)
+	if err != nil {
+		return fmt.Errorf("failed parsing consumer-groups-backup config: %w", err)
+	}
+
+	if err := consumergroupsbackup.Run(ctx, cfg); err != nil {
+		return fmt.Errorf("error running consumer-groups-backup: %w", err)
+	}
+	return nil
+}
+
+func loadConsumerGroupsBackupAppConfig(args []string) (consumergroupsbackup.AppConfig, error) {
+	var cfg consumergroupsbackup.AppConfig
+	fs := flag.NewFlagSet("consumer-groups-backup", flag.ExitOnError)
+
+	fs.StringVar(
+		&cfg.Brokers,
+		"brokers",
+		getEnv("KAFKA_BROKERS", "localhost:9092"),
+		"Kafka brokers (comma separated)",
+	)
+	fs.StringVar(
+		&cfg.BrokersDNSSrv,
+		"brokersDNSSrv",
+		getEnv("KAFKA_BROKERS_DNS_SRV", ""),
+		"DNS SRV record with the kafka seed brokers",
+	)
+
+	fs.StringVar(
+		&cfg.S3Bucket,
+		"s3-bucket",
+		getEnv("S3_BUCKET", ""),
+		"S3 bucket name where to store the backups",
+	)
+	fs.StringVar(
+		&cfg.S3Location,
+		"s3-location",
+		getEnv("S3_LOCATION", ""),
+		"The s3 location (full path key) to use for the backup file",
+	)
+
+	fs.DurationVar(
+		&cfg.RunInterval,
+		"run-interval",
+		getEnvDuration("RUN_INTERVAL", 1*time.Minute),
+		"Interval between backups",
+	)
+
+	fs.StringVar(
+		&cfg.S3Endpoint,
+		"s3-endpoint",
+		getEnv("AWS_ENDPOINT_URL", ""),
+		"S3 endpoint URL (for LocalStack or custom S3-compatible storage)",
+	)
+	fs.StringVar(
+		&cfg.S3Region,
+		"s3-region",
+		getEnv("AWS_REGION", "eu-west-1"),
+		"S3 region ",
+	)
+
+	if err := fs.Parse(args); err != nil {
+		return cfg, err
+	}
+	return cfg, nil
 }
