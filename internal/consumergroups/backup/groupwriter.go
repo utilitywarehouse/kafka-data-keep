@@ -8,7 +8,7 @@ import (
 
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec"
-	topicsbackup "github.com/utilitywarehouse/kafka-data-keep/internal/topics/backup"
+	topicsbackup "github.com/utilitywarehouse/kafka-data-keep/internal/s3"
 )
 
 type GroupWriter struct {

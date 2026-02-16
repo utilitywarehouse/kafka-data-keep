@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/utilitywarehouse/kafka-data-keep/internal/s3"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/codec"
 )
 
@@ -22,7 +23,7 @@ type writerConfig struct {
 }
 
 type partitionsWriterManager struct {
-	uploader       *Uploader
+	uploader       *s3.Uploader
 	config         writerConfig
 	encoderFactory codec.RecordEncoderFactory
 	decoderFactory codec.RecordDecoderFactory
@@ -31,7 +32,7 @@ type partitionsWriterManager struct {
 	writers map[string]*partitionWriter
 }
 
-func newPartitionsWriterManager(uploader *Uploader, encoderFactory codec.RecordEncoderFactory, decoderFactory codec.RecordDecoderFactory, config writerConfig) (*partitionsWriterManager, error) {
+func newPartitionsWriterManager(uploader *s3.Uploader, encoderFactory codec.RecordEncoderFactory, decoderFactory codec.RecordDecoderFactory, config writerConfig) (*partitionsWriterManager, error) {
 	m := &partitionsWriterManager{
 		uploader:       uploader,
 		config:         config,

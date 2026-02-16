@@ -13,7 +13,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec/avro"
-	topicsbackup "github.com/utilitywarehouse/kafka-data-keep/internal/topics/backup"
+	topicsbackup "github.com/utilitywarehouse/kafka-data-keep/internal/s3"
 	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
 )
 

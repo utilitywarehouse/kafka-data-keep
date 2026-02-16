@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/twmb/franz-go/pkg/kgo"
+	ints3 "github.com/utilitywarehouse/kafka-data-keep/internal/s3"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/codec/avro"
 	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
 	"golang.org/x/sync/errgroup"
@@ -53,7 +54,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	}
 
 	s3Client := s3.NewFromConfig(awsCfg, s3ClientOpts...)
-	uploader := NewUploader(s3Client, cfg.S3Bucket)
+	uploader := ints3.NewUploader(s3Client, cfg.S3Bucket)
 
 	// Create working dir for local files
 	if err := os.MkdirAll(cfg.WorkingDir, 0o750); err != nil {

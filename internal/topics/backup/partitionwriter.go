@@ -14,6 +14,7 @@ import (
 
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/s3"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/codec"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"
@@ -25,7 +26,7 @@ type OffsetCommitter interface {
 }
 
 type partitionWriter struct {
-	uploader        *Uploader
+	uploader        *s3.Uploader
 	offsetCommitter OffsetCommitter
 	config          writerConfig
 	encoderFactory  codec.RecordEncoderFactory
@@ -60,7 +61,7 @@ func initUnexpectedLeftoverFilesCounter() metric.Int64Counter {
 	return c
 }
 
-func newPartitionWriter(uploader *Uploader, offsetCommitter OffsetCommitter, config writerConfig, encoderFactory codec.RecordEncoderFactory, decoderFactory codec.RecordDecoderFactory, topic string, partition int32) *partitionWriter {
+func newPartitionWriter(uploader *s3.Uploader, offsetCommitter OffsetCommitter, config writerConfig, encoderFactory codec.RecordEncoderFactory, decoderFactory codec.RecordDecoderFactory, topic string, partition int32) *partitionWriter {
 	return &partitionWriter{
 		uploader:        uploader,
 		offsetCommitter: offsetCommitter,
