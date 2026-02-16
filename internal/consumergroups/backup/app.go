@@ -59,7 +59,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	}
 	defer client.Close()
 
-	kadmClient := kadm.NewClient(client)
+	kadmClient := kadm.NewClient(client.Client)
 	defer kadmClient.Close()
 
 	encFactory := &avro.GroupEncoderFactory{}
@@ -80,13 +80,13 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	}
 }
 
-func initKafkaClient(cfg AppConfig) (*kgo.Client, error) {
-	opts := []kgo.Opt{}
+func initKafkaClient(cfg AppConfig) (*kafka.Client, error) {
+	var connectOpt kgo.Opt
 	if cfg.BrokersDNSSrv != "" {
-		opts = append(opts, kafka.SeedBrokersFromDNS(cfg.BrokersDNSSrv))
+		connectOpt = kafka.SeedBrokersFromDNS(cfg.BrokersDNSSrv)
 	} else if cfg.Brokers != "" {
-		opts = append(opts, kgo.SeedBrokers(strings.Split(cfg.Brokers, ",")...))
+		connectOpt = kgo.SeedBrokers(strings.Split(cfg.Brokers, ",")...)
 	}
 
-	return kgo.NewClient(opts...)
+	return kafka.NewClient(connectOpt)
 }
