@@ -51,22 +51,27 @@ func TestBackupIntegration(t *testing.T) {
 
 	ctx := t.Context()
 
-	topic := "test-topic"
-	partitions := int32(4)
-	_, err = kadmClient.CreateTopic(ctx, partitions, 1, nil, topic)
+	topic1 := "test-topic-1"
+	topic2 := "test-topic-2"
+	partitions := int32(2)
+	_, err = kadmClient.CreateTopic(ctx, partitions, 1, nil, topic1)
+	require.NoError(t, err)
+	_, err = kadmClient.CreateTopic(ctx, partitions, 1, nil, topic2)
 	require.NoError(t, err)
 
-	writeRecords(t, adminClient, topic, 0, 10)
-	writeRecords(t, adminClient, topic, 2, 30)
-	writeRecords(t, adminClient, topic, 3, 40)
+	writeRecords(t, adminClient, topic1, 0, 10)
+	writeRecords(t, adminClient, topic1, 1, 30)
+	writeRecords(t, adminClient, topic2, 0, 40)
+	writeRecords(t, adminClient, topic2, 1, 50)
 
 	groupID := "test-group-" + uuid.NewString()
 
 	// set the group to the end of the topic
 	offsets := make(kadm.Offsets)
-	offsets.Add(kadm.Offset{Topic: topic, Partition: 0, At: 5, LeaderEpoch: -1})
-	offsets.Add(kadm.Offset{Topic: topic, Partition: 2, At: 20, LeaderEpoch: -1})
-	offsets.Add(kadm.Offset{Topic: topic, Partition: 3, At: 30, LeaderEpoch: -1})
+	offsets.Add(kadm.Offset{Topic: topic1, Partition: 0, At: 5, LeaderEpoch: -1})
+	offsets.Add(kadm.Offset{Topic: topic1, Partition: 1, At: 20, LeaderEpoch: -1})
+	offsets.Add(kadm.Offset{Topic: topic2, Partition: 0, At: 30, LeaderEpoch: -1})
+	offsets.Add(kadm.Offset{Topic: topic2, Partition: 1, At: 40, LeaderEpoch: -1})
 
 	_, err = kadmClient.CommitOffsets(ctx, groupID, offsets)
 	require.NoError(t, err)
@@ -137,11 +142,17 @@ func TestBackupIntegration(t *testing.T) {
 		GroupID: groupID,
 		Topics: []codec.TopicOffset{
 			{
-				Topic: topic,
+				Topic: topic1,
 				Partitions: []codec.PartitionOffset{
 					{Partition: 0, Offset: 5},
-					{Partition: 2, Offset: 20},
-					{Partition: 3, Offset: 30},
+					{Partition: 1, Offset: 20},
+				},
+			},
+			{
+				Topic: topic2,
+				Partitions: []codec.PartitionOffset{
+					{Partition: 0, Offset: 30},
+					{Partition: 1, Offset: 40},
 				},
 			},
 		},
