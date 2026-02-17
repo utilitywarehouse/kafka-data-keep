@@ -63,7 +63,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	defer kadmClient.Close()
 
 	encFactory := &avro.GroupEncoderFactory{}
-	groupWriter := NewGroupWriter(kadmClient, uploader, encFactory, cfg)
+	groupWriter := NewGroupWriter(kadmClient, uploader, encFactory, cfg.S3Location)
 
 	ticker := time.NewTicker(cfg.RunInterval)
 	defer ticker.Stop()

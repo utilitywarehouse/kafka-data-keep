@@ -15,15 +15,15 @@ type GroupWriter struct {
 	client     *kadm.Client
 	uploader   *ints3.Uploader
 	encFactory codec.GroupEncoderFactory
-	cfg        AppConfig
+	s3Location string
 }
 
-func NewGroupWriter(client *kadm.Client, uploader *ints3.Uploader, encFactory codec.GroupEncoderFactory, cfg AppConfig) *GroupWriter {
+func NewGroupWriter(client *kadm.Client, uploader *ints3.Uploader, encFactory codec.GroupEncoderFactory, s3Location string) *GroupWriter {
 	return &GroupWriter{
 		client:     client,
 		uploader:   uploader,
 		encFactory: encFactory,
-		cfg:        cfg,
+		s3Location: s3Location,
 	}
 }
 
@@ -53,11 +53,11 @@ func (w *GroupWriter) Backup(ctx context.Context) error {
 		return err
 	}
 
-	if err := w.uploader.Upload(ctx, f.Name(), w.cfg.S3Location); err != nil {
+	if err := w.uploader.Upload(ctx, f.Name(), w.s3Location); err != nil {
 		return fmt.Errorf("failed to upload backup: %w", err)
 	}
 
-	slog.InfoContext(ctx, "Uploaded consumer groups backup", "key", w.cfg.S3Location)
+	slog.InfoContext(ctx, "Uploaded consumer groups backup", "key", w.s3Location)
 	return nil
 }
 
