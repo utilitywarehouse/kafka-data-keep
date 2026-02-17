@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec"
@@ -40,10 +41,11 @@ func (w *GroupWriter) Backup(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
+	tmpPath := filepath.Clean(f.Name())
 	defer func() {
 		_ = f.Close()
 
-		if err := os.Remove(f.Name()); err != nil {
+		if err := os.Remove(tmpPath); err != nil {
 			slog.WarnContext(ctx, "failed removing file", "error", err)
 		}
 	}()
@@ -53,7 +55,7 @@ func (w *GroupWriter) Backup(ctx context.Context) error {
 		return err
 	}
 
-	if err := w.uploader.Upload(ctx, f.Name(), w.s3Location); err != nil {
+	if err := w.uploader.Upload(ctx, tmpPath, w.s3Location); err != nil {
 		return fmt.Errorf("failed to upload backup: %w", err)
 	}
 
