@@ -1,0 +1,50 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kafka-groups-backup
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-groups-backup
+  labels:
+    app: kafka-groups-backup
+spec:
+  # We always want a single replica, as we're writing to the same file in S£
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka-groups-backup
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /__/metrics
+        prometheus.io/port: "8081"
+      labels:
+        app: kafka-groups-backup
+    spec:
+      serviceAccountName: kafka-groups-backup
+      containers:
+        - name: kafka-groups-backup
+          image: quay.io/utilitywarehouse/kafka-data-keep:main
+          imagePullPolicy: IfNotPresent
+          command: ["/kafka-data-keep", "consumer-groups-backup"]
+          env:
+            - name: KAFKA_BROKERS
+              value: TBD
+            - name: S3_BUCKET
+              value: TBD
+            - name: S3_LOCATION
+              value: kafka-backup/consumer-groups/consumers.avro
+            - name: AWS_REGION
+              value: eu-west-1
+            - name: RUN_INTERVAL
+              value: 1m
+          resources:
+            requests:
+              cpu: "0"
+              memory: "0"
+            limits:
+              cpu: "4"
+              memory: 4Gi
