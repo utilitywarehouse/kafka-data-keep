@@ -1,16 +1,16 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: kafka-backup
+  name: kafka-topics-backup
 ---
 apiVersion: apps/v1
 # Using a Stateful Set to get permanent PVCs attached
 kind: StatefulSet
 metadata:
-  name: kafka-backup
+  name: kafka-topics-backup
   labels:
-    app: kafka-backup
-    app.kubernetes.io/name: kafka-backup
+    app: kafka-topics-backup
+    app.kubernetes.io/name: kafka-topics-backup
 spec:
   # Initialize all pods at the same time, otherwise rebalances will happen each time a pod is started
   podManagementPolicy: Parallel
@@ -24,8 +24,8 @@ spec:
       maxUnavailable: 100%
   selector:
     matchLabels:
-      app: kafka-backup
-      app.kubernetes.io/name: kafka-backup
+      app: kafka-topics-backup
+      app.kubernetes.io/name: kafka-topics-backup
   template:
     metadata:
       annotations:
@@ -33,18 +33,18 @@ spec:
         prometheus.io/path: /__/metrics
         prometheus.io/port: "8081"
       labels:
-        app: kafka-backup
-        app.kubernetes.io/name: kafka-backup
+        app: kafka-topics-backup
+        app.kubernetes.io/name: kafka-topics-backup
     spec:
-      serviceAccountName: kafka-backup
+      serviceAccountName: kafka-topics-backup
       securityContext:
         # Change ownership to the group created in Dockerfile to be able to write PVCs
         fsGroup: 1000
       containers:
-        - name: kafka-backup
+        - name: kafka-topics-backup
           image: quay.io/utilitywarehouse/kafka-data-keep:main
           imagePullPolicy: IfNotPresent
-          command: ["/kafka-data-keep", "backup"]
+          command: ["/kafka-data-keep", "topics-backup"]
           env:
             - name: GOMEMLIMIT
               value: "3GiB"
@@ -59,7 +59,7 @@ spec:
             - name: S3_BUCKET
               value: TBD
             - name: S3_PREFIX
-              value: kafka-backup
+              value: kafka-topics-backup
             - name: WORKING_DIR
               value: /backup-workdir
           ports:
