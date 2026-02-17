@@ -13,7 +13,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec/avro"
-	topicsbackup "github.com/utilitywarehouse/kafka-data-keep/internal/s3"
+	ints3 "github.com/utilitywarehouse/kafka-data-keep/internal/s3"
 	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
 )
 
@@ -51,7 +51,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	}
 
 	s3Client := s3.NewFromConfig(awsCfg, s3ClientOpts...)
-	uploader := topicsbackup.NewUploader(s3Client, cfg.S3Bucket)
+	uploader := ints3.NewUploader(s3Client, cfg.S3Bucket)
 
 	client, err := initKafkaClient(cfg)
 	if err != nil {

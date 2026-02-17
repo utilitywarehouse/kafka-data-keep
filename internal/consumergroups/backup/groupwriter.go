@@ -8,17 +8,17 @@ import (
 
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec"
-	topicsbackup "github.com/utilitywarehouse/kafka-data-keep/internal/s3"
+	ints3 "github.com/utilitywarehouse/kafka-data-keep/internal/s3"
 )
 
 type GroupWriter struct {
 	client     *kadm.Client
-	uploader   *topicsbackup.Uploader
+	uploader   *ints3.Uploader
 	encFactory codec.GroupEncoderFactory
 	cfg        AppConfig
 }
 
-func NewGroupWriter(client *kadm.Client, uploader *topicsbackup.Uploader, encFactory codec.GroupEncoderFactory, cfg AppConfig) *GroupWriter {
+func NewGroupWriter(client *kadm.Client, uploader *ints3.Uploader, encFactory codec.GroupEncoderFactory, cfg AppConfig) *GroupWriter {
 	return &GroupWriter{
 		client:     client,
 		uploader:   uploader,
