@@ -66,6 +66,7 @@ The `topics-backup` subcommand supports the following flags and environment vari
 | `-s3-bucket` | `S3_BUCKET` | | S3 bucket name where to store the backups |
 | `-s3-prefix` | `S3_PREFIX` | | The prefix to use for the backup files in S3 |
 | `-min-file-size` | `MIN_FILE_SIZE` | `5242880` (5MB) | The minimum file size in bytes for each partition backup file |
+| `-partition-idle-threshold` | `PARTITION_IDLE_THRESHOLD` | `1m` | The threshold after which a partition will be considered idle for not consuming any new records (duration, e.g. `30s`, `5m`) |
 | `-working-dir` | `WORKING_DIR` | `kafka-backup-data` | Working directory for local files |
 | `-s3-endpoint` | `AWS_ENDPOINT_URL` | | S3 endpoint URL (for LocalStack or custom S3-compatible storage) |
 | `-s3-region` | `AWS_REGION` | `eu-west-1` | S3 region |
@@ -77,7 +78,8 @@ The `topics-backup` subcommand supports the following flags and environment vari
   -brokers "kafka:9092" \
   -topics-regex "my-topic.*" \
   -s3-bucket "my-backup-bucket" \
-  -s3-region "us-east-1"
+  -s3-region "us-east-1" \
+  -partition-idle-threshold "5m"
 ```
 
 # Topics Plan Restore
