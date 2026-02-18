@@ -172,3 +172,53 @@ The `topics-restore` subcommand supports the following flags and environment var
   -s3-bucket "my-backup-bucket" \
   -s3-region "us-east-1"
 ```
+
+# Consumer Groups Backup
+
+## Approach
+
+The application periodically snapshots all Kafka consumer group offsets and uploads them to S3 as a single Avro file.
+
+1.  **Discovery**: Lists all consumer groups on the cluster using the Kafka admin API.
+2.  **Offset Fetching**: For each consumer group, fetches the committed offsets for all topic partitions.
+3.  **Encoding**: The offsets are encoded using Avro and written to a temporary local file.
+4.  **Upload**: The file is uploaded to a configured S3 location, overwriting the previous snapshot.
+5.  **Scheduling**: The process repeats at a configurable interval (`run-interval`).
+
+## Data Structure
+
+Each Avro record represents a single consumer group and contains:
+
+-   `group_id`: The consumer group ID.
+-   `topics`: An array of topics, each containing:
+    -   `topic`: The topic name.
+    -   `partitions`: An array of partition offsets, each containing:
+        -   `partition`: The partition ID.
+        -   `offset`: The committed offset.
+        -   `leader_epoch`: The leader epoch (optional).
+        -   `metadata`: The offset metadata (optional).
+
+## Configuration
+
+The `consumer-groups-backup` subcommand supports the following flags and environment variables. Flags take precedence over environment variables.
+
+| Flag | Environment Variable | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `-brokers` | `KAFKA_BROKERS` | `localhost:9092` | Kafka brokers (comma separated) |
+| `-brokersDNSSrv` | `KAFKA_BROKERS_DNS_SRV` | | DNS SRV record with the kafka seed brokers |
+| `-s3-bucket` | `S3_BUCKET` | | S3 bucket name where to store the backups |
+| `-s3-location` | `S3_LOCATION` | | The S3 location (full path key) to use for the backup file |
+| `-run-interval` | `RUN_INTERVAL` | `1m` | Interval between backups (duration, e.g. `30s`, `5m`) |
+| `-s3-endpoint` | `AWS_ENDPOINT_URL` | | S3 endpoint URL (for LocalStack or custom S3-compatible storage) |
+| `-s3-region` | `AWS_REGION` | `eu-west-1` | S3 region |
+
+### Usage Example
+
+```console
+./kafka-data-keep consumer-groups-backup \
+  -brokers "kafka:9092" \
+  -s3-bucket "my-backup-bucket" \
+  -s3-location "backups/consumer-groups/offsets.avro" \
+  -run-interval "5m" \
+  -s3-region "us-east-1"
+```
