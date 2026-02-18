@@ -1,7 +1,7 @@
 # kafka-data-keep
-DR utility for preserving kafka topics data in S3, with the ability to restore
+DR utility for preserving kafka topics and consumer groups data in S3, with the ability to restore.
 
-# Backup
+# Topics backup
 ## Approach
 
 The application functions as a Kafka consumer that backs up data to S3. It uses a local buffering strategy to ensure data integrity and efficient uploads.
@@ -54,7 +54,7 @@ The 19-digit zero-padding ensures that files are sorted chronologically when lis
 
 ## Configuration
 
-The `backup` subcommand supports the following flags and environment variables. Flags take precedence over environment variables.
+The `topics-backup` subcommand supports the following flags and environment variables. Flags take precedence over environment variables.
 
 | Flag | Environment Variable | Default | Description |
 | :--- | :--- | :--- | :--- |
@@ -66,6 +66,7 @@ The `backup` subcommand supports the following flags and environment variables. 
 | `-s3-bucket` | `S3_BUCKET` | | S3 bucket name where to store the backups |
 | `-s3-prefix` | `S3_PREFIX` | | The prefix to use for the backup files in S3 |
 | `-min-file-size` | `MIN_FILE_SIZE` | `5242880` (5MB) | The minimum file size in bytes for each partition backup file |
+| `-partition-idle-threshold` | `PARTITION_IDLE_THRESHOLD` | `1m` | The threshold after which a partition will be considered idle for not consuming any new records (duration, e.g. `30s`, `5m`) |
 | `-working-dir` | `WORKING_DIR` | `kafka-backup-data` | Working directory for local files |
 | `-s3-endpoint` | `AWS_ENDPOINT_URL` | | S3 endpoint URL (for LocalStack or custom S3-compatible storage) |
 | `-s3-region` | `AWS_REGION` | `eu-west-1` | S3 region |
@@ -73,14 +74,15 @@ The `backup` subcommand supports the following flags and environment variables. 
 ### Usage Example
 
 ```console
-./kafka-data-keep backup \
+./kafka-data-keep topics-backup \
   -brokers "kafka:9092" \
   -topics-regex "my-topic.*" \
   -s3-bucket "my-backup-bucket" \
-  -s3-region "us-east-1"
+  -s3-region "us-east-1" \
+  -partition-idle-threshold "5m"
 ```
 
-# Plan Restore
+# Topics Plan Restore
 
 Prepares the restore plan by reading the backup files on the S3 bucket and, for each file, it will create a record in a Kafka topic. 
 We are using this intermediary phase, before restore, to leverage the kafka consumer group functionality to achieve parallelism per partition safely at restore time and to keep track of the restore process.
@@ -108,16 +110,16 @@ The `plan-restore` subcommand supports the following flags and environment varia
 ## Usage Example
 
 ```console
-./kafka-data-keep plan-restore \
+./kafka-data-keep topics-plan-restore \
   -brokers "kafka:9092" \
   -restore-topics-regex "domain1.*, domain2.*" \
   -s3-bucket "my-backup-bucket" \
   -s3-region "us-east-1"
 ```
 
-# Restore
+# Topics restore
 
-The `restore` command consumes restore plan records from the plan topic (created by `plan-restore`) and restores the data from S3 backup files back to Kafka topics.
+The `topics-restore` command consumes restore plan records from the plan topic (created by `plan-restore`) and restores the data from S3 backup files back to Kafka topics.
 
 ## Key Features
 
@@ -147,7 +149,7 @@ this ensures that all the files holding the data for a topic's partition will be
 
 ## Configuration
 
-The `restore` subcommand supports the following flags and environment variables. Flags take precedence over environment variables.
+The `topics-restore` subcommand supports the following flags and environment variables. Flags take precedence over environment variables.
 
 | Flag                    | Environment Variable         | Default | Description |
 |:------------------------|:-----------------------------| :--- | :--- |
@@ -163,10 +165,60 @@ The `restore` subcommand supports the following flags and environment variables.
 ## Usage Example
 
 ```console
-./kafka-data-keep restore \
+./kafka-data-keep topics-restore \
   -brokers "kafka:9092" \
   -plan-topic "pubsub.plan-topic-restore" \
   -restore-topic-prefix "pubsub.restored." \
   -s3-bucket "my-backup-bucket" \
+  -s3-region "us-east-1"
+```
+
+# Consumer Groups Backup
+
+## Approach
+
+The application periodically snapshots all Kafka consumer group offsets and uploads them to S3 as a single Avro file.
+
+1.  **Discovery**: Lists all consumer groups on the cluster using the Kafka admin API.
+2.  **Offset Fetching**: For each consumer group, fetches the committed offsets for all topic partitions.
+3.  **Encoding**: The offsets are encoded using Avro and written to a temporary local file.
+4.  **Upload**: The file is uploaded to a configured S3 location, overwriting the previous snapshot.
+5.  **Scheduling**: The process repeats at a configurable interval (`run-interval`).
+
+## Data Structure
+
+Each Avro record represents a single consumer group and contains:
+
+-   `group_id`: The consumer group ID.
+-   `topics`: An array of topics, each containing:
+    -   `topic`: The topic name.
+    -   `partitions`: An array of partition offsets, each containing:
+        -   `partition`: The partition ID.
+        -   `offset`: The committed offset.
+        -   `leader_epoch`: The leader epoch (optional).
+        -   `metadata`: The offset metadata (optional).
+
+## Configuration
+
+The `consumer-groups-backup` subcommand supports the following flags and environment variables. Flags take precedence over environment variables.
+
+| Flag | Environment Variable | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `-brokers` | `KAFKA_BROKERS` | `localhost:9092` | Kafka brokers (comma separated) |
+| `-brokersDNSSrv` | `KAFKA_BROKERS_DNS_SRV` | | DNS SRV record with the kafka seed brokers |
+| `-s3-bucket` | `S3_BUCKET` | | S3 bucket name where to store the backups |
+| `-s3-location` | `S3_LOCATION` | | The S3 location (full path key) to use for the backup file |
+| `-run-interval` | `RUN_INTERVAL` | `1m` | Interval between backups (duration, e.g. `30s`, `5m`) |
+| `-s3-endpoint` | `AWS_ENDPOINT_URL` | | S3 endpoint URL (for LocalStack or custom S3-compatible storage) |
+| `-s3-region` | `AWS_REGION` | `eu-west-1` | S3 region |
+
+### Usage Example
+
+```console
+./kafka-data-keep consumer-groups-backup \
+  -brokers "kafka:9092" \
+  -s3-bucket "my-backup-bucket" \
+  -s3-location "backups/consumer-groups/offsets.avro" \
+  -run-interval "5m" \
   -s3-region "us-east-1"
 ```
