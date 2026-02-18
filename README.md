@@ -1,7 +1,7 @@
 # kafka-data-keep
-DR utility for preserving kafka topics data in S3, with the ability to restore
+DR utility for preserving kafka topics and consumer groups data in S3, with the ability to restore.
 
-# Backup
+# Topics backup
 ## Approach
 
 The application functions as a Kafka consumer that backs up data to S3. It uses a local buffering strategy to ensure data integrity and efficient uploads.
@@ -54,7 +54,7 @@ The 19-digit zero-padding ensures that files are sorted chronologically when lis
 
 ## Configuration
 
-The `backup` subcommand supports the following flags and environment variables. Flags take precedence over environment variables.
+The `topics-backup` subcommand supports the following flags and environment variables. Flags take precedence over environment variables.
 
 | Flag | Environment Variable | Default | Description |
 | :--- | :--- | :--- | :--- |
@@ -73,14 +73,14 @@ The `backup` subcommand supports the following flags and environment variables. 
 ### Usage Example
 
 ```console
-./kafka-data-keep backup \
+./kafka-data-keep topics-backup \
   -brokers "kafka:9092" \
   -topics-regex "my-topic.*" \
   -s3-bucket "my-backup-bucket" \
   -s3-region "us-east-1"
 ```
 
-# Plan Restore
+# Topics Plan Restore
 
 Prepares the restore plan by reading the backup files on the S3 bucket and, for each file, it will create a record in a Kafka topic. 
 We are using this intermediary phase, before restore, to leverage the kafka consumer group functionality to achieve parallelism per partition safely at restore time and to keep track of the restore process.
@@ -108,16 +108,16 @@ The `plan-restore` subcommand supports the following flags and environment varia
 ## Usage Example
 
 ```console
-./kafka-data-keep plan-restore \
+./kafka-data-keep topics-plan-restore \
   -brokers "kafka:9092" \
   -restore-topics-regex "domain1.*, domain2.*" \
   -s3-bucket "my-backup-bucket" \
   -s3-region "us-east-1"
 ```
 
-# Restore
+# Topics restore
 
-The `restore` command consumes restore plan records from the plan topic (created by `plan-restore`) and restores the data from S3 backup files back to Kafka topics.
+The `topics-restore` command consumes restore plan records from the plan topic (created by `plan-restore`) and restores the data from S3 backup files back to Kafka topics.
 
 ## Key Features
 
@@ -147,7 +147,7 @@ this ensures that all the files holding the data for a topic's partition will be
 
 ## Configuration
 
-The `restore` subcommand supports the following flags and environment variables. Flags take precedence over environment variables.
+The `topics-restore` subcommand supports the following flags and environment variables. Flags take precedence over environment variables.
 
 | Flag                    | Environment Variable         | Default | Description |
 |:------------------------|:-----------------------------| :--- | :--- |
@@ -163,7 +163,7 @@ The `restore` subcommand supports the following flags and environment variables.
 ## Usage Example
 
 ```console
-./kafka-data-keep restore \
+./kafka-data-keep topics-restore \
   -brokers "kafka:9092" \
   -plan-topic "pubsub.plan-topic-restore" \
   -restore-topic-prefix "pubsub.restored." \
