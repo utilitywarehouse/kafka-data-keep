@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"regexp"
 	"strings"
 	"time"
 
@@ -13,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/utilitywarehouse/kafka-data-keep/internal"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec/avro"
 	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
@@ -40,7 +40,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 		return fmt.Errorf("s3-location must be provided")
 	}
 
-	regexes, err := compileRegexes(cfg.IncludeRegexes)
+	regexes, err := internal.CompileRegexes(cfg.IncludeRegexes)
 	if err != nil {
 		return fmt.Errorf("compiling include regexes: %w", err)
 	}
@@ -110,23 +110,6 @@ func downloadAndDecode(ctx context.Context, cfg AppConfig) ([]codec.ConsumerGrou
 	}
 
 	return offsets, nil
-}
-
-func compileRegexes(regexList string) ([]*regexp.Regexp, error) {
-	parts := strings.Split(regexList, ",")
-	regexes := make([]*regexp.Regexp, 0, len(parts))
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-		re, err := regexp.Compile(p)
-		if err != nil {
-			return nil, fmt.Errorf("compiling regex %q: %w", p, err)
-		}
-		regexes = append(regexes, re)
-	}
-	return regexes, nil
 }
 
 func initKafkaClient(cfg AppConfig) (*kafka.Client, []string, error) {
