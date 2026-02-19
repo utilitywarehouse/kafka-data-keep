@@ -27,3 +27,12 @@ func SplitAndTrim(s, sep string) []string {
 	}
 	return parts
 }
+
+func MatchesAny(s string, regexes []*regexp.Regexp) bool {
+	for _, re := range regexes {
+		if re.MatchString(s) {
+			return true
+		}
+	}
+	return false
+}

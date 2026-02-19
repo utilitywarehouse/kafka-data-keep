@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"log/slog"
-	"regexp"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -126,22 +125,13 @@ func (p *planner) filterTopics(topics []string) ([]string, error) {
 	for _, includeRegex := range includeRegexes {
 		for _, topic := range topics {
 			/* include the topic if it matches the regex and doesn't match any of the exclude regexes'*/
-			if includeRegex.MatchString(topic) && !matchesAny(topic, excludeRegexes) {
+			if includeRegex.MatchString(topic) && !internal.MatchesAny(topic, excludeRegexes) {
 				result = append(result, topic)
 			}
 		}
 	}
 
 	return result, nil
-}
-
-func matchesAny(s string, regexes []*regexp.Regexp) bool {
-	for _, re := range regexes {
-		if re.MatchString(s) {
-			return true
-		}
-	}
-	return false
 }
 
 func (p *planner) listTopicsFromS3(ctx context.Context) ([]string, error) {
