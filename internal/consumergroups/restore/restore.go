@@ -44,11 +44,8 @@ func NewRestorer(kadmClient *kadm.Client, seedBrokers []string, tlsConfig *tls.C
 }
 
 // Restore orchestrates the full consumer group offset restoration.
-func (r *Restorer) Restore(ctx context.Context, offsets []codec.ConsumerGroupOffset, includeRegexes []*regexp.Regexp, loopInterval time.Duration) error {
-	filtered := filterByRegex(offsets, includeRegexes)
-	slog.InfoContext(ctx, "Filtered consumer groups by regex", "total", len(offsets), "matched", len(filtered))
-
-	remaining, err := r.filterAlreadyRestored(ctx, filtered)
+func (r *Restorer) Restore(ctx context.Context, offsets []codec.ConsumerGroupOffset, loopInterval time.Duration) error {
+	remaining, err := r.filterAlreadyRestored(ctx, offsets)
 	if err != nil {
 		return fmt.Errorf("checking already restored groups: %w", err)
 	}

@@ -16,6 +16,7 @@ import (
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec/avro"
 	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
+	"regexp"
 )
 
 // AppConfig holds the configuration for the consumer groups restore command.
@@ -40,12 +41,12 @@ func Run(ctx context.Context, cfg AppConfig) error {
 		return fmt.Errorf("s3-location must be provided")
 	}
 
-	regexes, err := internal.CompileRegexes(cfg.IncludeRegexes)
+	includeRegexes, err := internal.CompileRegexes(cfg.IncludeRegexes)
 	if err != nil {
 		return fmt.Errorf("compiling include regexes: %w", err)
 	}
 
-	offsets, err := downloadAndDecode(ctx, cfg)
+	offsets, err := downloadAndDecode(ctx, cfg, includeRegexes)
 	if err != nil {
 		return err
 	}
@@ -61,24 +62,14 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	defer kadmClient.Close()
 
 	restorer := NewRestorer(kadmClient, seedBrokers, nil, cfg.RestorePrefix)
-	return restorer.Restore(ctx, offsets, regexes, cfg.LoopInterval)
+	return restorer.Restore(ctx, offsets, cfg.LoopInterval)
 }
 
-func downloadAndDecode(ctx context.Context, cfg AppConfig) ([]codec.ConsumerGroupOffset, error) {
-	awsCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(cfg.S3Region))
+func downloadAndDecode(ctx context.Context, cfg AppConfig, includeRegexes []*regexp.Regexp) ([]codec.ConsumerGroupOffset, error) {
+	s3Client, err := initS3Client(ctx, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("loading AWS config: %w", err)
+		return nil, err
 	}
-
-	var s3ClientOpts []func(*s3.Options)
-	if cfg.S3Endpoint != "" {
-		s3ClientOpts = append(s3ClientOpts, func(o *s3.Options) {
-			o.BaseEndpoint = aws.String(cfg.S3Endpoint)
-			o.UsePathStyle = true
-		})
-	}
-
-	s3Client := s3.NewFromConfig(awsCfg, s3ClientOpts...)
 
 	getObj, err := s3Client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(cfg.S3Bucket),
@@ -99,17 +90,40 @@ func downloadAndDecode(ctx context.Context, cfg AppConfig) ([]codec.ConsumerGrou
 
 	var offsets []codec.ConsumerGroupOffset
 	for decoder.HasNext() {
-		o, err := decoder.Decode()
+		cgo, err := decoder.Decode()
 		if err != nil {
 			return nil, fmt.Errorf("decoding consumer group offset: %w", err)
 		}
-		offsets = append(offsets, *o)
+		if internal.MatchesAny(cgo.GroupID, includeRegexes) {
+			offsets = append(offsets, *cgo)
+			slog.DebugContext(ctx, "including consumer group", "group", cgo.GroupID)
+		} else {
+			slog.DebugContext(ctx, "skipping consumer group, because it doesn't match the included regexps", "group", cgo.GroupID)
+		}
 	}
 	if decoder.Error() != nil {
-		return nil, fmt.Errorf("decoder error: %w", decoder.Error())
+		return offsets, fmt.Errorf("decoder error: %w", decoder.Error())
 	}
 
 	return offsets, nil
+}
+
+func initS3Client(ctx context.Context, cfg AppConfig) (*s3.Client, error) {
+	awsCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(cfg.S3Region))
+	if err != nil {
+		return nil, fmt.Errorf("failed loading aws config: %w", err)
+	}
+
+	var s3ClientOpts []func(*s3.Options)
+	if cfg.S3Endpoint != "" {
+		s3ClientOpts = append(s3ClientOpts, func(o *s3.Options) {
+			o.BaseEndpoint = aws.String(cfg.S3Endpoint)
+			o.UsePathStyle = true
+		})
+	}
+
+	s3Client := s3.NewFromConfig(awsCfg, s3ClientOpts...)
+	return s3Client, nil
 }
 
 func initKafkaClient(cfg AppConfig) (*kafka.Client, []string, error) {
