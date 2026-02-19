@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"log/slog"
-	"regexp"
 	"strconv"
 	"time"
 
@@ -62,48 +61,51 @@ func (r *Restorer) Restore(ctx context.Context, offsets []codec.ConsumerGroupOff
 	return r.runLoop(ctx, loopInterval, grouped)
 }
 
-// filterByRegex keeps only consumer groups whose GroupID matches at least one regex.
-func filterByRegex(offsets []codec.ConsumerGroupOffset, regexes []*regexp.Regexp) []codec.ConsumerGroupOffset {
-	var result []codec.ConsumerGroupOffset
-	for i := range offsets {
-		for _, re := range regexes {
-			if re.MatchString(offsets[i].GroupID) {
-				result = append(result, offsets[i])
-				break
-			}
-		}
-	}
-	return result
-}
-
-// filterAlreadyRestored removes consumer groups that already have offsets committed
-// in the Kafka cluster (using the prefixed group name).
+// filterAlreadyRestored removes partitions that already have offsets committed
+// in the Kafka cluster (using the prefixed group name), keeping only the ones not yet restored.
 func (r *Restorer) filterAlreadyRestored(ctx context.Context, offsets []codec.ConsumerGroupOffset) ([]codec.ConsumerGroupOffset, error) {
 	var result []codec.ConsumerGroupOffset
-	for i := range offsets {
-		restoredGroupID := r.restorePrefix + offsets[i].GroupID
+	for _, cg := range offsets {
+		restoredGroupID := r.restorePrefix + cg.GroupID
 		fetched, err := r.kadmClient.FetchOffsets(ctx, restoredGroupID)
 		if err != nil {
 			return nil, fmt.Errorf("fetching offsets for group %s: %w", restoredGroupID, err)
 		}
-		if fetched.Ok() && hasAnyOffset(fetched) {
-			slog.InfoContext(ctx, "Skipping already restored group", "group", restoredGroupID)
-			continue
+
+		filtered := filterTopicPartitions(ctx, cg, fetched)
+		if len(filtered.Topics) > 0 {
+			result = append(result, filtered)
+		} else {
+			slog.InfoContext(ctx, "Skipping fully restored group", "group", restoredGroupID)
 		}
-		result = append(result, offsets[i])
 	}
 	return result, nil
 }
 
-func hasAnyOffset(offsets kadm.OffsetResponses) bool {
-	for _, partitions := range offsets {
-		for _, offset := range partitions {
-			if offset.At >= 0 {
-				return true
+// filterTopicPartitions removes partitions that already have committed offsets from a consumer group.
+func filterTopicPartitions(ctx context.Context, cg codec.ConsumerGroupOffset, fetched kadm.OffsetResponses) codec.ConsumerGroupOffset {
+	filtered := codec.ConsumerGroupOffset{GroupID: cg.GroupID}
+	for _, to := range cg.Topics {
+		fetchedPartitions := fetched[to.Topic]
+		var remaining []codec.PartitionOffset
+		for _, po := range to.Partitions {
+			if fetchedPartitions != nil {
+				if resp, ok := fetchedPartitions[po.Partition]; ok && resp.At >= 0 {
+					slog.DebugContext(ctx, "Skipping already restored partition",
+						"group", cg.GroupID, "topic", to.Topic, "partition", po.Partition)
+					continue
+				}
 			}
+			remaining = append(remaining, po)
+		}
+		if len(remaining) > 0 {
+			filtered.Topics = append(filtered.Topics, codec.TopicOffset{
+				Topic:      to.Topic,
+				Partitions: remaining,
+			})
 		}
 	}
-	return false
+	return filtered
 }
 
 // groupByTopic transforms consumer group offsets into a map keyed by the restored topic name.
