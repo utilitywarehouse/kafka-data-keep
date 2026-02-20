@@ -6,16 +6,14 @@ import (
 	"crypto/tls"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec"
 	kafkaint "github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
+	topicsrestore "github.com/utilitywarehouse/kafka-data-keep/internal/topics/restore"
 )
-
-const originalOffsetHeader = "restore.source-offset"
 
 // groupPartitionOffset holds a single consumer group's offset for one partition.
 type groupPartitionOffset struct {
@@ -227,7 +225,7 @@ func (r *Restorer) processTopic(ctx context.Context, topic string, entries []gro
 // resolveEntry checks if the latest record's source offset covers the entry's offset.
 // If so, it finds the correct restored offset and commits it.
 func (r *Restorer) resolveEntry(ctx context.Context, restoredTopic string, latestRecord *kgo.Record, entry groupPartitionOffset) (bool, error) {
-	sourceOffset, err := getSourceOffset(latestRecord)
+	sourceOffset, err := topicsrestore.GetSourceOffsetFromHeader(latestRecord)
 	if err != nil {
 		return false, fmt.Errorf("getting source offset from header: %w", err)
 	}
@@ -288,7 +286,7 @@ func (r *Restorer) findRestoredOffset(ctx context.Context, topic string, partiti
 			if found >= 0 {
 				return
 			}
-			srcOff, err := getSourceOffset(rec)
+			srcOff, err := topicsrestore.GetSourceOffsetFromHeader(rec)
 			if err != nil {
 				return
 			}
@@ -318,20 +316,6 @@ func (r *Restorer) commitOffset(ctx context.Context, groupID, topic string, part
 		return fmt.Errorf("committing offset for group %s topic %s partition %d: %w", groupID, topic, partition, err)
 	}
 	return nil
-}
-
-// getSourceOffset extracts the restore.source-offset header value from a record.
-func getSourceOffset(rec *kgo.Record) (int64, error) {
-	for i := range rec.Headers {
-		if rec.Headers[i].Key == originalOffsetHeader {
-			offset, err := strconv.ParseInt(string(rec.Headers[i].Value), 10, 64)
-			if err != nil {
-				return -1, fmt.Errorf("parsing source offset header: %w", err)
-			}
-			return offset, nil
-		}
-	}
-	return -1, fmt.Errorf("restore.source-offset header not found")
 }
 
 func uniquePartitions(entries []groupPartitionOffset) []int32 {

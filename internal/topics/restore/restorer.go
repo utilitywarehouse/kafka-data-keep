@@ -113,9 +113,14 @@ func (r *kafkaS3Restorer) computeLastRestoredOffset(ctx context.Context, topic s
 	}
 
 	// if there is no last record, just start from -1
-	lastRestoredOffset, err := getOriginalOffsetFromHeader(ctx, lastRecord[partitionInt])
+	rec := lastRecord[partitionInt]
+	lastRestoredOffset, err := GetSourceOffsetFromHeader(rec)
 	if err != nil {
 		return -1, fmt.Errorf("failed to get original offset from header: %w", err)
+	}
+
+	if lastRestoredOffset == -1 {
+		slog.DebugContext(ctx, "compute last restored offset: restore header not found in last record", "headers", rec.Headers, "topic", rec.Topic, "partition", rec.Partition, "offset", rec.Offset)
 	}
 	return lastRestoredOffset, nil
 }
@@ -124,9 +129,9 @@ func partitionKey(topic string, partition string) string {
 	return fmt.Sprintf("%s/%s", topic, partition)
 }
 
-func getOriginalOffsetFromHeader(ctx context.Context, rec *kgo.Record) (int64, error) {
+func GetSourceOffsetFromHeader(rec *kgo.Record) (int64, error) {
 	for i := range rec.Headers {
-		if rec.Headers[i].Key == originalOffsetHeader {
+		if rec.Headers[i].Key == sourceOffsetHeader {
 			offset, err := strconv.ParseInt(string(rec.Headers[i].Value), 10, 64)
 			if err != nil {
 				return -1, fmt.Errorf("failed parsing original offset header value: %w", err)
@@ -135,11 +140,10 @@ func getOriginalOffsetFromHeader(ctx context.Context, rec *kgo.Record) (int64, e
 		}
 	}
 
-	slog.DebugContext(ctx, "compute last restored offset: restore header not found in last record", "headers", rec.Headers, "topic", rec.Topic, "partition", rec.Partition, "offset", rec.Offset)
 	return -1, nil
 }
 
-const originalOffsetHeader = "restore.source-offset"
+const sourceOffsetHeader = "restore.source-offset"
 
 func (r *kafkaS3Restorer) recordsInFile(ctx context.Context, key string, lastProcessedOffset int64) ([]*kgo.Record, error) {
 	//nolint:contextcheck // use background context as otherwise, if the context is cancelled, it fails when decoding the file with a misleading error about the file format. The operation is quick and will finish within sigterm time
@@ -193,11 +197,11 @@ func setOriginalOffsetHeader(rec *kgo.Record) {
 	val := fmt.Appendf(nil, "%d", rec.Offset)
 	// check if the header already exists from a previous restore
 	for i := range rec.Headers {
-		if rec.Headers[i].Key == originalOffsetHeader {
+		if rec.Headers[i].Key == sourceOffsetHeader {
 			rec.Headers[i].Value = val
 			return
 		}
 	}
 
-	rec.Headers = append(rec.Headers, kgo.RecordHeader{Key: originalOffsetHeader, Value: val})
+	rec.Headers = append(rec.Headers, kgo.RecordHeader{Key: sourceOffsetHeader, Value: val})
 }
