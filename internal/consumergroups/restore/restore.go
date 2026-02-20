@@ -14,6 +14,7 @@ import (
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec"
 	kafkaint "github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 	topicsrestore "github.com/utilitywarehouse/kafka-data-keep/internal/topics/restore"
+	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
 )
 
 // groupPartitionOffset holds a single consumer group's offset for one partition.
@@ -26,8 +27,6 @@ type groupPartitionOffset struct {
 // Restorer performs consumer group offset restoration.
 type Restorer struct {
 	kadmClient          *kadm.Client
-	seedBrokers         []string
-	tlsConfig           *tls.Config
 	restoreGroupsPrefix string
 	restoreTopicsPrefix string
 	consumeClient       *kgo.Client
@@ -35,7 +34,11 @@ type Restorer struct {
 }
 
 // NewRestorer creates a new Restorer.
-func NewRestorer(kadmClient *kadm.Client, seedBrokers []string, tlsConfig *tls.Config, restoreGroupsPrefix, restoreTopicsPrefix string) (*Restorer, error) {
+func NewRestorer(client *kafka.Client, restoreGroupsPrefix, restoreTopicsPrefix string) (*Restorer, error) {
+	//read the connection config from the initialised client
+	seedBrokers := client.OptValue(kgo.SeedBrokers).([]string)    //nolint:errcheck // this would fail only if the franz-go lib changes, and we'll catch that in integration tests
+	tlsConfig := client.OptValue(kgo.DialTLSConfig).(*tls.Config) //nolint:errcheck // this would fail only if the franz-go lib changes, and we'll catch that in integration tests
+
 	consumeClient, err := kgo.NewClient(
 		kgo.SeedBrokers(seedBrokers...),
 		kgo.DialTLSConfig(tlsConfig),
@@ -44,9 +47,7 @@ func NewRestorer(kadmClient *kadm.Client, seedBrokers []string, tlsConfig *tls.C
 		return nil, fmt.Errorf("creating consume client: %w", err)
 	}
 	return &Restorer{
-		kadmClient:          kadmClient,
-		seedBrokers:         seedBrokers,
-		tlsConfig:           tlsConfig,
+		kadmClient:          kadm.NewClient(client.Client),
 		restoreGroupsPrefix: restoreGroupsPrefix,
 		restoreTopicsPrefix: restoreTopicsPrefix,
 		consumeClient:       consumeClient,
@@ -214,7 +215,10 @@ func (r *Restorer) processTopic(ctx context.Context, topic string, entries []gro
 	restoredTopic := r.restoreTopicsPrefix + topic
 
 	partitions := uniquePartitions(entries)
-	latestRecords, err := kafkaint.ReadLatest(ctx, r.seedBrokers, r.tlsConfig, restoredTopic, partitions...)
+	seedBrokers := r.consumeClient.OptValue(kgo.SeedBrokers).([]string)    //nolint:errcheck // this would fail only if the franz-go lib changes, and we'll catch that in integration tests
+	tlsConfig := r.consumeClient.OptValue(kgo.DialTLSConfig).(*tls.Config) //nolint:errcheck // this would fail only if the franz-go lib changes, and we'll catch that in integration tests
+
+	latestRecords, err := kafkaint.ReadLatest(ctx, seedBrokers, tlsConfig, restoredTopic, partitions...)
 	if err != nil {
 		return entries, fmt.Errorf("reading latest records for %s: %w", restoredTopic, err)
 	}

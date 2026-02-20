@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"regexp"
@@ -12,7 +11,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec"
@@ -54,16 +52,13 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	}
 	slog.InfoContext(ctx, "Decoded consumer group offsets from S3", "count", len(offsets))
 
-	client, seedBrokers, err := initKafkaClient(cfg)
+	client, err := initKafkaClient(cfg)
 	if err != nil {
 		return fmt.Errorf("creating kafka client: %w", err)
 	}
 	defer client.Close()
 
-	kadmClient := kadm.NewClient(client.Client)
-	defer kadmClient.Close()
-
-	restorer, err := NewRestorer(kadmClient, seedBrokers, nil, cfg.RestoreGroupsPrefix, cfg.RestoreTopicsPrefix)
+	restorer, err := NewRestorer(client, cfg.RestoreGroupsPrefix, cfg.RestoreTopicsPrefix)
 	if err != nil {
 		return fmt.Errorf("creating restorer: %w", err)
 	}
@@ -132,20 +127,18 @@ func initS3Client(ctx context.Context, cfg AppConfig) (*s3.Client, error) {
 	return s3Client, nil
 }
 
-func initKafkaClient(cfg AppConfig) (*kafka.Client, []string, error) {
+func initKafkaClient(cfg AppConfig) (*kafka.Client, error) {
 	var connectOpt kgo.Opt
-	var seedBrokers []string
 
 	if cfg.BrokersDNSSrv != "" {
 		connectOpt = kafka.SeedBrokersFromDNS(cfg.BrokersDNSSrv)
 	} else if cfg.Brokers != "" {
-		seedBrokers = strings.Split(cfg.Brokers, ",")
-		connectOpt = kgo.SeedBrokers(seedBrokers...)
+		connectOpt = kgo.SeedBrokers(internal.SplitAndTrim(cfg.Brokers, ",")...)
 	}
 
 	client, err := kafka.NewClient(connectOpt)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return client, seedBrokers, nil
+	return client, nil
 }
