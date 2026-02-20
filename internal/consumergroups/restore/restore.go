@@ -258,6 +258,10 @@ func (r *Restorer) resolveEntry(ctx context.Context, restoredTopic string, lates
 		return false, fmt.Errorf("finding restored offset: %w", err)
 	}
 
+	if foundOffset == -1 {
+		return false, nil
+	}
+
 	restoredGroupID := r.restoreGroupsPrefix + entry.GroupID
 	if err := r.commitOffset(ctx, restoredGroupID, restoredTopic, entry.Partition, foundOffset); err != nil {
 		return false, err
@@ -273,10 +277,12 @@ func (r *Restorer) resolveEntry(ctx context.Context, restoredTopic string, lates
 	return true, nil
 }
 
+const searchAheadMax = 100
+
 // findRestoredOffset reads records starting at startOffset and walks forward until the
 // restore.source-offset header matches expectedSourceOffset.
 // It reuses the Restorer's shared consume client, serialising calls with a mutex.
-func (r *Restorer) findRestoredOffset(ctx context.Context, topic string, partition int32, startOffset int64, expectedSourceOffset int64) (int64, error) {
+func (r *Restorer) findRestoredOffset(ctx context.Context, topic string, partition int32, startOffset int64, groupOffset int64) (int64, error) {
 	r.consumeMu.Lock()
 	defer r.consumeMu.Unlock()
 
@@ -289,34 +295,57 @@ func (r *Restorer) findRestoredOffset(ctx context.Context, topic string, partiti
 		r.consumeClient.PurgeTopicsFromClient(topic)
 	}()
 
-	for {
-		fetches := r.consumeClient.PollRecords(ctx, 100)
-		stop, err := kafkaint.HandleFetches(ctx, &fetches)
+	fetches := r.consumeClient.PollRecords(ctx, searchAheadMax)
+	if err := fetches.Err0(); err != nil {
+		return -1, fmt.Errorf("fetching from kafka %w", err)
+	}
+
+	recs := fetches.Records()
+	if len(recs) == 0 {
+		return -1, fmt.Errorf("didn't read any records on poll")
+	}
+
+	// we expect to have the expected consumer group offset on the record at the start offset
+	firstRec := recs[0]
+	firstRecSrcOffset, err := topicsrestore.GetSourceOffsetFromHeader(firstRec)
+	if err != nil {
+		return -1, fmt.Errorf("reading first record source offset: %w", err)
+	}
+
+	if firstRecSrcOffset == groupOffset {
+		slog.InfoContext(ctx, "found group offset on the restored record as expected",
+			"topic", topic, "partition", partition, "group_offset", groupOffset, "restored_record_offset", firstRec.Offset)
+		return firstRec.Offset, nil
+	}
+
+	if firstRecSrcOffset > groupOffset {
+		slog.WarnContext(ctx, "unexpected situation: the searched group offset is before the expected restored offset. Searching previous records",
+			"topic", topic, "partition", partition,
+			"group_offset", groupOffset,
+			"restored_record_offset", firstRec.Offset,
+			"restored_record_source_offset", firstRecSrcOffset)
+		return r.findRestoredOffset(ctx, topic, partition, startOffset-(firstRecSrcOffset-groupOffset), groupOffset)
+	}
+
+	slog.WarnContext(ctx, "unexpected situation: the searched group offset is after the expected restored offset. Searching next fetched records",
+		"topic", topic, "partition", partition,
+		"group_offset", groupOffset, "restored_record_offset", firstRec.Offset, "restored_record_source_offset", firstRecSrcOffset)
+
+	for _, rec := range recs[1:] {
+		srcOff, err := topicsrestore.GetSourceOffsetFromHeader(rec)
 		if err != nil {
-			return -1, fmt.Errorf("polling records: %w", err)
+			return -1, fmt.Errorf("reading source offset: %w", err)
 		}
-		if stop {
-			return -1, fmt.Errorf("context cancelled while searching for offset")
-		}
-
-		var found int64 = -1
-		fetches.EachRecord(func(rec *kgo.Record) {
-			if found >= 0 {
-				return
-			}
-			srcOff, err := topicsrestore.GetSourceOffsetFromHeader(rec)
-			if err != nil {
-				return
-			}
-			if srcOff == expectedSourceOffset {
-				found = rec.Offset
-			}
-		})
-
-		if found >= 0 {
-			return found, nil
+		if srcOff == groupOffset {
+			slog.InfoContext(ctx, "found group offset on the next fetched records",
+				"topic", topic, "partition", partition,
+				"group_offset", groupOffset, "restored_record_offset", rec.Offset)
+			return rec.Offset, nil
 		}
 	}
+
+	// will be retried on the next iteration
+	return -1, nil
 }
 
 // commitOffset commits a single offset for a consumer group.
