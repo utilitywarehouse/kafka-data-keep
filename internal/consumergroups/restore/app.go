@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"regexp"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -16,20 +18,20 @@ import (
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec/avro"
 	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
-	"regexp"
 )
 
 // AppConfig holds the configuration for the consumer groups restore command.
 type AppConfig struct {
-	Brokers        string
-	BrokersDNSSrv  string
-	S3Bucket       string
-	S3Region       string
-	S3Endpoint     string
-	S3Location     string
-	RestorePrefix  string
-	IncludeRegexes string
-	LoopInterval   time.Duration
+	Brokers             string
+	BrokersDNSSrv       string
+	S3Bucket            string
+	S3Region            string
+	S3Endpoint          string
+	S3Location          string
+	RestoreGroupsPrefix string
+	RestoreTopicsPrefix string
+	IncludeRegexes      string
+	LoopInterval        time.Duration
 }
 
 // Run executes the consumer groups restore process.
@@ -61,7 +63,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	kadmClient := kadm.NewClient(client.Client)
 	defer kadmClient.Close()
 
-	restorer := NewRestorer(kadmClient, seedBrokers, nil, cfg.RestorePrefix)
+	restorer := NewRestorer(kadmClient, seedBrokers, nil, cfg.RestoreGroupsPrefix, cfg.RestoreTopicsPrefix)
 	return restorer.Restore(ctx, offsets, cfg.LoopInterval)
 }
 

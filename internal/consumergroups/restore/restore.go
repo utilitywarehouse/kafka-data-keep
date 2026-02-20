@@ -26,19 +26,21 @@ type groupPartitionOffset struct {
 
 // Restorer performs consumer group offset restoration.
 type Restorer struct {
-	kadmClient    *kadm.Client
-	seedBrokers   []string
-	tlsConfig     *tls.Config
-	restorePrefix string
+	kadmClient          *kadm.Client
+	seedBrokers         []string
+	tlsConfig           *tls.Config
+	restoreGroupsPrefix string
+	restoreTopicsPrefix string
 }
 
 // NewRestorer creates a new Restorer.
-func NewRestorer(kadmClient *kadm.Client, seedBrokers []string, tlsConfig *tls.Config, restorePrefix string) *Restorer {
+func NewRestorer(kadmClient *kadm.Client, seedBrokers []string, tlsConfig *tls.Config, restoreGroupsPrefix, restoreTopicsPrefix string) *Restorer {
 	return &Restorer{
-		kadmClient:    kadmClient,
-		seedBrokers:   seedBrokers,
-		tlsConfig:     tlsConfig,
-		restorePrefix: restorePrefix,
+		kadmClient:          kadmClient,
+		seedBrokers:         seedBrokers,
+		tlsConfig:           tlsConfig,
+		restoreGroupsPrefix: restoreGroupsPrefix,
+		restoreTopicsPrefix: restoreTopicsPrefix,
 	}
 }
 
@@ -66,7 +68,7 @@ func (r *Restorer) Restore(ctx context.Context, offsets []codec.ConsumerGroupOff
 func (r *Restorer) filterAlreadyRestored(ctx context.Context, offsets []codec.ConsumerGroupOffset) ([]codec.ConsumerGroupOffset, error) {
 	var result []codec.ConsumerGroupOffset
 	for _, cg := range offsets {
-		restoredGroupID := r.restorePrefix + cg.GroupID
+		restoredGroupID := r.restoreGroupsPrefix + cg.GroupID
 		fetched, err := r.kadmClient.FetchOffsets(ctx, restoredGroupID)
 		if err != nil {
 			return nil, fmt.Errorf("fetching offsets for group %s: %w", restoredGroupID, err)
@@ -139,7 +141,7 @@ func (r *Restorer) filterExistingTopics(ctx context.Context, grouped map[string]
 
 	result := make(map[string][]groupPartitionOffset)
 	for topic, entries := range grouped {
-		restoredTopic := r.restorePrefix + topic
+		restoredTopic := r.restoreTopicsPrefix + topic
 		if existingTopics[restoredTopic] {
 			result[topic] = entries
 		} else {
@@ -195,7 +197,7 @@ func (r *Restorer) processTopics(ctx context.Context, grouped map[string][]group
 
 // processTopic reads the latest record on each partition and resolves offsets for the group entries.
 func (r *Restorer) processTopic(ctx context.Context, topic string, entries []groupPartitionOffset) ([]groupPartitionOffset, error) {
-	restoredTopic := r.restorePrefix + topic
+	restoredTopic := r.restoreTopicsPrefix + topic
 
 	partitions := uniquePartitions(entries)
 	latestRecords, err := kafkaint.ReadLatest(ctx, r.seedBrokers, r.tlsConfig, restoredTopic, partitions...)
@@ -241,7 +243,7 @@ func (r *Restorer) resolveEntry(ctx context.Context, restoredTopic string, lates
 		return false, fmt.Errorf("finding restored offset: %w", err)
 	}
 
-	restoredGroupID := r.restorePrefix + entry.GroupID
+	restoredGroupID := r.restoreGroupsPrefix + entry.GroupID
 	if err := r.commitOffset(ctx, restoredGroupID, restoredTopic, entry.Partition, foundOffset); err != nil {
 		return false, err
 	}

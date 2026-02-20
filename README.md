@@ -247,7 +247,8 @@ The `consumer-groups-restore` subcommand supports the following flags and enviro
 | `-brokersDNSSrv` | `KAFKA_BROKERS_DNS_SRV` | | DNS SRV record with the kafka seed brokers |
 | `-s3-bucket` | `S3_BUCKET` | | S3 bucket name where the consumer groups backup is stored |
 | `-s3-location` | `S3_LOCATION` | | The S3 location (full path key) of the consumer groups backup file |
-| `-restore-prefix` | `RESTORE_PREFIX` | | Prefix to add to the restored consumer group names |
+| `-restore-groups-prefix` | `RESTORE_GROUPS_PREFIX` | | Prefix to add to the restored consumer group names |
+| `-restore-topics-prefix` | `RESTORE_TOPICS_PREFIX` | | Prefix used on the restored topic names |
 | `-include-regexes` | `INCLUDE_REGEXES` | `.*` | List of regular expressions to match consumer groups to restore (comma separated) |
 | `-loop-interval` | `LOOP_INTERVAL` | `1m` | Duration between consumer group restore iterations (e.g. `30s`, `5m`) |
 | `-s3-endpoint` | `AWS_ENDPOINT_URL` | | S3 endpoint URL (for LocalStack or custom S3-compatible storage) |
@@ -260,7 +261,8 @@ The `consumer-groups-restore` subcommand supports the following flags and enviro
   -brokers "kafka:9092" \
   -s3-bucket "my-backup-bucket" \
   -s3-location "backups/consumer-groups/offsets.avro" \
-  -restore-prefix "restored." \
+  -restore-groups-prefix "restored." \
+  -restore-topics-prefix "restored." \
   -include-regexes "my-group.*,other-group.*" \
   -loop-interval "1m" \
   -s3-region "us-east-1"

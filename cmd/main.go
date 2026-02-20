@@ -520,10 +520,16 @@ func loadConsumerGroupsRestoreAppConfig(args []string) (consumergroupsrestore.Ap
 	)
 
 	fs.StringVar(
-		&cfg.RestorePrefix,
-		"restore-prefix",
-		getEnv("RESTORE_PREFIX", ""),
+		&cfg.RestoreGroupsPrefix,
+		"restore-groups-prefix",
+		getEnv("RESTORE_GROUPS_PREFIX", ""),
 		"Prefix to add to the restored consumer group names",
+	)
+	fs.StringVar(
+		&cfg.RestoreTopicsPrefix,
+		"restore-topics-prefix",
+		getEnv("RESTORE_TOPICS_PREFIX", ""),
+		"Prefix used on the restored topic names",
 	)
 	fs.StringVar(
 		&cfg.IncludeRegexes,
