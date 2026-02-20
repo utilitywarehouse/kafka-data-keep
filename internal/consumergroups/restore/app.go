@@ -63,7 +63,11 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	kadmClient := kadm.NewClient(client.Client)
 	defer kadmClient.Close()
 
-	restorer := NewRestorer(kadmClient, seedBrokers, nil, cfg.RestoreGroupsPrefix, cfg.RestoreTopicsPrefix)
+	restorer, err := NewRestorer(kadmClient, seedBrokers, nil, cfg.RestoreGroupsPrefix, cfg.RestoreTopicsPrefix)
+	if err != nil {
+		return fmt.Errorf("creating restorer: %w", err)
+	}
+	defer restorer.Close()
 	return restorer.Restore(ctx, offsets, cfg.LoopInterval)
 }
 

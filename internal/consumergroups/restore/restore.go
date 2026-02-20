@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kadm"
@@ -29,17 +30,32 @@ type Restorer struct {
 	tlsConfig           *tls.Config
 	restoreGroupsPrefix string
 	restoreTopicsPrefix string
+	consumeClient       *kgo.Client
+	consumeMu           sync.Mutex
 }
 
 // NewRestorer creates a new Restorer.
-func NewRestorer(kadmClient *kadm.Client, seedBrokers []string, tlsConfig *tls.Config, restoreGroupsPrefix, restoreTopicsPrefix string) *Restorer {
+func NewRestorer(kadmClient *kadm.Client, seedBrokers []string, tlsConfig *tls.Config, restoreGroupsPrefix, restoreTopicsPrefix string) (*Restorer, error) {
+	consumeClient, err := kgo.NewClient(
+		kgo.SeedBrokers(seedBrokers...),
+		kgo.DialTLSConfig(tlsConfig),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("creating consume client: %w", err)
+	}
 	return &Restorer{
 		kadmClient:          kadmClient,
 		seedBrokers:         seedBrokers,
 		tlsConfig:           tlsConfig,
 		restoreGroupsPrefix: restoreGroupsPrefix,
 		restoreTopicsPrefix: restoreTopicsPrefix,
-	}
+		consumeClient:       consumeClient,
+	}, nil
+}
+
+// Close shuts down the Restorer's shared consume client.
+func (r *Restorer) Close() {
+	r.consumeClient.Close()
 }
 
 // Restore orchestrates the full consumer group offset restoration.
@@ -231,6 +247,7 @@ func (r *Restorer) resolveEntry(ctx context.Context, restoredTopic string, lates
 	}
 
 	if sourceOffset < entry.Offset {
+		// we're not there yet
 		return false, nil
 	}
 
@@ -256,23 +273,24 @@ func (r *Restorer) resolveEntry(ctx context.Context, restoredTopic string, lates
 	return true, nil
 }
 
-// findRestoredOffset reads the record at startOffset and walks forward until the
-// restore.source-offset header matches the expected source offset.
+// findRestoredOffset reads records starting at startOffset and walks forward until the
+// restore.source-offset header matches expectedSourceOffset.
+// It reuses the Restorer's shared consume client, serialising calls with a mutex.
 func (r *Restorer) findRestoredOffset(ctx context.Context, topic string, partition int32, startOffset int64, expectedSourceOffset int64) (int64, error) {
-	client, err := kgo.NewClient(
-		kgo.SeedBrokers(r.seedBrokers...),
-		kgo.DialTLSConfig(r.tlsConfig),
-		kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{
-			topic: {partition: kgo.NewOffset().At(startOffset)},
-		}),
-	)
-	if err != nil {
-		return -1, fmt.Errorf("creating kafka client: %w", err)
-	}
-	defer client.Close()
+	r.consumeMu.Lock()
+	defer r.consumeMu.Unlock()
+
+	r.consumeClient.AddConsumePartitions(map[string]map[int32]kgo.Offset{
+		topic: {partition: kgo.NewOffset().At(startOffset)},
+	})
+	defer func() {
+		// reset the consume client so we can reuse it
+		r.consumeClient.RemoveConsumePartitions(map[string][]int32{topic: {partition}})
+		r.consumeClient.PurgeTopicsFromClient(topic)
+	}()
 
 	for {
-		fetches := client.PollRecords(ctx, 100)
+		fetches := r.consumeClient.PollRecords(ctx, 100)
 		stop, err := kafkaint.HandleFetches(ctx, &fetches)
 		if err != nil {
 			return -1, fmt.Errorf("polling records: %w", err)
