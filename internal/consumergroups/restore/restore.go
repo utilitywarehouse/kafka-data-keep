@@ -54,11 +54,11 @@ func (r *Restorer) Restore(ctx context.Context, offsets []codec.ConsumerGroupOff
 
 	grouped := groupByTopic(remaining)
 
-	grouped, err = r.filterExistingTopics(ctx, grouped)
+	grouped, err = r.filterNonExistingTopics(ctx, grouped)
 	if err != nil {
-		return fmt.Errorf("filtering existing topics: %w", err)
+		return fmt.Errorf("filtering non existing topics: %w", err)
 	}
-	slog.InfoContext(ctx, "Filtered to existing topics", "topics", len(grouped))
+	slog.InfoContext(ctx, "Filtered non existing topics", "topics", len(grouped))
 
 	return r.runLoop(ctx, loopInterval, grouped)
 }
@@ -127,8 +127,8 @@ func groupByTopic(offsets []codec.ConsumerGroupOffset) map[string][]groupPartiti
 	return grouped
 }
 
-// filterExistingTopics keeps only topics that exist in the Kafka cluster (with restore prefix).
-func (r *Restorer) filterExistingTopics(ctx context.Context, grouped map[string][]groupPartitionOffset) (map[string][]groupPartitionOffset, error) {
+// filterNonExistingTopics keeps only topics that exist in the Kafka cluster (with restore prefix).
+func (r *Restorer) filterNonExistingTopics(ctx context.Context, grouped map[string][]groupPartitionOffset) (map[string][]groupPartitionOffset, error) {
 	topics, err := r.kadmClient.ListTopics(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing topics: %w", err)
