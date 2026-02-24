@@ -321,14 +321,14 @@ func (r *Restorer) searchOffset(ctx context.Context, topic string, partition int
 	}
 
 	if firstRecSrcOffset == groupOffset {
-		slog.DebugContext(ctx, "found group offset on the restored record as expected",
+		slog.DebugContext(ctx, "Found group offset on the restored record as expected",
 			"topic", topic, "partition", partition, "group_offset", groupOffset, "restored_record_offset", firstRec.Offset)
 		return firstRec.Offset, nil
 	}
 
 	if firstRecSrcOffset > groupOffset {
 		searchNextOffset := startOffset - (firstRecSrcOffset - groupOffset)
-		slog.WarnContext(ctx, "unexpected situation: the searched group offset is before the expected restored offset. Searching previous records",
+		slog.WarnContext(ctx, "Unexpected situation: the searched group offset is before the expected restored offset. Searching previous records",
 			"topic", topic, "partition", partition,
 			"group_offset", groupOffset,
 			"restored_record_offset", firstRec.Offset,
@@ -338,7 +338,7 @@ func (r *Restorer) searchOffset(ctx context.Context, topic string, partition int
 		return r.searchOffset(ctx, topic, partition, searchNextOffset, groupOffset)
 	}
 
-	slog.WarnContext(ctx, "unexpected situation: the searched group offset is after the expected restored offset. Searching next fetched records",
+	slog.WarnContext(ctx, "Unexpected situation: the searched group offset is after the expected restored offset. Searching next fetched records",
 		"topic", topic, "partition", partition,
 		"group_offset", groupOffset, "restored_record_offset", firstRec.Offset, "restored_record_source_offset", firstRecSrcOffset)
 
@@ -348,7 +348,7 @@ func (r *Restorer) searchOffset(ctx context.Context, topic string, partition int
 			return -1, fmt.Errorf("reading source offset: %w", err)
 		}
 		if srcOff == groupOffset {
-			slog.InfoContext(ctx, "found group offset on the next fetched records",
+			slog.InfoContext(ctx, "Found group offset on the next fetched records",
 				"topic", topic, "partition", partition,
 				"group_offset", groupOffset, "restored_record_offset", rec.Offset)
 			return rec.Offset, nil
