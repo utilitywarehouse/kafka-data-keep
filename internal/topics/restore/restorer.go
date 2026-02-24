@@ -178,7 +178,7 @@ func (r *kafkaS3Restorer) recordsInFile(ctx context.Context, key string, lastPro
 		}
 		rec.Topic = r.restoreTopicName(rec.Topic)
 		// set the original offset header -> we're using for dedup and consumer group restoring
-		setOriginalOffsetHeader(rec)
+		SetOriginalOffsetHeader(rec)
 		records = append(records, rec)
 	}
 
@@ -193,7 +193,9 @@ func (r *kafkaS3Restorer) restoreTopicName(initialTopic string) string {
 	return r.cfg.RestoreTopicPrefix + initialTopic
 }
 
-func setOriginalOffsetHeader(rec *kgo.Record) {
+// SetOriginalOffsetHeader sets (or updates) the restore.source-offset header on a record
+// using the record's current Offset field.
+func SetOriginalOffsetHeader(rec *kgo.Record) {
 	val := fmt.Appendf(nil, "%d", rec.Offset)
 	// check if the header already exists from a previous restore
 	for i := range rec.Headers {
