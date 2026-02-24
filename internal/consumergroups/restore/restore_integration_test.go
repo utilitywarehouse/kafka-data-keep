@@ -237,6 +237,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 
 		t.Log("TestConsumerGroupRestore finished successfully")
 	})
+
 	t.Run("skip already restored", func(t *testing.T) {
 		t.Parallel()
 
@@ -293,6 +294,67 @@ func TestConsumerGroupRestore(t *testing.T) {
 		defer cancelFunc()
 		err = restore.Run(restoreCtx, restoreCfg)
 		require.NoError(t, err)
+	})
+
+	t.Run("target offset after the expected one", func(t *testing.T) {
+		t.Parallel()
+
+		topic := randomName("test-offset-after")
+
+		// Create a single topic
+		_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, topic)
+		require.NoError(t, err)
+
+		// write messages to this topic
+		plan := partitionPlan{topic: topic, partition: 0, baseSourceOffset: 10, msgCount: 100}
+		writePartition(t, producerClient, plan)
+
+		// write the last record so that the diff between its offset and the source offset will be greater than 10, the base srouce offset used.
+		// This will cause that on restore, the offset of the consumer group (50) will be first looked up at 50 - (115-100) = 35, and then the app will look further and find it on 40
+		lastRec := &kgo.Record{Topic: topic, Partition: 0, Offset: 115}
+		topicsrestore.SetOriginalOffsetHeader(lastRec)
+		producerClient.ProduceSync(ctx, lastRec)
+
+		// create the consumer group with offsets, so that it's already restored
+		groupID := randomName("test-offset-after")
+
+		backupOffset := int64(50)
+		backupGroups := []codec.ConsumerGroupOffset{
+			{
+				GroupID: groupID,
+				Topics: []codec.TopicOffset{
+					{
+						Topic: topic,
+						Partitions: []codec.PartitionOffset{
+							{Partition: 0, Offset: backupOffset},
+						},
+					},
+				},
+			},
+		}
+
+		// Encode groups to Avro and upload to S3
+		s3Location := writeBackupToS3(t, s3Client, cgRestoreBucketName, backupGroups)
+
+		restoreCfg := restore.AppConfig{
+			Brokers:             kafkaBrokers,
+			S3Bucket:            cgRestoreBucketName,
+			S3Region:            testutil.MinioRegion,
+			S3Endpoint:          s3Endpoint,
+			S3Location:          s3Location,
+			RestoreGroupsPrefix: "",
+			RestoreTopicsPrefix: "", // topics are not prefixed
+			IncludeRegexes:      ".*",
+			LoopInterval:        50 * time.Millisecond,
+		}
+
+		// restore should finish right away, as the messages are already written
+		restoreCtx, cancelFunc := context.WithTimeout(ctx, 4*time.Second)
+		defer cancelFunc()
+		err = restore.Run(restoreCtx, restoreCfg)
+		require.NoError(t, err)
+
+		verifyRestoredGroupOffset(t, kadmClient, groupID, backupOffset, plan)
 	})
 }
 
