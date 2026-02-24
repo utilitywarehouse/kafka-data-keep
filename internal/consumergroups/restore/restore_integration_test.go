@@ -114,6 +114,8 @@ func TestConsumerGroupRestore(t *testing.T) {
 	// ── Step 2: Pick backup offsets within each partition's planned range
 	group1ID := "cg-test-group-1"
 	group2ID := "cg-test-group-2"
+	// this group is backed up, but will be ignored
+	ignoreGroupId := "cg-ignore-group-2"
 
 	group1Offsets := make(map[string]int64, len(plans))
 	group2Offsets := make(map[string]int64, len(plans))
@@ -161,6 +163,18 @@ func TestConsumerGroupRestore(t *testing.T) {
 				},
 			},
 		},
+		{
+			GroupID: ignoreGroupId,
+			Topics: []codec.TopicOffset{
+				{
+					Topic: cgRestoreTopic1,
+					Partitions: []codec.PartitionOffset{
+						{Partition: 0, Offset: 1},
+						{Partition: 1, Offset: 2},
+					},
+				},
+			},
+		},
 	}
 
 	// Encode groups to Avro and upload to S3
@@ -178,7 +192,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 		S3Location:          cgRestoreS3Location,
 		RestoreGroupsPrefix: cgRestoreGroupsPrefix,
 		RestoreTopicsPrefix: "", // topics are not prefixed
-		IncludeRegexes:      ".*",
+		IncludeRegexes:      "cg-test-group.*",
 		LoopInterval:        50 * time.Millisecond,
 	}
 
@@ -217,6 +231,11 @@ func TestConsumerGroupRestore(t *testing.T) {
 		verifyRestoredGroupOffset(t, kadmClient, restoredGroup1, group1Offsets[partKey(p.topic, p.partition)], p)
 		verifyRestoredGroupOffset(t, kadmClient, restoredGroup2, group2Offsets[partKey(p.topic, p.partition)], p)
 	}
+
+	// check that the ignore group was ignored
+	fetched, err := kadmClient.FetchOffsets(ctx, ignoreGroupId)
+	require.NoError(t, err)
+	require.Empty(t, fetched, "The group that was expected to be ignored was included")
 
 	t.Log("TestConsumerGroupRestore finished successfully")
 }
