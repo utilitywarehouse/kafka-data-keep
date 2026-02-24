@@ -283,26 +283,30 @@ func (r *Restorer) resolveEntry(ctx context.Context, restoredTopic string, lates
 
 const searchAheadMax = 100
 
-// findRestoredOffset reads records starting at startOffset and walks forward until the
-// restore.source-offset header matches expectedSourceOffset.
-// It reuses the Restorer's shared consume client, serialising calls with a mutex.
+// findRestoredOffset acquires the consume client mutex and delegates to searchOffset.
 func (r *Restorer) findRestoredOffset(ctx context.Context, topic string, partition int32, startOffset int64, groupOffset int64) (int64, error) {
 	r.consumeMu.Lock()
 	defer r.consumeMu.Unlock()
 
+	return r.searchOffset(ctx, topic, partition, startOffset, groupOffset)
+}
+
+// searchOffset reads records starting at startOffset and walks forward until the
+// restore.source-offset header matches groupOffset.
+// It must be called with consumeMu already held.
+func (r *Restorer) searchOffset(ctx context.Context, topic string, partition int32, startOffset int64, groupOffset int64) (int64, error) {
 	r.consumeClient.AddConsumePartitions(map[string]map[int32]kgo.Offset{
 		topic: {partition: kgo.NewOffset().At(startOffset)},
 	})
-	defer func() {
-		// reset the consume client so we can reuse it
-		r.consumeClient.RemoveConsumePartitions(map[string][]int32{topic: {partition}})
-		r.consumeClient.PurgeTopicsFromClient(topic)
-	}()
 
 	fetches := r.consumeClient.PollRecords(ctx, searchAheadMax)
 	if err := fetches.Err0(); err != nil {
 		return -1, fmt.Errorf("fetching from kafka %w", err)
 	}
+
+	// reset the consume client so we can reuse it
+	r.consumeClient.RemoveConsumePartitions(map[string][]int32{topic: {partition}})
+	r.consumeClient.PurgeTopicsFromClient(topic)
 
 	recs := fetches.Records()
 	if len(recs) == 0 {
@@ -323,12 +327,15 @@ func (r *Restorer) findRestoredOffset(ctx context.Context, topic string, partiti
 	}
 
 	if firstRecSrcOffset > groupOffset {
+		searchNextOffset := startOffset - (firstRecSrcOffset - groupOffset)
 		slog.WarnContext(ctx, "unexpected situation: the searched group offset is before the expected restored offset. Searching previous records",
 			"topic", topic, "partition", partition,
 			"group_offset", groupOffset,
 			"restored_record_offset", firstRec.Offset,
-			"restored_record_source_offset", firstRecSrcOffset)
-		return r.findRestoredOffset(ctx, topic, partition, startOffset-(firstRecSrcOffset-groupOffset), groupOffset)
+			"restored_record_source_offset", firstRecSrcOffset,
+			"search_next_offset", searchNextOffset)
+
+		return r.searchOffset(ctx, topic, partition, searchNextOffset, groupOffset)
 	}
 
 	slog.WarnContext(ctx, "unexpected situation: the searched group offset is after the expected restored offset. Searching next fetched records",
