@@ -61,11 +61,11 @@ func pickBackupOffset(p partitionPlan) int64 {
 }
 
 func TestConsumerGroupRestore(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	t.Parallel()
 	ctx := t.Context()
 
 	// ── Infrastructure ────────────────────────────────────────────────────────
@@ -114,7 +114,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 		group1ID := randomName("test-multiple-1")
 		group2ID := randomName("test-multiple-2")
 		// this group is backed up, but will be ignored
-		ignoreGroupId := "ignore-group-2"
+		ignoreGroupID := "ignore-group-2"
 
 		group1Offsets := make(map[string]int64, len(plans))
 		group2Offsets := make(map[string]int64, len(plans))
@@ -163,7 +163,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 				},
 			},
 			{
-				GroupID: ignoreGroupId,
+				GroupID: ignoreGroupID,
 				Topics: []codec.TopicOffset{
 					{
 						Topic: topic1,
@@ -231,11 +231,68 @@ func TestConsumerGroupRestore(t *testing.T) {
 		}
 
 		// check that the ignore group was ignored
-		fetched, err := kadmClient.FetchOffsets(ctx, ignoreGroupId)
+		fetched, err := kadmClient.FetchOffsets(ctx, ignoreGroupID)
 		require.NoError(t, err)
 		require.Empty(t, fetched, "The group that was expected to be ignored was included")
 
 		t.Log("TestConsumerGroupRestore finished successfully")
+	})
+	t.Run("skip already restored", func(t *testing.T) {
+		t.Parallel()
+
+		topic := randomName("test-skip")
+
+		// Create a single topic
+		_, err = kadmClient.CreateTopic(ctx, 2, 1, nil, topic)
+		require.NoError(t, err)
+
+		// write messages to this topic
+		writePartition(t, producerClient, partitionPlan{topic: topic, partition: 0, msgCount: 100})
+		writePartition(t, producerClient, partitionPlan{topic: topic, partition: 1, msgCount: 200})
+
+		// create the consumer group with offsets, so that it's already restored
+		groupID := randomName("test-skip-restored")
+		offsets := make(kadm.Offsets)
+		offsets.Add(kadm.Offset{Topic: topic, Partition: 0, At: 50})
+		offsets.Add(kadm.Offset{Topic: topic, Partition: 1, At: 60})
+		_, err := kadmClient.CommitOffsets(ctx, groupID, offsets)
+		require.NoError(t, err)
+
+		backupGroups := []codec.ConsumerGroupOffset{
+			{
+				GroupID: groupID,
+				Topics: []codec.TopicOffset{
+					{
+						Topic: topic,
+						Partitions: []codec.PartitionOffset{
+							{Partition: 0, Offset: 50},
+							{Partition: 1, Offset: 60},
+						},
+					},
+				},
+			},
+		}
+
+		// Encode groups to Avro and upload to S3
+		s3Location := writeBackupToS3(t, s3Client, cgRestoreBucketName, backupGroups)
+
+		restoreCfg := restore.AppConfig{
+			Brokers:             kafkaBrokers,
+			S3Bucket:            cgRestoreBucketName,
+			S3Region:            testutil.MinioRegion,
+			S3Endpoint:          s3Endpoint,
+			S3Location:          s3Location,
+			RestoreGroupsPrefix: "",
+			RestoreTopicsPrefix: "", // topics are not prefixed
+			IncludeRegexes:      ".*",
+			LoopInterval:        50 * time.Millisecond,
+		}
+
+		// restore should finish right away, as the group should be skipped as it has offsets
+		restoreCtx, cancelFunc := context.WithTimeout(ctx, 4*time.Second)
+		defer cancelFunc()
+		err = restore.Run(restoreCtx, restoreCfg)
+		require.NoError(t, err)
 	})
 }
 
