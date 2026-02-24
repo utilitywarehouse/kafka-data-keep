@@ -13,6 +13,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -31,12 +32,7 @@ func init() {
 
 const (
 	cgRestoreBucketName   = "cg-restore-test-bucket"
-	cgRestoreS3Location   = "backups/consumer-groups-restore.avro"
 	cgRestoreGroupsPrefix = "restored-"
-
-	cgRestoreTopic1 = "cg-restore-topic-1"
-	cgRestoreTopic2 = "cg-restore-topic-2"
-	cgPartitions    = 2
 )
 
 // partitionPlan holds the pre-decided write parameters for one partition.
@@ -54,14 +50,14 @@ func planPartitionWrite(topic string, partition int32) partitionPlan {
 	return partitionPlan{
 		topic:            topic,
 		partition:        partition,
-		baseSourceOffset: cgRandomInt(50, 500),
-		msgCount:         cgRandomInt(100, 1000),
+		baseSourceOffset: randomInt(50, 500),
+		msgCount:         randomInt(100, 1000),
 	}
 }
 
 // pickBackupOffset picks a source offset that falls within a plan's written range.
 func pickBackupOffset(p partitionPlan) int64 {
-	return int64(p.baseSourceOffset + cgRandomInt(1, p.msgCount-2))
+	return int64(p.baseSourceOffset + randomInt(1, p.msgCount-2))
 }
 
 func TestConsumerGroupRestore(t *testing.T) {
@@ -91,153 +87,156 @@ func TestConsumerGroupRestore(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(producerClient.Close)
 
-	adminClient, err := kgo.NewClient(kgo.SeedBrokers(kafkaBrokers))
-	require.NoError(t, err)
-	t.Cleanup(adminClient.Close)
-	kadmClient := kadm.NewClient(adminClient)
+	kadmClient := kadm.NewClient(producerClient)
 	t.Cleanup(kadmClient.Close)
 
-	// Create two topics with two partitions each.
-	_, err = kadmClient.CreateTopic(ctx, cgPartitions, 1, nil, cgRestoreTopic1)
-	require.NoError(t, err)
-	_, err = kadmClient.CreateTopic(ctx, cgPartitions, 1, nil, cgRestoreTopic2)
-	require.NoError(t, err)
+	t.Run("restore multiple groups", func(t *testing.T) {
+		t.Parallel()
 
-	// ── Step 1: Pre-plan writes so we know the source-offset ranges up front
-	plans := map[string]partitionPlan{
-		partKey(cgRestoreTopic1, 0): planPartitionWrite(cgRestoreTopic1, 0),
-		partKey(cgRestoreTopic1, 1): planPartitionWrite(cgRestoreTopic1, 1),
-		partKey(cgRestoreTopic2, 0): planPartitionWrite(cgRestoreTopic2, 0),
-		partKey(cgRestoreTopic2, 1): planPartitionWrite(cgRestoreTopic2, 1),
-	}
+		topic1 := randomName("test-multiple-1")
+		topic2 := randomName("test-multiple-2")
 
-	// ── Step 2: Pick backup offsets within each partition's planned range
-	group1ID := "cg-test-group-1"
-	group2ID := "cg-test-group-2"
-	// this group is backed up, but will be ignored
-	ignoreGroupId := "cg-ignore-group-2"
+		// Create two topics with two partitions each.
+		_, err = kadmClient.CreateTopic(ctx, 2, 1, nil, topic1)
+		require.NoError(t, err)
+		_, err = kadmClient.CreateTopic(ctx, 2, 1, nil, topic2)
+		require.NoError(t, err)
 
-	group1Offsets := make(map[string]int64, len(plans))
-	group2Offsets := make(map[string]int64, len(plans))
-	for key, plan := range plans {
-		group1Offsets[key] = pickBackupOffset(plan)
-		group2Offsets[key] = pickBackupOffset(plan)
-	}
+		// ── Step 1: Pre-plan writes so we know the source-offset ranges up front
+		plans := map[string]partitionPlan{
+			partKey(topic1, 0): planPartitionWrite(topic1, 0),
+			partKey(topic1, 1): planPartitionWrite(topic1, 1),
+			partKey(topic2, 0): planPartitionWrite(topic2, 0),
+			partKey(topic2, 1): planPartitionWrite(topic2, 1),
+		}
 
-	backupGroups := []codec.ConsumerGroupOffset{
-		{
-			GroupID: group1ID,
-			Topics: []codec.TopicOffset{
-				{
-					Topic: cgRestoreTopic1,
-					Partitions: []codec.PartitionOffset{
-						{Partition: 0, Offset: group1Offsets[partKey(cgRestoreTopic1, 0)]},
-						{Partition: 1, Offset: group1Offsets[partKey(cgRestoreTopic1, 1)]},
+		// ── Step 2: Pick backup offsets within each partition's planned range
+		group1ID := randomName("test-multiple-1")
+		group2ID := randomName("test-multiple-2")
+		// this group is backed up, but will be ignored
+		ignoreGroupId := "ignore-group-2"
+
+		group1Offsets := make(map[string]int64, len(plans))
+		group2Offsets := make(map[string]int64, len(plans))
+		for key, plan := range plans {
+			group1Offsets[key] = pickBackupOffset(plan)
+			group2Offsets[key] = pickBackupOffset(plan)
+		}
+
+		backupGroups := []codec.ConsumerGroupOffset{
+			{
+				GroupID: group1ID,
+				Topics: []codec.TopicOffset{
+					{
+						Topic: topic1,
+						Partitions: []codec.PartitionOffset{
+							{Partition: 0, Offset: group1Offsets[partKey(topic1, 0)]},
+							{Partition: 1, Offset: group1Offsets[partKey(topic1, 1)]},
+						},
 					},
-				},
-				{
-					Topic: cgRestoreTopic2,
-					Partitions: []codec.PartitionOffset{
-						{Partition: 0, Offset: group1Offsets[partKey(cgRestoreTopic2, 0)]},
-						{Partition: 1, Offset: group1Offsets[partKey(cgRestoreTopic2, 1)]},
-					},
-				},
-			},
-		},
-		{
-			GroupID: group2ID,
-			Topics: []codec.TopicOffset{
-				{
-					Topic: cgRestoreTopic1,
-					Partitions: []codec.PartitionOffset{
-						{Partition: 0, Offset: group2Offsets[partKey(cgRestoreTopic1, 0)]},
-						{Partition: 1, Offset: group2Offsets[partKey(cgRestoreTopic1, 1)]},
-					},
-				},
-				{
-					Topic: cgRestoreTopic2,
-					Partitions: []codec.PartitionOffset{
-						{Partition: 0, Offset: group2Offsets[partKey(cgRestoreTopic2, 0)]},
-						{Partition: 1, Offset: group2Offsets[partKey(cgRestoreTopic2, 1)]},
+					{
+						Topic: topic2,
+						Partitions: []codec.PartitionOffset{
+							{Partition: 0, Offset: group1Offsets[partKey(topic2, 0)]},
+							{Partition: 1, Offset: group1Offsets[partKey(topic2, 1)]},
+						},
 					},
 				},
 			},
-		},
-		{
-			GroupID: ignoreGroupId,
-			Topics: []codec.TopicOffset{
-				{
-					Topic: cgRestoreTopic1,
-					Partitions: []codec.PartitionOffset{
-						{Partition: 0, Offset: 1},
-						{Partition: 1, Offset: 2},
+			{
+				GroupID: group2ID,
+				Topics: []codec.TopicOffset{
+					{
+						Topic: topic1,
+						Partitions: []codec.PartitionOffset{
+							{Partition: 0, Offset: group2Offsets[partKey(topic1, 0)]},
+							{Partition: 1, Offset: group2Offsets[partKey(topic1, 1)]},
+						},
+					},
+					{
+						Topic: topic2,
+						Partitions: []codec.PartitionOffset{
+							{Partition: 0, Offset: group2Offsets[partKey(topic2, 0)]},
+							{Partition: 1, Offset: group2Offsets[partKey(topic2, 1)]},
+						},
 					},
 				},
 			},
-		},
-	}
+			{
+				GroupID: ignoreGroupId,
+				Topics: []codec.TopicOffset{
+					{
+						Topic: topic1,
+						Partitions: []codec.PartitionOffset{
+							{Partition: 0, Offset: 1},
+							{Partition: 1, Offset: 2},
+						},
+					},
+				},
+			},
+		}
 
-	// Encode groups to Avro and upload to S3
-	avroData := encodeGroupsToAvro(t, backupGroups)
-	uploadToS3(t, s3Client, cgRestoreBucketName, cgRestoreS3Location, avroData)
+		// Encode groups to Avro and upload to S3
+		s3Location := writeBackupToS3(t, s3Client, cgRestoreBucketName, backupGroups)
 
-	// ── Step 3: Start the restore process in the background ───────────────────
-	// RestoreTopicsPrefix is empty: the topics created above are the restored topics directly.
-	// RestoreGroupsPrefix is "restored-": committed group IDs will be "restored-<original>".
-	restoreCfg := restore.AppConfig{
-		Brokers:             kafkaBrokers,
-		S3Bucket:            cgRestoreBucketName,
-		S3Region:            testutil.MinioRegion,
-		S3Endpoint:          s3Endpoint,
-		S3Location:          cgRestoreS3Location,
-		RestoreGroupsPrefix: cgRestoreGroupsPrefix,
-		RestoreTopicsPrefix: "", // topics are not prefixed
-		IncludeRegexes:      "cg-test-group.*",
-		LoopInterval:        50 * time.Millisecond,
-	}
+		// ── Step 3: Start the restore process in the background ───────────────────
+		// RestoreTopicsPrefix is empty: the topics created above are the restored topics directly.
+		// RestoreGroupsPrefix is "restored-": committed group IDs will be "restored-<original>".
+		restoreCfg := restore.AppConfig{
+			Brokers:             kafkaBrokers,
+			S3Bucket:            cgRestoreBucketName,
+			S3Region:            testutil.MinioRegion,
+			S3Endpoint:          s3Endpoint,
+			S3Location:          s3Location,
+			RestoreGroupsPrefix: cgRestoreGroupsPrefix,
+			RestoreTopicsPrefix: "", // topics are not prefixed
+			IncludeRegexes:      "test-multiple.*",
+			LoopInterval:        50 * time.Millisecond,
+		}
 
-	restoreCtx, restoreCancel := context.WithTimeout(ctx, 60*time.Second)
-	defer restoreCancel()
+		restoreCtx, restoreCancel := context.WithTimeout(ctx, 60*time.Second)
+		defer restoreCancel()
 
-	restoreErrCh := make(chan error, 1)
-	go func() {
-		restoreErrCh <- restore.Run(restoreCtx, restoreCfg)
-	}()
+		restoreErrCh := make(chan error, 1)
+		go func() {
+			restoreErrCh <- restore.Run(restoreCtx, restoreCfg)
+		}()
 
-	// ── Step 4: Write messages to all partitions ───────────────────────────────
-	// The restore loop will keep polling until it sees records with source offsets
-	// that satisfy all backup offsets, so writing after the restore starts is fine.
-	for _, plan := range plans {
-		writePartition(t, producerClient, plan)
-	}
+		// ── Step 4: Write messages to all partitions ───────────────────────────────
+		// The restore loop will keep polling until it sees records with source offsets
+		// that satisfy all backup offsets, so writing after the restore starts is fine.
+		for _, plan := range plans {
+			writePartition(t, producerClient, plan)
+		}
 
-	// ── Step 5: Wait for the restore process to finish ────────────────────────
-	select {
-	case err := <-restoreErrCh:
-		require.NoError(t, err, "consumer group restore returned an unexpected error")
-	case <-restoreCtx.Done():
-		t.Fatal("restore did not finish within the deadline")
-	}
+		// ── Step 5: Wait for the restore process to finish ────────────────────────
+		select {
+		case err := <-restoreErrCh:
+			require.NoError(t, err, "consumer group restore returned an unexpected error")
+		case <-restoreCtx.Done():
+			t.Fatal("restore did not finish within the deadline")
+		}
 
-	// ── Step 6: Validate restored offsets ─────────────────────────────────────
-	// For a partition whose Kafka offsets start at 0 and whose first source offset is
-	// baseSourceOffset, the record with source offset S lives at Kafka offset (S - baseSourceOffset).
-	// Committed offsets represent "next to read", so the expected committed value is
-	// (backupOffset - baseSourceOffset)
-	restoredGroup1 := cgRestoreGroupsPrefix + group1ID
-	restoredGroup2 := cgRestoreGroupsPrefix + group2ID
+		// ── Step 6: Validate restored offsets ─────────────────────────────────────
+		// For a partition whose Kafka offsets start at 0 and whose first source offset is
+		// baseSourceOffset, the record with source offset S lives at Kafka offset (S - baseSourceOffset).
+		// Committed offsets represent "next to read", so the expected committed value is
+		// (backupOffset - baseSourceOffset)
+		restoredGroup1 := cgRestoreGroupsPrefix + group1ID
+		restoredGroup2 := cgRestoreGroupsPrefix + group2ID
 
-	for _, p := range plans {
-		verifyRestoredGroupOffset(t, kadmClient, restoredGroup1, group1Offsets[partKey(p.topic, p.partition)], p)
-		verifyRestoredGroupOffset(t, kadmClient, restoredGroup2, group2Offsets[partKey(p.topic, p.partition)], p)
-	}
+		for _, p := range plans {
+			verifyRestoredGroupOffset(t, kadmClient, restoredGroup1, group1Offsets[partKey(p.topic, p.partition)], p)
+			verifyRestoredGroupOffset(t, kadmClient, restoredGroup2, group2Offsets[partKey(p.topic, p.partition)], p)
+		}
 
-	// check that the ignore group was ignored
-	fetched, err := kadmClient.FetchOffsets(ctx, ignoreGroupId)
-	require.NoError(t, err)
-	require.Empty(t, fetched, "The group that was expected to be ignored was included")
+		// check that the ignore group was ignored
+		fetched, err := kadmClient.FetchOffsets(ctx, ignoreGroupId)
+		require.NoError(t, err)
+		require.Empty(t, fetched, "The group that was expected to be ignored was included")
 
-	t.Log("TestConsumerGroupRestore finished successfully")
+		t.Log("TestConsumerGroupRestore finished successfully")
+	})
 }
 
 // writePartition writes the messages described by p to Kafka.
@@ -264,8 +263,8 @@ func writePartition(t *testing.T, client *kgo.Client, p partitionPlan) {
 	t.Logf("wrote %d messages to %s/%d with baseSourceOffset=%d", p.msgCount, p.topic, p.partition, p.baseSourceOffset)
 }
 
-// encodeGroupsToAvro encodes a slice of ConsumerGroupOffset structs into Avro OCF bytes.
-func encodeGroupsToAvro(t *testing.T, groups []codec.ConsumerGroupOffset) []byte {
+// writeBackupToS3 encodes the groups to avro and uploads to a random location.
+func writeBackupToS3(t *testing.T, s3Client *s3.Client, bucket string, groups []codec.ConsumerGroupOffset) string {
 	t.Helper()
 	var buf bytes.Buffer
 	factory := &avro.GroupEncoderFactory{}
@@ -276,18 +275,15 @@ func encodeGroupsToAvro(t *testing.T, groups []codec.ConsumerGroupOffset) []byte
 	}
 	require.NoError(t, enc.Flush())
 	require.NoError(t, enc.Close())
-	return buf.Bytes()
-}
 
-// uploadToS3 puts raw bytes at the given S3 key.
-func uploadToS3(t *testing.T, s3Client *s3.Client, bucket, key string, data []byte) {
-	t.Helper()
-	_, err := s3Client.PutObject(t.Context(), &s3.PutObjectInput{
+	key := randomName("backup/cg-bacup") + ".avro"
+	_, err = s3Client.PutObject(t.Context(), &s3.PutObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
-		Body:   bytes.NewReader(data),
+		Body:   bytes.NewReader(buf.Bytes()),
 	})
 	require.NoError(t, err)
+	return key
 }
 
 // verifyRestoredGroupOffset fetches the committed offset for the restored group on the given
@@ -316,12 +312,16 @@ func verifyRestoredGroupOffset(t *testing.T, kadmClient *kadm.Client, group stri
 	)
 }
 
-func cgRandomInt(minVal, maxVal int) int {
+func randomInt(minVal, maxVal int) int {
 	bigInt, err := rand.Int(rand.Reader, big.NewInt(int64(maxVal-minVal+1)))
 	if err != nil {
 		panic(err)
 	}
 	return int(bigInt.Int64()) + minVal
+}
+
+func randomName(baseName string) string {
+	return baseName + "-" + uuid.NewString()
 }
 
 func partKey(topic string, partition int32) string {
