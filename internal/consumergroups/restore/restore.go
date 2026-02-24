@@ -35,7 +35,7 @@ type Restorer struct {
 
 // NewRestorer creates a new Restorer.
 func NewRestorer(client *kafka.Client, restoreGroupsPrefix, restoreTopicsPrefix string) (*Restorer, error) {
-	//read the connection config from the initialised client
+	// read the connection config from the initialised client
 	seedBrokers := client.OptValue(kgo.SeedBrokers).([]string)    //nolint:errcheck // this would fail only if the franz-go lib changes, and we'll catch that in integration tests
 	tlsConfig := client.OptValue(kgo.DialTLSConfig).(*tls.Config) //nolint:errcheck // this would fail only if the franz-go lib changes, and we'll catch that in integration tests
 
@@ -317,7 +317,7 @@ func (r *Restorer) findRestoredOffset(ctx context.Context, topic string, partiti
 	}
 
 	if firstRecSrcOffset == groupOffset {
-		slog.InfoContext(ctx, "found group offset on the restored record as expected",
+		slog.DebugContext(ctx, "found group offset on the restored record as expected",
 			"topic", topic, "partition", partition, "group_offset", groupOffset, "restored_record_offset", firstRec.Offset)
 		return firstRec.Offset, nil
 	}
