@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kafka-groups-restore
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-groups-restore
+  labels:
+    app: kafka-groups-restore
+    app.kubernetes.io/name: kafka-groups-restore
+spec:
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /__/metrics
+        prometheus.io/port: "8081"
+    spec:
+      serviceAccountName: kafka-groups-restore
+      containers:
+        - name: kafka-groups-restore
+          image: quay.io/utilitywarehouse/kafka-data-keep:main
+          imagePullPolicy: IfNotPresent
+          command: ["/kafka-data-keep", "consumer-groups-restore"]
+          env:
+            - name: KAFKA_BROKERS
+              value: TBD
+            - name: S3_BUCKET
+              value: TBD
+            - name: AWS_REGION
+              value: eu-west-1
+
+            - name: S3_LOCATION
+              value: kafka-backup/consumer-groups/consumers.avro
+            - name: RESTORE_GROUPS_PREFIX
+              value: ""
+            - name: RESTORE_TOPICS_PREFIX
+              value: ""
+            - name: INCLUDE_REGEXES
+              value: ".*"
+            - name: LOOP_INTERVAL
+              value: 1m
+          resources:
+            requests:
+              cpu: "0"
+              memory: "0"
+            limits:
+              cpu: "4"
+              memory: 4Gi
