@@ -360,20 +360,23 @@ func TestConsumerGroupRestore(t *testing.T) {
 	t.Run("target offset before the expected one", func(t *testing.T) {
 		t.Parallel()
 
+		//	test with a restore topic prefix
+		restoreTopicPrefix := "restore."
 		topic := randomName("test-offset-before")
+		restoreTopicName := restoreTopicPrefix + topic
 
 		// Create a single topic
-		_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, topic)
+		_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, restoreTopicName)
 		require.NoError(t, err)
 
 		// write messages to this topic
-		plan := partitionPlan{topic: topic, partition: 0, baseSourceOffset: 10, msgCount: 100}
+		plan := partitionPlan{topic: restoreTopicName, partition: 0, baseSourceOffset: 10, msgCount: 100}
 		writePartition(t, producerClient, plan)
 
 		backupOffset := int64(50)
 		// write the last record so that the diff between its offset and the source offset will be less than 10, the base source offset used.
 		// This will cause that on restore, the offset of the consumer group (50) will be first looked up at 50 - (105-100) = 45, and then the app will look backward and find it on 40
-		lastRec := &kgo.Record{Topic: topic, Partition: 0, Offset: 105}
+		lastRec := &kgo.Record{Topic: restoreTopicName, Partition: 0, Offset: 105}
 		topicsrestore.SetOriginalOffsetHeader(lastRec)
 		results := producerClient.ProduceSync(ctx, lastRec)
 		require.NoError(t, results.FirstErr())
@@ -405,13 +408,13 @@ func TestConsumerGroupRestore(t *testing.T) {
 			S3Endpoint:          s3Endpoint,
 			S3Location:          s3Location,
 			RestoreGroupsPrefix: "",
-			RestoreTopicsPrefix: "", // topics are not prefixed
+			RestoreTopicsPrefix: restoreTopicPrefix,
 			IncludeRegexes:      ".*",
 			LoopInterval:        50 * time.Millisecond,
 		}
 
 		// restore should finish right away, as the messages are already written
-		restoreCtx, cancelFunc := context.WithTimeout(ctx, 60*time.Second)
+		restoreCtx, cancelFunc := context.WithTimeout(ctx, 10*time.Second)
 		defer cancelFunc()
 		err = restore.Run(restoreCtx, restoreCfg)
 		require.NoError(t, err)
