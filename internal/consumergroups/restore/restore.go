@@ -17,9 +17,10 @@ import (
 	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
 )
 
-// groupPartitionOffset holds a single consumer group's offset for one partition.
-type groupPartitionOffset struct {
+// groupOffset holds a single consumer group's offset for one partition.
+type groupOffset struct {
 	GroupID   string
+	Topic     string
 	Partition int32
 	Offset    int64
 }
@@ -126,13 +127,14 @@ func filterTopicPartitions(ctx context.Context, cg codec.ConsumerGroupOffset, fe
 }
 
 // groupByTopic transforms consumer group offsets into a map keyed by the restored topic name.
-func groupByTopic(offsets []codec.ConsumerGroupOffset) map[string][]groupPartitionOffset {
-	grouped := make(map[string][]groupPartitionOffset)
+func groupByTopic(offsets []codec.ConsumerGroupOffset) map[string][]groupOffset {
+	grouped := make(map[string][]groupOffset)
 	for _, cg := range offsets {
 		for _, to := range cg.Topics {
 			for _, po := range to.Partitions {
-				grouped[to.Topic] = append(grouped[to.Topic], groupPartitionOffset{
+				grouped[to.Topic] = append(grouped[to.Topic], groupOffset{
 					GroupID:   cg.GroupID,
+					Topic:     to.Topic,
 					Partition: po.Partition,
 					Offset:    po.Offset,
 				})
@@ -143,7 +145,7 @@ func groupByTopic(offsets []codec.ConsumerGroupOffset) map[string][]groupPartiti
 }
 
 // filterNonExistingTopics keeps only topics that exist in the Kafka cluster (with restore prefix).
-func (r *Restorer) filterNonExistingTopics(ctx context.Context, grouped map[string][]groupPartitionOffset) (map[string][]groupPartitionOffset, error) {
+func (r *Restorer) filterNonExistingTopics(ctx context.Context, grouped map[string][]groupOffset) (map[string][]groupOffset, error) {
 	topics, err := r.kadmClient.ListTopics(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing topics: %w", err)
@@ -154,7 +156,7 @@ func (r *Restorer) filterNonExistingTopics(ctx context.Context, grouped map[stri
 		existingTopics[t.Topic] = true
 	}
 
-	result := make(map[string][]groupPartitionOffset)
+	result := make(map[string][]groupOffset)
 	for topic, entries := range grouped {
 		restoredTopic := r.restoreTopicsPrefix + topic
 		if existingTopics[restoredTopic] {
@@ -167,7 +169,7 @@ func (r *Restorer) filterNonExistingTopics(ctx context.Context, grouped map[stri
 }
 
 // runLoop runs the restore process on a ticker until all offsets are resolved or context is cancelled.
-func (r *Restorer) runLoop(ctx context.Context, interval time.Duration, grouped map[string][]groupPartitionOffset) error {
+func (r *Restorer) runLoop(ctx context.Context, interval time.Duration, grouped map[string][]groupOffset) error {
 	if len(grouped) == 0 {
 		slog.InfoContext(ctx, "No consumer groups to restore")
 		return nil
@@ -186,6 +188,9 @@ func (r *Restorer) runLoop(ctx context.Context, interval time.Duration, grouped 
 		}
 
 		slog.InfoContext(ctx, "Waiting for next restore iteration", "remaining_topics", len(grouped))
+		for topic, entries := range grouped {
+			slog.DebugContext(ctx, "Remaining group offsets", "topic", topic, "offsets", entries)
+		}
 		select {
 		case <-ctx.Done():
 			return nil
@@ -195,7 +200,7 @@ func (r *Restorer) runLoop(ctx context.Context, interval time.Duration, grouped 
 }
 
 // processTopics iterates through all topics and processes their group offsets.
-func (r *Restorer) processTopics(ctx context.Context, grouped map[string][]groupPartitionOffset) error {
+func (r *Restorer) processTopics(ctx context.Context, grouped map[string][]groupOffset) error {
 	for topic, entries := range grouped {
 		remaining, err := r.processTopic(ctx, topic, entries)
 		if err != nil {
@@ -211,19 +216,20 @@ func (r *Restorer) processTopics(ctx context.Context, grouped map[string][]group
 }
 
 // processTopic reads the latest record on each partition and resolves offsets for the group entries.
-func (r *Restorer) processTopic(ctx context.Context, topic string, entries []groupPartitionOffset) ([]groupPartitionOffset, error) {
-	restoredTopic := r.restoreTopicsPrefix + topic
+func (r *Restorer) processTopic(ctx context.Context, topic string, entries []groupOffset) ([]groupOffset, error) {
+	restoredTopic := r.restoredTopic(topic)
 
 	partitions := uniquePartitions(entries)
+
+	// todo [sb]: I'll do another iteration to improve ReadLatest to cache the client. Keeping it like this for now.
 	seedBrokers := r.consumeClient.OptValue(kgo.SeedBrokers).([]string)    //nolint:errcheck // this would fail only if the franz-go lib changes, and we'll catch that in integration tests
 	tlsConfig := r.consumeClient.OptValue(kgo.DialTLSConfig).(*tls.Config) //nolint:errcheck // this would fail only if the franz-go lib changes, and we'll catch that in integration tests
-
 	latestRecords, err := kafkaint.ReadLatest(ctx, seedBrokers, tlsConfig, restoredTopic, partitions...)
 	if err != nil {
 		return entries, fmt.Errorf("reading latest records for %s: %w", restoredTopic, err)
 	}
 
-	var remaining []groupPartitionOffset
+	var remaining []groupOffset
 	for _, entry := range entries {
 		rec, ok := latestRecords[entry.Partition]
 		if !ok {
@@ -231,7 +237,7 @@ func (r *Restorer) processTopic(ctx context.Context, topic string, entries []gro
 			continue
 		}
 
-		resolved, err := r.resolveEntry(ctx, restoredTopic, rec, entry)
+		resolved, err := r.resolveEntry(ctx, entry, rec)
 		if err != nil {
 			return nil, err
 		}
@@ -242,9 +248,13 @@ func (r *Restorer) processTopic(ctx context.Context, topic string, entries []gro
 	return remaining, nil
 }
 
+func (r *Restorer) restoredTopic(topic string) string {
+	return r.restoreTopicsPrefix + topic
+}
+
 // resolveEntry checks if the latest record's source offset covers the entry's offset.
 // If so, it finds the correct restored offset and commits it.
-func (r *Restorer) resolveEntry(ctx context.Context, restoredTopic string, latestRecord *kgo.Record, entry groupPartitionOffset) (bool, error) {
+func (r *Restorer) resolveEntry(ctx context.Context, entry groupOffset, latestRecord *kgo.Record) (bool, error) {
 	sourceOffset, err := topicsrestore.GetSourceOffsetFromHeader(latestRecord)
 	if err != nil {
 		return false, fmt.Errorf("getting source offset from header: %w", err)
@@ -257,7 +267,7 @@ func (r *Restorer) resolveEntry(ctx context.Context, restoredTopic string, lates
 
 	// Compute the new offset: entry.Offset - (sourceOffset - record.Offset)
 	newOffset := entry.Offset - (sourceOffset - latestRecord.Offset)
-	foundOffset, err := r.findRestoredOffset(ctx, restoredTopic, entry.Partition, newOffset, entry.Offset)
+	foundOffset, err := r.findRestoredOffset(ctx, entry, newOffset)
 	if err != nil {
 		return false, fmt.Errorf("finding restored offset: %w", err)
 	}
@@ -267,36 +277,31 @@ func (r *Restorer) resolveEntry(ctx context.Context, restoredTopic string, lates
 	}
 
 	restoredGroupID := r.restoreGroupsPrefix + entry.GroupID
-	if err := r.commitOffset(ctx, restoredGroupID, restoredTopic, entry.Partition, foundOffset); err != nil {
+	if err := r.commitOffset(ctx, restoredGroupID, r.restoredTopic(entry.Topic), entry.Partition, foundOffset); err != nil {
 		return false, err
 	}
 
-	slog.InfoContext(ctx, "Restored consumer group offset",
-		"group", restoredGroupID,
-		"topic", restoredTopic,
-		"partition", entry.Partition,
-		"source_offset", entry.Offset,
-		"restored_offset", foundOffset,
-	)
+	slog.InfoContext(ctx, "Restored consumer group offset", "group_entry", entry, "restored_offset", foundOffset)
 	return true, nil
 }
 
 const searchAheadMax = 100
 
 // findRestoredOffset acquires the consume client mutex and delegates to searchOffset.
-func (r *Restorer) findRestoredOffset(ctx context.Context, topic string, partition int32, startOffset int64, groupOffset int64) (int64, error) {
+func (r *Restorer) findRestoredOffset(ctx context.Context, entry groupOffset, startOffset int64) (int64, error) {
 	r.consumeMu.Lock()
 	defer r.consumeMu.Unlock()
 
-	return r.searchOffset(ctx, topic, partition, startOffset, groupOffset)
+	return r.searchOffset(ctx, entry, startOffset)
 }
 
 // searchOffset reads records starting at startOffset and walks forward until the
 // restore.source-offset header matches groupOffset.
 // It must be called with consumeMu already held.
-func (r *Restorer) searchOffset(ctx context.Context, topic string, partition int32, startOffset int64, groupOffset int64) (int64, error) {
+func (r *Restorer) searchOffset(ctx context.Context, entry groupOffset, startOffset int64) (int64, error) {
+	topic := r.restoredTopic(entry.Topic)
 	r.consumeClient.AddConsumePartitions(map[string]map[int32]kgo.Offset{
-		topic: {partition: kgo.NewOffset().At(startOffset)},
+		topic: {entry.Partition: kgo.NewOffset().At(startOffset)},
 	})
 
 	fetches := r.consumeClient.PollRecords(ctx, searchAheadMax)
@@ -305,7 +310,7 @@ func (r *Restorer) searchOffset(ctx context.Context, topic string, partition int
 	}
 
 	// reset the consume client so we can reuse it
-	r.consumeClient.RemoveConsumePartitions(map[string][]int32{topic: {partition}})
+	r.consumeClient.RemoveConsumePartitions(map[string][]int32{topic: {entry.Partition}})
 	r.consumeClient.PurgeTopicsFromClient(topic)
 
 	recs := fetches.Records()
@@ -320,37 +325,35 @@ func (r *Restorer) searchOffset(ctx context.Context, topic string, partition int
 		return -1, fmt.Errorf("reading first record source offset: %w", err)
 	}
 
-	if firstRecSrcOffset == groupOffset {
+	if firstRecSrcOffset == entry.Offset {
 		slog.DebugContext(ctx, "Found group offset on the restored record as expected",
-			"topic", topic, "partition", partition, "group_offset", groupOffset, "restored_record_offset", firstRec.Offset)
+			"group_entry", entry, "restored_record_offset", firstRec.Offset)
 		return firstRec.Offset, nil
 	}
 
-	if firstRecSrcOffset > groupOffset {
-		searchNextOffset := startOffset - (firstRecSrcOffset - groupOffset)
+	if firstRecSrcOffset > entry.Offset {
+		searchNextOffset := startOffset - (firstRecSrcOffset - entry.Offset)
 		slog.WarnContext(ctx, "Unexpected situation: the searched group offset is before the expected restored offset. Searching previous records",
-			"topic", topic, "partition", partition,
-			"group_offset", groupOffset,
+			"group_entry", entry,
 			"restored_record_offset", firstRec.Offset,
 			"restored_record_source_offset", firstRecSrcOffset,
 			"search_next_offset", searchNextOffset)
 
-		return r.searchOffset(ctx, topic, partition, searchNextOffset, groupOffset)
+		return r.searchOffset(ctx, entry, searchNextOffset)
 	}
 
 	slog.WarnContext(ctx, "Unexpected situation: the searched group offset is after the expected restored offset. Searching next fetched records",
-		"topic", topic, "partition", partition,
-		"group_offset", groupOffset, "restored_record_offset", firstRec.Offset, "restored_record_source_offset", firstRecSrcOffset)
+		"group_entry", entry, "restored_record_offset", firstRec.Offset,
+		"restored_record_source_offset", firstRecSrcOffset)
 
 	for _, rec := range recs[1:] {
 		srcOff, err := topicsrestore.GetSourceOffsetFromHeader(rec)
 		if err != nil {
 			return -1, fmt.Errorf("reading source offset: %w", err)
 		}
-		if srcOff == groupOffset {
+		if srcOff == entry.Offset {
 			slog.InfoContext(ctx, "Found group offset on the next fetched records",
-				"topic", topic, "partition", partition,
-				"group_offset", groupOffset, "restored_record_offset", rec.Offset)
+				"group_entry", entry, "restored_record_offset", rec.Offset)
 			return rec.Offset, nil
 		}
 	}
@@ -376,7 +379,7 @@ func (r *Restorer) commitOffset(ctx context.Context, groupID, topic string, part
 	return nil
 }
 
-func uniquePartitions(entries []groupPartitionOffset) []int32 {
+func uniquePartitions(entries []groupOffset) []int32 {
 	seen := make(map[int32]bool)
 	var result []int32
 	for _, e := range entries {
