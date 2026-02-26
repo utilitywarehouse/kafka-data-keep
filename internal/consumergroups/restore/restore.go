@@ -305,13 +305,16 @@ func (r *Restorer) findRestoredOffset(ctx context.Context, entry groupOffset, st
 	r.consumeMu.Lock()
 	defer r.consumeMu.Unlock()
 
-	return r.searchOffset(ctx, entry, startOffset)
+	return r.searchOffset(ctx, entry, startOffset, 5)
 }
 
 // searchOffset reads records starting at startOffset and walks forward until the
 // restore.source-offset header matches groupOffset.
 // It must be called with consumeMu already held.
-func (r *Restorer) searchOffset(ctx context.Context, entry groupOffset, startOffset int64) (int64, error) {
+func (r *Restorer) searchOffset(ctx context.Context, entry groupOffset, startOffset int64, depth int) (int64, error) {
+	if depth <= 0 {
+		return -1, fmt.Errorf("recursion depth limit reached while searching for offset for entry %v", entry)
+	}
 	topic := r.restoredTopic(entry.Topic)
 	r.consumeClient.AddConsumePartitions(map[string]map[int32]kgo.Offset{
 		topic: {entry.Partition: kgo.NewOffset().At(startOffset)},
@@ -352,7 +355,7 @@ func (r *Restorer) searchOffset(ctx context.Context, entry groupOffset, startOff
 			"restored_record_source_offset", firstRecSrcOffset,
 			"search_next_offset", searchNextOffset)
 
-		return r.searchOffset(ctx, entry, searchNextOffset)
+		return r.searchOffset(ctx, entry, searchNextOffset, depth-1)
 	}
 
 	slog.WarnContext(ctx, "Unexpected situation: the searched group offset is after the expected restored offset. Searching next fetched records",
@@ -385,7 +388,7 @@ func (r *Restorer) searchOffset(ctx context.Context, entry groupOffset, startOff
 	}
 
 	// do another fetch and look for the offset in the next batch of fetched records until we find it
-	return r.searchOffset(ctx, entry, recs[len(recs)-1].Offset)
+	return r.searchOffset(ctx, entry, recs[len(recs)-1].Offset, depth-1)
 }
 
 // commitOffset commits a single offset for a consumer group.
