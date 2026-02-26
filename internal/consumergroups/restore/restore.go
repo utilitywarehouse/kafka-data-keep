@@ -292,8 +292,6 @@ func (r *Restorer) resolveEntry(ctx context.Context, entry groupOffset, latestRe
 	return true, nil
 }
 
-const searchAheadMax = 100
-
 // findRestoredOffset acquires the consume client mutex and delegates to searchOffset.
 func (r *Restorer) findRestoredOffset(ctx context.Context, entry groupOffset, startOffset int64) (int64, error) {
 	r.consumeMu.Lock()
@@ -311,7 +309,7 @@ func (r *Restorer) searchOffset(ctx context.Context, entry groupOffset, startOff
 		topic: {entry.Partition: kgo.NewOffset().At(startOffset)},
 	})
 
-	fetches := r.consumeClient.PollRecords(ctx, searchAheadMax)
+	fetches := r.consumeClient.PollRecords(ctx, -1)
 	if err := fetches.Err0(); err != nil {
 		return -1, fmt.Errorf("fetching from kafka %w", err)
 	}
@@ -338,7 +336,7 @@ func (r *Restorer) searchOffset(ctx context.Context, entry groupOffset, startOff
 		return firstRec.Offset, nil
 	}
 
-	if firstRecSrcOffset > entry.Offset {
+	if entry.Offset < firstRecSrcOffset {
 		searchNextOffset := startOffset - (firstRecSrcOffset - entry.Offset)
 		slog.WarnContext(ctx, "Unexpected situation: the searched group offset is before the expected restored offset. Searching previous records",
 			"group_entry", entry,
@@ -353,20 +351,33 @@ func (r *Restorer) searchOffset(ctx context.Context, entry groupOffset, startOff
 		"group_entry", entry, "restored_record_offset", firstRec.Offset,
 		"restored_record_source_offset", firstRecSrcOffset)
 
-	for _, rec := range recs[1:] {
+	for i, rec := range recs {
 		srcOff, err := topicsrestore.GetSourceOffsetFromHeader(rec)
 		if err != nil {
 			return -1, fmt.Errorf("reading source offset: %w", err)
 		}
-		if srcOff == entry.Offset {
+		if entry.Offset == srcOff {
 			slog.InfoContext(ctx, "Found group offset on the next fetched records",
 				"group_entry", entry, "restored_record_offset", rec.Offset)
 			return rec.Offset, nil
 		}
+		if entry.Offset < srcOff {
+			// we reached an impossible situation where the consumer group offset is not among the restored records. Doing our best and setting the offset to the previously restored offset.
+			previousRecord := recs[i-1]
+			prevSrcOff, err := topicsrestore.GetSourceOffsetFromHeader(previousRecord)
+			if err != nil {
+				return -1, fmt.Errorf("reading previous source offset: %w", err)
+			}
+
+			slog.WarnContext(ctx, "Unexpected situation: the searched group offset doesn't exist in the restored records. Setting the group to the previously restored offset",
+				"group_entry", entry, "previous_record_offset", previousRecord.Offset,
+				"previous_record_source_offset", prevSrcOff)
+			return previousRecord.Offset, nil
+		}
 	}
 
-	// will be retried on the next iteration
-	return -1, nil
+	// do another fetch and look for the offset in the next batch of fetched records until we find it
+	return r.searchOffset(ctx, entry, recs[len(recs)-1].Offset)
 }
 
 // commitOffset commits a single offset for a consumer group.
