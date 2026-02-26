@@ -28,6 +28,7 @@ type AppConfig struct {
 	RestoreGroupsPrefix string
 	RestoreTopicsPrefix string
 	IncludeRegexes      string
+	ExcludeRegexes      string
 	LoopInterval        time.Duration
 }
 
@@ -45,7 +46,12 @@ func Run(ctx context.Context, cfg AppConfig) error {
 		return fmt.Errorf("compiling include regexes: %w", err)
 	}
 
-	offsets, err := downloadAndDecode(ctx, cfg, includeRegexes)
+	excludeRegexes, err := internal.CompileRegexes(cfg.ExcludeRegexes)
+	if err != nil {
+		return fmt.Errorf("compiling exclude regexes: %w", err)
+	}
+
+	offsets, err := downloadAndDecode(ctx, cfg, includeRegexes, excludeRegexes)
 	if err != nil {
 		return err
 	}
@@ -65,7 +71,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	return restorer.Restore(ctx, offsets, cfg.LoopInterval)
 }
 
-func downloadAndDecode(ctx context.Context, cfg AppConfig, includeRegexes []*regexp.Regexp) ([]codec.ConsumerGroupOffset, error) {
+func downloadAndDecode(ctx context.Context, cfg AppConfig, includeRegexes, excludeRegexes []*regexp.Regexp) ([]codec.ConsumerGroupOffset, error) {
 	s3Client, err := initS3Client(ctx, cfg)
 	if err != nil {
 		return nil, err
@@ -94,11 +100,11 @@ func downloadAndDecode(ctx context.Context, cfg AppConfig, includeRegexes []*reg
 		if err != nil {
 			return nil, fmt.Errorf("decoding consumer group offset: %w", err)
 		}
-		if internal.MatchesAny(cgo.GroupID, includeRegexes) {
+		if internal.MatchesAny(cgo.GroupID, includeRegexes) && !internal.MatchesAny(cgo.GroupID, excludeRegexes) {
 			offsets = append(offsets, *cgo)
 			slog.DebugContext(ctx, "including consumer group", "group", cgo.GroupID)
 		} else {
-			slog.DebugContext(ctx, "skipping consumer group, because it doesn't match the included regexps", "group", cgo.GroupID)
+			slog.DebugContext(ctx, "skipping consumer group", "group", cgo.GroupID)
 		}
 	}
 	if decoder.Error() != nil {

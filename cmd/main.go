@@ -537,6 +537,12 @@ func loadConsumerGroupsRestoreAppConfig(args []string) (consumergroupsrestore.Ap
 		getEnv("INCLUDE_REGEXES", ".*"),
 		"List of regular expressions to match consumer groups to restore (comma separated)",
 	)
+	fs.StringVar(
+		&cfg.ExcludeRegexes,
+		"exclude-regexes",
+		getEnv("EXCLUDE_REGEXES", ""),
+		"List of regular expressions to exclude consumer groups from restore (comma separated)",
+	)
 
 	fs.DurationVar(
 		&cfg.LoopInterval,

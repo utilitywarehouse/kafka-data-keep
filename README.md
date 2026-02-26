@@ -250,6 +250,7 @@ The `consumer-groups-restore` subcommand supports the following flags and enviro
 | `-restore-groups-prefix` | `RESTORE_GROUPS_PREFIX` | | Prefix to add to the restored consumer group names |
 | `-restore-topics-prefix` | `RESTORE_TOPICS_PREFIX` | | Prefix used on the restored topic names |
 | `-include-regexes` | `INCLUDE_REGEXES` | `.*` | List of regular expressions to match consumer groups to restore (comma separated) |
+| `-exclude-regexes` | `EXCLUDE_REGEXES` | | List of regular expressions to exclude consumer groups from restore (comma separated) |
 | `-loop-interval` | `LOOP_INTERVAL` | `1m` | Duration between consumer group restore iterations (e.g. `30s`, `5m`) |
 | `-s3-endpoint` | `AWS_ENDPOINT_URL` | | S3 endpoint URL (for LocalStack or custom S3-compatible storage) |
 | `-s3-region` | `AWS_REGION` | `eu-west-1` | S3 region |
@@ -264,6 +265,7 @@ The `consumer-groups-restore` subcommand supports the following flags and enviro
   -restore-groups-prefix "restored." \
   -restore-topics-prefix "restored." \
   -include-regexes "my-group.*,other-group.*" \
+  -exclude-regexes "internal-.*" \
   -loop-interval "1m" \
   -s3-region "us-east-1"
 ```
