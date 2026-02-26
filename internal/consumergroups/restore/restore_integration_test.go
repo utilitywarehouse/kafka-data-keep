@@ -190,7 +190,8 @@ func TestConsumerGroupRestore(t *testing.T) {
 			S3Location:          s3Location,
 			RestoreGroupsPrefix: cgRestoreGroupsPrefix,
 			RestoreTopicsPrefix: "", // topics are not prefixed
-			IncludeRegexes:      "test-multiple.*",
+			IncludeRegexes:      ".*",
+			ExcludeRegexes:      ignoreGroupID, // exclude everything not included
 			LoopInterval:        50 * time.Millisecond,
 		}
 
