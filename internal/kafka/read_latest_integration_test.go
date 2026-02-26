@@ -68,7 +68,11 @@ func TestReadLastRecords(t *testing.T) {
 			}
 		}
 
-		records, err := ReadLatest(ctx, []string{seedBroker}, nil, topic)
+		reader, err := NewLatestReader([]string{seedBroker}, nil)
+		require.NoError(t, err)
+		defer reader.Close()
+
+		records, err := reader.Read(ctx, topic)
 		require.NoError(t, err)
 
 		// 5. Validation
@@ -82,7 +86,7 @@ func TestReadLastRecords(t *testing.T) {
 
 		//	consume a single partition
 		partition := int32(3)
-		records, err = ReadLatest(ctx, []string{seedBroker}, nil, topic, partition)
+		records, err = reader.Read(ctx, topic, partition)
 		require.NoError(t, err)
 		assert.Len(t, records, 1, "Should have consumed only 1 partition")
 		rec := records[partition]

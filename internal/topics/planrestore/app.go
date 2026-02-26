@@ -2,6 +2,7 @@ package planrestore
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log/slog"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal"
+	internalkafka "github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
 )
 
@@ -53,12 +55,21 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	}
 	defer kafkaClient.Close()
 
+	seedBrokers := kafkaClient.OptValue(kgo.SeedBrokers).([]string)    //nolint:errcheck // this would fail only if the franz-go lib changes, and we'll catch that in integration tests
+	tlsConfig := kafkaClient.OptValue(kgo.DialTLSConfig).(*tls.Config) //nolint:errcheck // this would fail only if the franz-go lib changes, and we'll catch that in integration tests
+	latestReader, err := internalkafka.NewLatestReader(seedBrokers, tlsConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create latest reader: %w", err)
+	}
+	defer latestReader.Close()
+
 	slog.InfoContext(ctx, "Starting plan restore application...")
 
 	planner := planner{
-		s3Client:    s3Client,
-		kafkaClient: kafkaClient,
-		cfg:         cfg,
+		s3Client:     s3Client,
+		kafkaClient:  kafkaClient,
+		latestReader: latestReader,
+		cfg:          cfg,
 	}
 	return planner.Run(ctx)
 }

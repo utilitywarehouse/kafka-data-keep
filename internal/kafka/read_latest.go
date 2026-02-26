@@ -6,20 +6,38 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"sync"
 
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
-// ReadLatest consumes the last message (tip) for the specified partitions in the specified topic. If no partition is specified, all are read.
-func ReadLatest(ctx context.Context, seedBrokers []string, tls *tls.Config, topic string, onlyPartitions ...int32) (map[int32]*kgo.Record, error) {
+// LatestReader caches a kgo.Client to read the latest records from topics.
+type LatestReader struct {
+	client *kgo.Client
+	mu     sync.Mutex
+}
+
+// NewLatestReader creates a new LatestReader.
+func NewLatestReader(seedBrokers []string, tls *tls.Config) (*LatestReader, error) {
 	client, err := kgo.NewClient(kgo.SeedBrokers(seedBrokers...), kgo.DialTLSConfig(tls))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kafka client: %w", err)
 	}
+	return &LatestReader{client: client}, nil
+}
 
-	defer client.Close()
-	endOffsets, startOffsets, err := getTopicOffsets(ctx, client, topic)
+// Close closes the underlying kafka client.
+func (r *LatestReader) Close() {
+	r.client.Close()
+}
+
+// ReadLatest consumes the last message (tip) for the specified partitions in the specified topic. If no partition is specified, all are read.
+func (r *LatestReader) Read(ctx context.Context, topic string, onlyPartitions ...int32) (map[int32]*kgo.Record, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	endOffsets, startOffsets, err := getTopicOffsets(ctx, r.client, topic)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get topic offsets for topic %s: %w", topic, err)
 	}
@@ -30,12 +48,40 @@ func ReadLatest(ctx context.Context, seedBrokers []string, tls *tls.Config, topi
 	}
 
 	tipOffsets := computePartitionsLatest(ctx, endOffsets, startOffsets, onlyPartitions)
+	if len(tipOffsets) == 0 {
+		return nil, nil
+	}
 
-	client.AddConsumePartitions(map[string]map[int32]kgo.Offset{
+	r.client.AddConsumePartitions(map[string]map[int32]kgo.Offset{
 		topic: tipOffsets,
 	})
 
-	return consumeLatest(ctx, client, len(tipOffsets))
+	// Ensure we clean up the consume state from the client
+	defer func() {
+		r.client.RemoveConsumePartitions(map[string][]int32{topic: partitionsFromMap(tipOffsets)})
+		r.client.PurgeTopicsFromClient(topic)
+	}()
+
+	return consumeLatest(ctx, r.client, len(tipOffsets))
+}
+
+// ReadLatest is a standalone convenience function that creates a temporary LatestReader to read the latest records.
+func ReadLatest(ctx context.Context, seedBrokers []string, tls *tls.Config, topic string, onlyPartitions ...int32) (map[int32]*kgo.Record, error) {
+	reader, err := NewLatestReader(seedBrokers, tls)
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+
+	return reader.Read(ctx, topic, onlyPartitions...)
+}
+
+func partitionsFromMap(m map[int32]kgo.Offset) []int32 {
+	ps := make([]int32, 0, len(m))
+	for p := range m {
+		ps = append(ps, p)
+	}
+	return ps
 }
 
 func getTopicOffsets(ctx context.Context, client *kgo.Client, topic string) (map[int32]kadm.ListedOffset, map[int32]kadm.ListedOffset, error) {
