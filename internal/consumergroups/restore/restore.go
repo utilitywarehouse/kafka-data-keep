@@ -390,9 +390,12 @@ func (r *Restorer) commitOffset(ctx context.Context, groupID, topic string, part
 		LeaderEpoch: -1,
 	})
 
-	_, err := r.kadmClient.CommitOffsets(ctx, groupID, offsets)
+	resp, err := r.kadmClient.CommitOffsets(ctx, groupID, offsets)
 	if err != nil {
 		return fmt.Errorf("committing offset for group %s topic %s partition %d: %w", groupID, topic, partition, err)
+	}
+	if !resp.Ok() {
+		return fmt.Errorf("committing offset for group %s topic %s partition %d: %w", groupID, topic, partition, resp.Error())
 	}
 	return nil
 }
