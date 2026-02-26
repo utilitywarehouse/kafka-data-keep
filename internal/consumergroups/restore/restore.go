@@ -311,7 +311,7 @@ func (r *Restorer) searchOffset(ctx context.Context, entry groupOffset, startOff
 
 	fetches := r.consumeClient.PollRecords(ctx, -1)
 	if err := fetches.Err0(); err != nil {
-		return -1, fmt.Errorf("fetching from kafka %w", err)
+		return -1, fmt.Errorf("fetching from kafka: %w", err)
 	}
 
 	// reset the consume client so we can reuse it
