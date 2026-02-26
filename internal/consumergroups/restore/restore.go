@@ -146,14 +146,21 @@ func groupByTopic(offsets []codec.ConsumerGroupOffset) map[string][]groupOffset 
 
 // filterNonExistingTopics keeps only topics that exist in the Kafka cluster (with restore prefix).
 func (r *Restorer) filterNonExistingTopics(ctx context.Context, grouped map[string][]groupOffset) (map[string][]groupOffset, error) {
-	topics, err := r.kadmClient.ListTopics(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("listing topics: %w", err)
+	var requestedTopics []string
+	for topic := range grouped {
+		requestedTopics = append(requestedTopics, r.restoredTopic(topic))
 	}
 
-	existingTopics := make(map[string]bool, len(topics))
-	for _, t := range topics {
-		existingTopics[t.Topic] = true
+	metadata, err := r.kadmClient.ListTopics(ctx, requestedTopics...)
+	if err != nil {
+		return nil, fmt.Errorf("fetching metadata for topics: %w", err)
+	}
+
+	existingTopics := make(map[string]bool, len(metadata))
+	for _, t := range metadata {
+		if !t.IsInternal && t.Err == nil {
+			existingTopics[t.Topic] = true
+		}
 	}
 
 	result := make(map[string][]groupOffset)
