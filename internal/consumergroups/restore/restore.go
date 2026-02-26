@@ -82,13 +82,21 @@ func (r *Restorer) Restore(ctx context.Context, offsets []codec.ConsumerGroupOff
 // filterAlreadyRestored removes partitions that already have offsets committed
 // in the Kafka cluster (using the prefixed group name), keeping only the ones not yet restored.
 func (r *Restorer) filterAlreadyRestored(ctx context.Context, offsets []codec.ConsumerGroupOffset) ([]codec.ConsumerGroupOffset, error) {
+	// Collect all prefixed group IDs to fetch offsets in a single batch call.
+	groups := make([]string, len(offsets))
+	for i, cg := range offsets {
+		groups[i] = r.restoreGroupsPrefix + cg.GroupID
+	}
+
+	fetchedAll := r.kadmClient.FetchManyOffsets(ctx, groups...)
+	if err := fetchedAll.Error(); err != nil {
+		return nil, fmt.Errorf("failed fetching offsets for groups %v: %w", groups, err)
+	}
+
 	var result []codec.ConsumerGroupOffset
 	for _, cg := range offsets {
 		restoredGroupID := r.restoreGroupsPrefix + cg.GroupID
-		fetched, err := r.kadmClient.FetchOffsets(ctx, restoredGroupID)
-		if err != nil {
-			return nil, fmt.Errorf("fetching offsets for group %s: %w", restoredGroupID, err)
-		}
+		fetched := fetchedAll[restoredGroupID].Fetched
 
 		filtered := filterTopicPartitions(ctx, cg, fetched)
 		if len(filtered.Topics) > 0 {
