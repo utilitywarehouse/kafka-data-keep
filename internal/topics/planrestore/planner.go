@@ -5,12 +5,12 @@ import (
 	"crypto/tls"
 	"fmt"
 	"log/slog"
-	"regexp"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/utilitywarehouse/kafka-data-keep/internal"
 	kafka2 "github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
 )
@@ -110,12 +110,12 @@ func computeResume(latestRecords map[int32]*kgo.Record, topicsOrder []string) (s
 }
 
 func (p *planner) filterTopics(topics []string) ([]string, error) {
-	includeRegexes, err := compileRegexes(p.cfg.RestoreTopicsRegex)
+	includeRegexes, err := internal.CompileRegexes(p.cfg.RestoreTopicsRegex)
 	if err != nil {
 		return nil, fmt.Errorf("invalid include regex: %w", err)
 	}
 
-	excludeRegexes, err := compileRegexes(p.cfg.ExcludeTopicsRegex)
+	excludeRegexes, err := internal.CompileRegexes(p.cfg.ExcludeTopicsRegex)
 	if err != nil {
 		return nil, fmt.Errorf("invalid exclude regex: %w", err)
 	}
@@ -125,22 +125,13 @@ func (p *planner) filterTopics(topics []string) ([]string, error) {
 	for _, includeRegex := range includeRegexes {
 		for _, topic := range topics {
 			/* include the topic if it matches the regex and doesn't match any of the exclude regexes'*/
-			if includeRegex.MatchString(topic) && !matchesAny(topic, excludeRegexes) {
+			if includeRegex.MatchString(topic) && !internal.MatchesAny(topic, excludeRegexes) {
 				result = append(result, topic)
 			}
 		}
 	}
 
 	return result, nil
-}
-
-func matchesAny(s string, regexes []*regexp.Regexp) bool {
-	for _, re := range regexes {
-		if re.MatchString(s) {
-			return true
-		}
-	}
-	return false
 }
 
 func (p *planner) listTopicsFromS3(ctx context.Context) ([]string, error) {
@@ -242,18 +233,4 @@ func TopicPartitionFromFileName(fileName string) (string, string, error) {
 		return "", "", fmt.Errorf("invalid file name %s. Expected in the format folder/topic/partition/filename.avro", fileName)
 	}
 	return parts[len(parts)-3], parts[len(parts)-2], nil
-}
-
-func compileRegexes(regexStr string) ([]*regexp.Regexp, error) {
-	var regexes []*regexp.Regexp
-	if regexStr != "" {
-		for r := range strings.SplitSeq(regexStr, ",") {
-			re, err := regexp.Compile(strings.TrimSpace(r))
-			if err != nil {
-				return nil, fmt.Errorf("invalid regex '%s': %w", r, err)
-			}
-			regexes = append(regexes, re)
-		}
-	}
-	return regexes, nil
 }

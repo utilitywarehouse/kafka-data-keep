@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/utilitywarehouse/kafka-data-keep/internal"
 	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
 )
 
@@ -75,16 +75,8 @@ func initKafkaConsumer(cfg AppConfig) (*kafka.SimpleConsumer, error) {
 	if cfg.BrokersDNSSrv != "" {
 		opts = append(opts, kafka.SeedBrokersFromDNS(cfg.BrokersDNSSrv))
 	} else {
-		opts = append(opts, kgo.SeedBrokers(splitAndTrim(cfg.Brokers, ",")...))
+		opts = append(opts, kgo.SeedBrokers(internal.SplitAndTrim(cfg.Brokers, ",")...))
 	}
 
 	return kafka.NewSimpleConsumer(opts...)
-}
-
-func splitAndTrim(s, sep string) []string {
-	parts := strings.Split(s, sep)
-	for i := range parts {
-		parts[i] = strings.TrimSpace(parts[i])
-	}
-	return parts
 }

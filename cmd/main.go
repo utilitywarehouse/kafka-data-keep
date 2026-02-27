@@ -15,6 +15,7 @@ import (
 
 	"github.com/utilitywarehouse/go-operational/op"
 	consumergroupsbackup "github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/backup"
+	consumergroupsrestore "github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/restore"
 	topicsbackup "github.com/utilitywarehouse/kafka-data-keep/internal/topics/backup"
 	topicsplanrestore "github.com/utilitywarehouse/kafka-data-keep/internal/topics/planrestore"
 	topicsrestore "github.com/utilitywarehouse/kafka-data-keep/internal/topics/restore"
@@ -54,8 +55,10 @@ func mainWrap() error {
 		return runCmd(ctx, os.Args[2:], true, topicsRestoreCmd)
 	case "consumer-groups-backup":
 		return runCmd(ctx, os.Args[2:], true, consumerGroupsBackupCmd)
+	case "consumer-groups-restore":
+		return runCmd(ctx, os.Args[2:], false, consumerGroupsRestoreCmd)
 	default:
-		return fmt.Errorf("expected 'topics-backup|topics-plan-restore|topics-restore|consumer-groups-backup' subcommand")
+		return fmt.Errorf("expected 'topics-backup|topics-plan-restore|topics-restore|consumer-groups-backup|consumer-groups-restore' subcommand")
 	}
 }
 
@@ -453,6 +456,99 @@ func loadConsumerGroupsBackupAppConfig(args []string) (consumergroupsbackup.AppC
 		"run-interval",
 		getEnvDuration("RUN_INTERVAL", 1*time.Minute),
 		"Interval between backups",
+	)
+
+	fs.StringVar(
+		&cfg.S3Endpoint,
+		"s3-endpoint",
+		getEnv("AWS_ENDPOINT_URL", ""),
+		"S3 endpoint URL (for LocalStack or custom S3-compatible storage)",
+	)
+	fs.StringVar(
+		&cfg.S3Region,
+		"s3-region",
+		getEnv("AWS_REGION", "eu-west-1"),
+		"S3 region ",
+	)
+
+	if err := fs.Parse(args); err != nil {
+		return cfg, err
+	}
+	return cfg, nil
+}
+
+func consumerGroupsRestoreCmd(ctx context.Context, args []string) error {
+	cfg, err := loadConsumerGroupsRestoreAppConfig(args)
+	if err != nil {
+		return fmt.Errorf("failed parsing consumer-groups-restore config: %w", err)
+	}
+
+	if err := consumergroupsrestore.Run(ctx, cfg); err != nil {
+		return fmt.Errorf("error running consumer-groups-restore: %w", err)
+	}
+	return nil
+}
+
+func loadConsumerGroupsRestoreAppConfig(args []string) (consumergroupsrestore.AppConfig, error) {
+	var cfg consumergroupsrestore.AppConfig
+	fs := flag.NewFlagSet("consumer-groups-restore", flag.ExitOnError)
+
+	fs.StringVar(
+		&cfg.Brokers,
+		"brokers",
+		getEnv("KAFKA_BROKERS", "localhost:9092"),
+		"Kafka brokers (comma separated)",
+	)
+	fs.StringVar(
+		&cfg.BrokersDNSSrv,
+		"brokersDNSSrv",
+		getEnv("KAFKA_BROKERS_DNS_SRV", ""),
+		"DNS SRV record with the kafka seed brokers",
+	)
+
+	fs.StringVar(
+		&cfg.S3Bucket,
+		"s3-bucket",
+		getEnv("S3_BUCKET", ""),
+		"S3 bucket name where the consumer groups backup is stored",
+	)
+	fs.StringVar(
+		&cfg.S3Location,
+		"s3-location",
+		getEnv("S3_LOCATION", ""),
+		"The s3 location (full path key) of the consumer groups backup file",
+	)
+
+	fs.StringVar(
+		&cfg.RestoreGroupsPrefix,
+		"restore-groups-prefix",
+		getEnv("RESTORE_GROUPS_PREFIX", ""),
+		"Prefix to add to the restored consumer group names",
+	)
+	fs.StringVar(
+		&cfg.RestoreTopicsPrefix,
+		"restore-topics-prefix",
+		getEnv("RESTORE_TOPICS_PREFIX", ""),
+		"Prefix used on the restored topic names",
+	)
+	fs.StringVar(
+		&cfg.IncludeRegexes,
+		"include-regexes",
+		getEnv("INCLUDE_REGEXES", ".*"),
+		"List of regular expressions to match consumer groups to restore (comma separated)",
+	)
+	fs.StringVar(
+		&cfg.ExcludeRegexes,
+		"exclude-regexes",
+		getEnv("EXCLUDE_REGEXES", ""),
+		"List of regular expressions to exclude consumer groups from restore (comma separated)",
+	)
+
+	fs.DurationVar(
+		&cfg.LoopInterval,
+		"loop-interval",
+		getEnvDuration("LOOP_INTERVAL", 1*time.Minute),
+		"Duration between consumer group restore iterations",
 	)
 
 	fs.StringVar(

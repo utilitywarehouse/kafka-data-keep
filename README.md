@@ -222,3 +222,50 @@ The `consumer-groups-backup` subcommand supports the following flags and environ
   -run-interval "5m" \
   -s3-region "us-east-1"
 ```
+
+# Consumer Groups Restore
+
+## Approach
+
+The application restores consumer group offsets from an S3 Avro backup file (created by `consumer-groups-backup`) into a Kafka cluster where topics have been restored using the `topics-restore` command.
+
+1.  **Download & Decode**: Downloads the consumer group offsets Avro file from S3 and decodes all consumer group offset records.
+2.  **Filtering**: Filters consumer groups by the include regular expressions, removes groups that already have offsets committed in the cluster, and removes topics that don't exist in the cluster.
+3.  **Offset Resolution Loop**: On each iteration:
+    -   For each topic, reads the latest record on each partition using the `restore.source-offset` header.
+    -   For each consumer group offset, if the source offset in the latest record is greater or equal to the backed-up offset, it computes the new offset and walks forward from that position to find the exact matching record.
+    -   Commits the resolved offset for the consumer group.
+4.  **Completion**: Exits when all consumer group offsets have been restored.
+
+## Configuration
+
+The `consumer-groups-restore` subcommand supports the following flags and environment variables. Flags take precedence over environment variables.
+
+| Flag | Environment Variable | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `-brokers` | `KAFKA_BROKERS` | `localhost:9092` | Kafka brokers (comma separated) |
+| `-brokersDNSSrv` | `KAFKA_BROKERS_DNS_SRV` | | DNS SRV record with the kafka seed brokers |
+| `-s3-bucket` | `S3_BUCKET` | | S3 bucket name where the consumer groups backup is stored |
+| `-s3-location` | `S3_LOCATION` | | The S3 location (full path key) of the consumer groups backup file |
+| `-restore-groups-prefix` | `RESTORE_GROUPS_PREFIX` | | Prefix to add to the restored consumer group names |
+| `-restore-topics-prefix` | `RESTORE_TOPICS_PREFIX` | | Prefix used on the restored topic names |
+| `-include-regexes` | `INCLUDE_REGEXES` | `.*` | List of regular expressions to match consumer groups to restore (comma separated) |
+| `-exclude-regexes` | `EXCLUDE_REGEXES` | | List of regular expressions to exclude consumer groups from restore (comma separated) |
+| `-loop-interval` | `LOOP_INTERVAL` | `1m` | Duration between consumer group restore iterations (e.g. `30s`, `5m`) |
+| `-s3-endpoint` | `AWS_ENDPOINT_URL` | | S3 endpoint URL (for LocalStack or custom S3-compatible storage) |
+| `-s3-region` | `AWS_REGION` | `eu-west-1` | S3 region |
+
+### Usage Example
+
+```console
+./kafka-data-keep consumer-groups-restore \
+  -brokers "kafka:9092" \
+  -s3-bucket "my-backup-bucket" \
+  -s3-location "backups/consumer-groups/offsets.avro" \
+  -restore-groups-prefix "restored." \
+  -restore-topics-prefix "restored." \
+  -include-regexes "my-group.*,other-group.*" \
+  -exclude-regexes "internal-.*" \
+  -loop-interval "1m" \
+  -s3-region "us-east-1"
+```
