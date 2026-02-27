@@ -100,11 +100,8 @@ func downloadAndDecode(ctx context.Context, cfg AppConfig, includeRegexes, exclu
 		if err != nil {
 			return nil, fmt.Errorf("decoding consumer group offset: %w", err)
 		}
-		if internal.MatchesAny(cgo.GroupID, includeRegexes) && !internal.MatchesAny(cgo.GroupID, excludeRegexes) {
+		if shouldProcess(ctx, cgo, includeRegexes, excludeRegexes) {
 			offsets = append(offsets, *cgo)
-			slog.DebugContext(ctx, "including consumer group", "group", cgo.GroupID)
-		} else {
-			slog.DebugContext(ctx, "skipping consumer group", "group", cgo.GroupID)
 		}
 	}
 	if decoder.Error() != nil {
@@ -112,6 +109,35 @@ func downloadAndDecode(ctx context.Context, cfg AppConfig, includeRegexes, exclu
 	}
 
 	return offsets, nil
+}
+
+func shouldProcess(ctx context.Context, cgo *codec.ConsumerGroupOffset, includeRegexes []*regexp.Regexp, excludeRegexes []*regexp.Regexp) bool {
+	if !internal.MatchesAny(cgo.GroupID, includeRegexes) {
+		slog.InfoContext(ctx, "Skipping consumer group as it doesn't match the inclusion criteria", "group", cgo.GroupID)
+		return false
+	}
+
+	if internal.MatchesAny(cgo.GroupID, excludeRegexes) {
+		slog.InfoContext(ctx, "Skipping consumer group as it matches the exclusion criteria", "group", cgo.GroupID)
+		return false
+	}
+
+	if isEmpty(cgo) {
+		slog.InfoContext(ctx, "Skipping consumer group as it is empty", "group", cgo.GroupID)
+		return false
+	}
+	slog.InfoContext(ctx, "Including consumer group", "group", cgo.GroupID)
+	return true
+}
+
+func isEmpty(cgo *codec.ConsumerGroupOffset) bool {
+	// check if there are any partitions saved in the consumer group
+	for _, to := range cgo.Topics {
+		if len(to.Partitions) > 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func initS3Client(ctx context.Context, cfg AppConfig) (*s3.Client, error) {

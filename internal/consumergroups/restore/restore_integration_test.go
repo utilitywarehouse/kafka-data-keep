@@ -174,6 +174,15 @@ func TestConsumerGroupRestore(t *testing.T) {
 					},
 				},
 			},
+			{
+				GroupID: "empty-group",
+				// this should be skipped as it doesn't have any partitions saved
+				Topics: []codec.TopicOffset{
+					{
+						Topic: topic1,
+					},
+				},
+			},
 		}
 
 		// Encode groups to Avro and upload to S3
