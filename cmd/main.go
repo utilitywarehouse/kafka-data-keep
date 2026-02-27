@@ -56,7 +56,7 @@ func mainWrap() error {
 	case "consumer-groups-backup":
 		return runCmd(ctx, os.Args[2:], true, consumerGroupsBackupCmd)
 	case "consumer-groups-restore":
-		return runCmd(ctx, os.Args[2:], true, consumerGroupsRestoreCmd)
+		return runCmd(ctx, os.Args[2:], false, consumerGroupsRestoreCmd)
 	default:
 		return fmt.Errorf("expected 'topics-backup|topics-plan-restore|topics-restore|consumer-groups-backup|consumer-groups-restore' subcommand")
 	}
