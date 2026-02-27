@@ -232,7 +232,7 @@ func (r *Restorer) processTopics(ctx context.Context, grouped map[string][]group
 
 // processTopic reads the latest record on each partition and resolves offsets for the group entries.
 func (r *Restorer) processTopic(ctx context.Context, topic string, entries []groupOffset) ([]groupOffset, error) {
-	slog.InfoContext(ctx, "Processing topic %s with group entries: %+v", topic, entries)
+	slog.InfoContext(ctx, "Start processing topic", "topic", topic, "entries", entries)
 	restoredTopic := r.restoredTopic(topic)
 
 	partitions := uniquePartitions(entries)
