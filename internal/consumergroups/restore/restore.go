@@ -106,6 +106,14 @@ func (r *Restorer) filterAlreadyRestored(ctx context.Context, offsets []codec.Co
 		restoredGroupID := r.restoredGroup(cg.GroupID)
 		fetched := fetchedAll[restoredGroupID].Fetched
 
+		if len(fetched) == 0 {
+			slog.DebugContext(ctx, "Including all partitions from not existing group", "group", restoredGroupID)
+			result = append(result, cg)
+			continue
+		}
+
+		slog.DebugContext(ctx, "Got fetched partitions for group", "group", restoredGroupID, "partitions", fetched)
+
 		filtered := filterTopicPartitions(ctx, cg, fetched)
 		if len(filtered.Topics) > 0 {
 			result = append(result, filtered)
