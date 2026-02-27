@@ -85,7 +85,7 @@ func (r *Restorer) filterAlreadyRestored(ctx context.Context, offsets []codec.Co
 	// Collect all prefixed group IDs to fetch offsets in a single batch call.
 	groups := make([]string, len(offsets))
 	for i, cg := range offsets {
-		groups[i] = r.restoreGroupsPrefix + cg.GroupID
+		groups[i] = r.restoredGroup(cg.GroupID)
 	}
 
 	fetchedAll := r.kadmClient.FetchManyOffsets(ctx, groups...)
@@ -95,7 +95,7 @@ func (r *Restorer) filterAlreadyRestored(ctx context.Context, offsets []codec.Co
 
 	var result []codec.ConsumerGroupOffset
 	for _, cg := range offsets {
-		restoredGroupID := r.restoreGroupsPrefix + cg.GroupID
+		restoredGroupID := r.restoredGroup(cg.GroupID)
 		fetched := fetchedAll[restoredGroupID].Fetched
 
 		filtered := filterTopicPartitions(ctx, cg, fetched)
@@ -106,6 +106,10 @@ func (r *Restorer) filterAlreadyRestored(ctx context.Context, offsets []codec.Co
 		}
 	}
 	return result, nil
+}
+
+func (r *Restorer) restoredGroup(groupName string) string {
+	return r.restoreGroupsPrefix + groupName
 }
 
 // filterTopicPartitions removes partitions that already have committed offsets from a consumer group.
