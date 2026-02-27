@@ -32,6 +32,7 @@ type Restorer struct {
 	restoreTopicsPrefix string
 	consumeClient       *kgo.Client
 	consumeMu           sync.Mutex
+	latestReader        *kafkaint.LatestReader
 }
 
 // NewRestorer creates a new Restorer.
@@ -47,17 +48,24 @@ func NewRestorer(client *kafka.Client, restoreGroupsPrefix, restoreTopicsPrefix 
 	if err != nil {
 		return nil, fmt.Errorf("creating consume client: %w", err)
 	}
+	latestReader, err := kafkaint.NewLatestReader(seedBrokers, tlsConfig)
+	if err != nil {
+		return nil, fmt.Errorf("creating latest reader: %w", err)
+	}
+
 	return &Restorer{
 		kadmClient:          kadm.NewClient(client.Client),
 		restoreGroupsPrefix: restoreGroupsPrefix,
 		restoreTopicsPrefix: restoreTopicsPrefix,
 		consumeClient:       consumeClient,
+		latestReader:        latestReader,
 	}, nil
 }
 
-// Close shuts down the Restorer's shared consume client.
+// Close shuts down the Restorer's shared consume client and latest reader.
 func (r *Restorer) Close() {
 	r.consumeClient.Close()
+	r.latestReader.Close()
 }
 
 // Restore orchestrates the full consumer group offset restoration.
@@ -241,10 +249,7 @@ func (r *Restorer) processTopic(ctx context.Context, topic string, entries []gro
 
 	partitions := uniquePartitions(entries)
 
-	// todo [sb]: I'll do another iteration to improve ReadLatest to cache the client. Keeping it like this for now.
-	seedBrokers := r.consumeClient.OptValue(kgo.SeedBrokers).([]string)    //nolint:errcheck // this would fail only if the franz-go lib changes, and we'll catch that in integration tests
-	tlsConfig := r.consumeClient.OptValue(kgo.DialTLSConfig).(*tls.Config) //nolint:errcheck // this would fail only if the franz-go lib changes, and we'll catch that in integration tests
-	latestRecords, err := kafkaint.ReadLatest(ctx, seedBrokers, tlsConfig, restoredTopic, partitions...)
+	latestRecords, err := r.latestReader.Read(ctx, restoredTopic, partitions...)
 	if err != nil {
 		return entries, fmt.Errorf("reading latest records for %s: %w", restoredTopic, err)
 	}
