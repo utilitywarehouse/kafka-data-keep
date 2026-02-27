@@ -232,6 +232,7 @@ func (r *Restorer) processTopics(ctx context.Context, grouped map[string][]group
 
 // processTopic reads the latest record on each partition and resolves offsets for the group entries.
 func (r *Restorer) processTopic(ctx context.Context, topic string, entries []groupOffset) ([]groupOffset, error) {
+	slog.InfoContext(ctx, "Processing topic %s with group entries: %+v", topic, entries)
 	restoredTopic := r.restoredTopic(topic)
 
 	partitions := uniquePartitions(entries)
@@ -248,6 +249,7 @@ func (r *Restorer) processTopic(ctx context.Context, topic string, entries []gro
 	for _, entry := range entries {
 		rec, ok := latestRecords[entry.Partition]
 		if !ok {
+			slog.InfoContext(ctx, "Skipping entry with no latest record", "entry", entry)
 			remaining = append(remaining, entry)
 			continue
 		}
@@ -257,6 +259,7 @@ func (r *Restorer) processTopic(ctx context.Context, topic string, entries []gro
 			return nil, err
 		}
 		if !resolved {
+			slog.InfoContext(ctx, "Could not resolve yet the offset for entry", "entry", entry)
 			remaining = append(remaining, entry)
 		}
 	}
@@ -275,8 +278,15 @@ func (r *Restorer) resolveEntry(ctx context.Context, entry groupOffset, latestRe
 		return false, fmt.Errorf("getting source offset from header: %w", err)
 	}
 
+	if sourceOffset == -1 {
+		slog.InfoContext(ctx, "Could not find the source offset header on latest record", "entry", entry,
+			"latest_record_offset", latestRecord.Offset, "latest_record_headers", latestRecord.Headers)
+		return false, nil
+	}
+
 	if sourceOffset < entry.Offset {
 		// we're not there yet
+		slog.InfoContext(ctx, "Latest record is not yet beyond the group offset", "entry", entry)
 		return false, nil
 	}
 
