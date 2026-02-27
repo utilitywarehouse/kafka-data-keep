@@ -308,6 +308,9 @@ func (r *Restorer) findRestoredOffset(ctx context.Context, entry groupOffset, st
 	return r.searchOffset(ctx, entry, startOffset, 5)
 }
 
+// searchAheadMax is used for the maximum number of records to fetch beyond the expected offset.
+// Those records will be searched if the source offset is not on the expected record, but on the following ones.
+// Using a moderate number to not load the memory too much, but to still make use of the Kafka fetch if needed.
 const searchAheadMax = 500
 
 // searchOffset reads records starting at startOffset and walks forward until the
