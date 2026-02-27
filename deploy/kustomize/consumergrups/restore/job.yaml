@@ -19,6 +19,7 @@ spec:
         prometheus.io/port: "8081"
     spec:
       serviceAccountName: kafka-groups-restore
+      restartPolicy: OnFailure
       containers:
         - name: kafka-groups-restore
           image: quay.io/utilitywarehouse/kafka-data-keep:main
