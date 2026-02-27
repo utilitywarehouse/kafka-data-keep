@@ -106,7 +106,15 @@ func (r *Restorer) filterAlreadyRestored(ctx context.Context, offsets []codec.Co
 		restoredGroupID := r.restoredGroup(cg.GroupID)
 		fetched := fetchedAll[restoredGroupID].Fetched
 
-		filtered := filterTopicPartitions(ctx, cg, fetched)
+		if len(fetched) == 0 {
+			slog.DebugContext(ctx, "Including all partitions from not existing group", "group", restoredGroupID)
+			result = append(result, cg)
+			continue
+		}
+
+		slog.DebugContext(ctx, "Got fetched partitions for group", "group", restoredGroupID, "partitions", fetched)
+
+		filtered := r.filterTopicPartitions(ctx, cg, fetched)
 		if len(filtered.Topics) > 0 {
 			result = append(result, filtered)
 		} else {
@@ -121,10 +129,10 @@ func (r *Restorer) restoredGroup(groupName string) string {
 }
 
 // filterTopicPartitions removes partitions that already have committed offsets from a consumer group.
-func filterTopicPartitions(ctx context.Context, cg codec.ConsumerGroupOffset, fetched kadm.OffsetResponses) codec.ConsumerGroupOffset {
+func (r *Restorer) filterTopicPartitions(ctx context.Context, cg codec.ConsumerGroupOffset, fetched kadm.OffsetResponses) codec.ConsumerGroupOffset {
 	filtered := codec.ConsumerGroupOffset{GroupID: cg.GroupID}
 	for _, to := range cg.Topics {
-		fetchedPartitions := fetched[to.Topic]
+		fetchedPartitions := fetched[r.restoredTopic(to.Topic)]
 		var remaining []codec.PartitionOffset
 		for _, po := range to.Partitions {
 			if fetchedPartitions != nil {

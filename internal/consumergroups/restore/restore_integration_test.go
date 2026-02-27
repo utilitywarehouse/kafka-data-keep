@@ -33,6 +33,7 @@ func init() {
 const (
 	cgRestoreBucketName   = "cg-restore-test-bucket"
 	cgRestoreGroupsPrefix = "restored-"
+	cgRestoreTopicPrefix  = "restore."
 )
 
 // partitionPlan holds the pre-decided write parameters for one partition.
@@ -252,32 +253,38 @@ func TestConsumerGroupRestore(t *testing.T) {
 		t.Parallel()
 
 		topic := randomName("test-skip")
+		restoredTopic := cgRestoreTopicPrefix + topic
 
 		// Create a single topic
-		_, err = kadmClient.CreateTopic(ctx, 2, 1, nil, topic)
+		_, err = kadmClient.CreateTopic(ctx, 2, 1, nil, restoredTopic)
 		require.NoError(t, err)
 
 		// write messages to this topic
-		writePartition(t, producerClient, partitionPlan{topic: topic, partition: 0, msgCount: 100})
-		writePartition(t, producerClient, partitionPlan{topic: topic, partition: 1, msgCount: 200})
+		p0Plan := partitionPlan{topic: restoredTopic, partition: 0, msgCount: 100}
+		writePartition(t, producerClient, p0Plan)
+		p1Plan := partitionPlan{topic: restoredTopic, partition: 1, msgCount: 200}
+		writePartition(t, producerClient, p1Plan)
 
 		// create the consumer group with offsets, so that it's already restored
-		groupID := randomName("test-skip-restored")
+		group := randomName("test-skip-restored")
+		restoredGroup := cgRestoreGroupsPrefix + group
+
 		offsets := make(kadm.Offsets)
-		offsets.Add(kadm.Offset{Topic: topic, Partition: 0, At: 50})
-		offsets.Add(kadm.Offset{Topic: topic, Partition: 1, At: 60})
-		_, err := kadmClient.CommitOffsets(ctx, groupID, offsets)
+		offsets.Add(kadm.Offset{Topic: restoredTopic, Partition: 0, At: 50})
+		offsets.Add(kadm.Offset{Topic: restoredTopic, Partition: 1, At: 60})
+		resp, err := kadmClient.CommitOffsets(ctx, restoredGroup, offsets)
 		require.NoError(t, err)
+		require.NoError(t, resp.Error())
 
 		backupGroups := []codec.ConsumerGroupOffset{
 			{
-				GroupID: groupID,
+				GroupID: group,
 				Topics: []codec.TopicOffset{
 					{
 						Topic: topic,
 						Partitions: []codec.PartitionOffset{
-							{Partition: 0, Offset: 50},
-							{Partition: 1, Offset: 60},
+							{Partition: 0, Offset: 80},
+							{Partition: 1, Offset: 110},
 						},
 					},
 				},
@@ -293,8 +300,8 @@ func TestConsumerGroupRestore(t *testing.T) {
 			S3Region:            testutil.MinioRegion,
 			S3Endpoint:          s3Endpoint,
 			S3Location:          s3Location,
-			RestoreGroupsPrefix: "",
-			RestoreTopicsPrefix: "", // topics are not prefixed
+			RestoreGroupsPrefix: cgRestoreGroupsPrefix,
+			RestoreTopicsPrefix: cgRestoreTopicPrefix,
 			IncludeRegexes:      ".*",
 			LoopInterval:        50 * time.Millisecond,
 		}
@@ -304,6 +311,10 @@ func TestConsumerGroupRestore(t *testing.T) {
 		defer cancelFunc()
 		err = restore.Run(restoreCtx, restoreCfg)
 		require.NoError(t, err)
+
+		// check that the offsets were not advanced
+		verifyRestoredGroupOffset(t, kadmClient, restoredGroup, 50, p0Plan)
+		verifyRestoredGroupOffset(t, kadmClient, restoredGroup, 60, p1Plan)
 	})
 
 	t.Run("target offset after the expected one", func(t *testing.T) {
