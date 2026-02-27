@@ -40,6 +40,8 @@ spec:
               value: ""
             - name: INCLUDE_REGEXES
               value: ".*"
+            - name: EXCLUDE_REGEXES
+              value: ""
             - name: LOOP_INTERVAL
               value: 1m
           resources:
