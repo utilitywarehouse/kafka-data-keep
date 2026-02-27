@@ -286,7 +286,7 @@ func (r *Restorer) resolveEntry(ctx context.Context, entry groupOffset, latestRe
 
 	if sourceOffset < entry.Offset {
 		// we're not there yet
-		slog.InfoContext(ctx, "Latest record is not yet beyond the group offset", "entry", entry)
+		slog.InfoContext(ctx, "Latest record is not yet beyond the group offset", "entry", entry, "latest_record_source_offset", sourceOffset)
 		return false, nil
 	}
 
