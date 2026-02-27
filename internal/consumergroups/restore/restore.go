@@ -308,6 +308,8 @@ func (r *Restorer) findRestoredOffset(ctx context.Context, entry groupOffset, st
 	return r.searchOffset(ctx, entry, startOffset, 5)
 }
 
+const searchAheadMax = 500
+
 // searchOffset reads records starting at startOffset and walks forward until the
 // restore.source-offset header matches groupOffset.
 // It must be called with consumeMu already held.
@@ -320,7 +322,7 @@ func (r *Restorer) searchOffset(ctx context.Context, entry groupOffset, startOff
 		topic: {entry.Partition: kgo.NewOffset().At(startOffset)},
 	})
 
-	fetches := r.consumeClient.PollRecords(ctx, -1)
+	fetches := r.consumeClient.PollRecords(ctx, searchAheadMax)
 	if err := fetches.Err0(); err != nil {
 		return -1, fmt.Errorf("fetching from kafka: %w", err)
 	}
