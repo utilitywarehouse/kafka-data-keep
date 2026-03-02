@@ -42,6 +42,9 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # type=ref,event=branch: tags with the branch name on branch push events (e.g. "main")
+          # type=semver: extracts semver from tag pushes (e.g. v1.2.3 -> "1.2.3" and "1.2")
+          # type=raw,value=head_ref: tags with the PR source branch name on pull_request events
           tags: |
             type=ref,event=branch
             type=semver,pattern={{version}}
