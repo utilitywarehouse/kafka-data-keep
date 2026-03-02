@@ -62,13 +62,12 @@ func (r *kafkaS3Restorer) restoreFile(ctx context.Context, key string) error {
 	lastRecordOffset := recs[len(recs)-1].Offset
 
 	res := r.consumer.ProduceSync(ctx, recs...)
-
-	// update the last processed offset for this partition
-	r.lastProcessedOffsetByPartition[partitionKey(topic, partition)] = lastRecordOffset
-
 	if res.FirstErr() != nil {
 		return fmt.Errorf("failed to produce records: %w", res.FirstErr())
 	}
+
+	// update the last processed offset for this partition
+	r.lastProcessedOffsetByPartition[partitionKey(topic, partition)] = lastRecordOffset
 
 	slog.InfoContext(ctx, "Restored file", "key", key, "records", len(recs), "last_offset", lastRecordOffset, "last_processed_offset", lastProcessedOffset)
 	return nil
