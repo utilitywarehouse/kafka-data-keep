@@ -65,17 +65,6 @@ func (r *LatestReader) Read(ctx context.Context, topic string, onlyPartitions ..
 	return consumeLatest(ctx, r.client, len(tipOffsets))
 }
 
-// ReadLatest is a standalone convenience function that creates a temporary LatestReader to read the latest records.
-func ReadLatest(ctx context.Context, seedBrokers []string, tls *tls.Config, topic string, onlyPartitions ...int32) (map[int32]*kgo.Record, error) {
-	reader, err := NewLatestReader(seedBrokers, tls)
-	if err != nil {
-		return nil, err
-	}
-	defer reader.Close()
-
-	return reader.Read(ctx, topic, onlyPartitions...)
-}
-
 func partitionsFromMap(m map[int32]kgo.Offset) []int32 {
 	ps := make([]int32, 0, len(m))
 	for p := range m {
