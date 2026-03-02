@@ -71,6 +71,27 @@ The `topics-backup` subcommand supports the following flags and environment vari
 | `-s3-endpoint` | `AWS_ENDPOINT_URL` | | S3 endpoint URL (for LocalStack or custom S3-compatible storage) |
 | `-s3-region` | `AWS_REGION` | `eu-west-1` | S3 region |
 
+## Graceful Shutdown and Persistence
+
+To ensure optimal performance and operational reliability, the application implements the following signal handling and buffering strategy:
+
+### Shutdown Behavior
+Process termination **does not** trigger an automatic flush to S3. This is a deliberate design choice to:
+1.  **Maintain Restore Performance**: Respecting `MinFileSize` prevents the creation of small file fragments in S3, which would otherwise degrade restore throughput.
+2.  **Minimize Shutdown Latency**: Ensures near-instantaneous process exit by avoiding potentially slow, multi-partition I/O operations during shutdown.
+
+### Manual Flush (SIGUSR1)
+To force an immediate persistence of all pending buffers without stopping the service (e.g., before node maintenance or scaling), send a `SIGUSR1` signal:
+```bash
+kill -SIGUSR1 <pid>
+```
+The application will immediately flush all active partition writers to S3.
+
+### Data Durability
+Any records not yet uploaded to S3 are stored durably in the configured `WorkingDir`.
+- **Resilience**: Data is preserved and will be processed on the next application start, even if the Kafka cluster is unavailable.
+- **Planned Work**: Implementation of an emergency flush mechanism triggered by detected Kafka connectivity failures.
+
 ### Usage Example
 
 ```console

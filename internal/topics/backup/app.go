@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -97,6 +99,10 @@ func Run(ctx context.Context, cfg AppConfig) error {
 		return runPauseIdleWriters(ctx, mgr)
 	})
 
+	eg.Go(func() error {
+		return runFlushOnSignal(ctx, mgr)
+	})
+
 	err = eg.Wait()
 	slog.InfoContext(ctx, "Backup application exiting .... running cleanup", "error", err)
 	return err
@@ -148,6 +154,28 @@ func runPauseIdleWriters(ctx context.Context, pwManager *partitionsWriterManager
 		case <-ticker.C:
 			if err := pwManager.PauseIdleWriters(ctx); err != nil {
 				return fmt.Errorf("failed pausing idle writers: %w", err)
+			}
+		}
+	}
+}
+
+func runFlushOnSignal(ctx context.Context, pwManager *partitionsWriterManager) error {
+	flushCh := make(chan os.Signal, 1)
+	signal.Notify(flushCh, syscall.SIGUSR1)
+	defer signal.Stop(flushCh)
+
+	slog.InfoContext(ctx, "Listening for SIGUSR1 to flush partition writers")
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-flushCh:
+			slog.InfoContext(ctx, "Received SIGUSR1, flushing all partition writers")
+			if err := pwManager.FlushAll(ctx); err != nil {
+				slog.ErrorContext(ctx, "Failed to flush partition writers on signal", "error", err)
+			} else {
+				slog.InfoContext(ctx, "Successfully flushed all partition writers")
 			}
 		}
 	}

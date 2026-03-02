@@ -406,6 +406,13 @@ func (p *partitionWriter) isIdle() bool {
 		p.lastWriteAt.Add(p.config.PartitionIdleThreshold).Before(time.Now())
 }
 
+func (p *partitionWriter) Flush(ctx context.Context) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	return p.flushLocked(ctx)
+}
+
 func (p *partitionWriter) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()

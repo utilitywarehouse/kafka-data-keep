@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 
@@ -546,6 +547,72 @@ func TestBackupIntegration(t *testing.T) {
 
 		updatedValue := readCounterValue(t, reader, "kafka-data-keep", "kafka.data-keep.unexpected-leftover-files")
 		require.Equal(t, initialValue+1, updatedValue, "Counter should have been incremented")
+	})
+
+	t.Run("flush on SIGUSR1", func(t *testing.T) {
+		t.Parallel()
+		ctx := t.Context()
+
+		topic := newRandomName("flush-on-signal")
+		_, err := kadmClient.CreateTopic(ctx, 1, 1, nil, topic)
+		require.NoError(t, err)
+
+		// Setup backup application config
+		workingDir := t.TempDir()
+
+		groupID := newRandomName("test-flush-signal-group")
+		s3Prefix := "flush-on-signal/"
+		cfg := AppConfig{
+			Brokers:                kafkaBrokers,
+			TopicsRegex:            topic,
+			GroupID:                groupID,
+			MinFileSize:            100 * 1024 * 1024, // 100MB so no auto flush happens
+			PartitionIdleThreshold: 10 * time.Minute,
+			WorkingDir:             workingDir,
+			S3Bucket:               bucketName,
+			S3Prefix:               s3Prefix,
+			S3Endpoint:             s3Endpoint,
+			S3Region:               testutil.MinioRegion,
+		}
+
+		// Run backup with a cancellable context
+		backupCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- Run(backupCtx, cfg)
+		}()
+
+		testutil.WaitConsumerStart(t, kadmClient, groupID)
+
+		// Write records
+		numRecords := 10
+		writeRecords(t, adminClient, topic, 0, numRecords, 1000)
+		require.NoError(t, adminClient.Flush(ctx))
+
+		// Wait for records to be written to local file
+		fileKey := testutil.FileKey(s3Prefix, topic, 0, 0)
+		waitLocalFileHasRecords(t, workingDir, fileKey, numRecords)
+
+		// Verify no files in S3 yet
+		require.Empty(t, listFilesOnBucket(t, s3Client, s3Prefix), "No files should be in S3 before signal")
+
+		// Send SIGUSR1 to ourselves
+		slog.Info("Sending SIGUSR1 to trigger flush")
+		require.NoError(t, syscall.Kill(syscall.Getpid(), syscall.SIGUSR1))
+
+		// Wait for the file to appear in S3
+		var filesFound map[string]int
+		require.Eventually(t, func() bool {
+			filesFound = listFilesOnBucket(t, s3Client, s3Prefix)
+			return len(filesFound) > 0
+		}, 10*time.Second, 500*time.Millisecond, "Timed out waiting for file to be flushed to S3")
+
+		require.Len(t, filesFound, 1, "Should have one file in S3")
+		require.Equal(t, numRecords, filesFound[fileKey], "File in S3 should have all records")
+
+		stopApp(t, cancel, errCh)
 	})
 }
 
