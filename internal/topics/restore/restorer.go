@@ -2,7 +2,6 @@ package restore
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -23,6 +22,8 @@ type kafkaS3Restorer struct {
 
 	// map containing the original offset of the last restored message per partition
 	lastProcessedOffsetByPartition map[string]int64
+
+	latestReader *kafkaint.LatestReader
 }
 
 func (r *kafkaS3Restorer) Run(ctx context.Context) error {
@@ -62,13 +63,12 @@ func (r *kafkaS3Restorer) restoreFile(ctx context.Context, key string) error {
 	lastRecordOffset := recs[len(recs)-1].Offset
 
 	res := r.consumer.ProduceSync(ctx, recs...)
-
-	// update the last processed offset for this partition
-	r.lastProcessedOffsetByPartition[partitionKey(topic, partition)] = lastRecordOffset
-
 	if res.FirstErr() != nil {
 		return fmt.Errorf("failed to produce records: %w", res.FirstErr())
 	}
+
+	// update the last processed offset for this partition
+	r.lastProcessedOffsetByPartition[partitionKey(topic, partition)] = lastRecordOffset
 
 	slog.InfoContext(ctx, "Restored file", "key", key, "records", len(recs), "last_offset", lastRecordOffset, "last_processed_offset", lastProcessedOffset)
 	return nil
@@ -99,21 +99,23 @@ func (r *kafkaS3Restorer) getLastProcessedOffset(ctx context.Context, topic stri
 }
 
 func (r *kafkaS3Restorer) computeLastRestoredOffset(ctx context.Context, topic string, partitionInt int32) (int64, error) {
-	seedBrokers := r.consumer.OptValue(kgo.SeedBrokers).([]string)    //nolint:errcheck // this would fail only if the franz-go lib changes, and we'll catch that in integration tests
-	tlsConfig := r.consumer.OptValue(kgo.DialTLSConfig).(*tls.Config) //nolint:errcheck // this would fail only if the franz-go lib changes, and we'll catch that in integration tests
-
-	lastRecord, err := kafkaint.ReadLatest(ctx, seedBrokers, tlsConfig, r.restoreTopicName(topic), partitionInt)
+	lastRecordPerPart, err := r.latestReader.Read(ctx, r.restoreTopicName(topic), partitionInt)
 	if err != nil {
 		return -1, fmt.Errorf("failed to read latest record for topic %s partition %d: %w", topic, partitionInt, err)
 	}
 
-	if lastRecord == nil {
+	if lastRecordPerPart == nil {
 		slog.DebugContext(ctx, "compute last restored offset: no last record found", "topic", topic, "partition", partitionInt)
 		return -1, nil
 	}
 
 	// if there is no last record, just start from -1
-	rec := lastRecord[partitionInt]
+	rec := lastRecordPerPart[partitionInt]
+	if rec == nil {
+		slog.DebugContext(ctx, "compute last restored offset: no last record found", "topic", topic, "partition", partitionInt)
+		return -1, nil
+	}
+
 	lastRestoredOffset, err := GetSourceOffsetFromHeader(rec)
 	if err != nil {
 		return -1, fmt.Errorf("failed to get original offset from header: %w", err)

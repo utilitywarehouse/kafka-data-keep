@@ -44,6 +44,10 @@ func TestReadLastRecords(t *testing.T) {
 	kadmClient := kadm.NewClient(adminClient)
 	t.Cleanup(kadmClient.Close)
 
+	reader, err := NewLatestReader([]string{seedBroker}, nil)
+	require.NoError(t, err)
+	t.Cleanup(reader.Close)
+
 	t.Run("FullConsumption", func(t *testing.T) {
 		t.Parallel()
 
@@ -67,10 +71,6 @@ func TestReadLastRecords(t *testing.T) {
 				require.NoError(t, result.FirstErr())
 			}
 		}
-
-		reader, err := NewLatestReader([]string{seedBroker}, nil)
-		require.NoError(t, err)
-		defer reader.Close()
 
 		records, err := reader.Read(ctx, topic)
 		require.NoError(t, err)
@@ -129,7 +129,7 @@ func TestReadLastRecords(t *testing.T) {
 		_, err = kadmClient.DeleteRecords(ctx, delMap)
 		require.NoError(t, err)
 
-		records, err := ReadLatest(ctx, []string{seedBroker}, nil, topic)
+		records, err := reader.Read(ctx, topic)
 		require.NoError(t, err)
 
 		// Verification
@@ -153,12 +153,12 @@ func TestReadLastRecords(t *testing.T) {
 		require.NoError(t, err)
 
 		// Consume all partitions
-		records, err := ReadLatest(ctx, []string{seedBroker}, nil, topic)
+		records, err := reader.Read(ctx, topic)
 		require.NoError(t, err)
 		assert.Empty(t, records, "Should return empty map for empty topic")
 
 		// Consume a single partition
-		records, err = ReadLatest(ctx, []string{seedBroker}, nil, topic, int32(3))
+		records, err = reader.Read(ctx, topic, int32(3))
 		require.NoError(t, err)
 		assert.Empty(t, records, "Should return empty map for empty topic when reading a single partition")
 	})

@@ -2,6 +2,7 @@ package restore
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal"
+	kafkaint "github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
 )
 
@@ -53,10 +55,20 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	defer planConsumer.Close()
 
 	slog.InfoContext(ctx, "Starting restore application...")
+
+	seedBrokers := planConsumer.OptValue(kgo.SeedBrokers).([]string)
+	tlsConfig := planConsumer.OptValue(kgo.DialTLSConfig).(*tls.Config)
+	latestReader, err := kafkaint.NewLatestReader(seedBrokers, tlsConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create latest reader: %w", err)
+	}
+	defer latestReader.Close()
+
 	restorer := kafkaS3Restorer{
-		consumer: planConsumer,
-		s3Client: s3Client,
-		cfg:      cfg,
+		consumer:     planConsumer,
+		s3Client:     s3Client,
+		cfg:          cfg,
+		latestReader: latestReader,
 	}
 	return restorer.Run(ctx)
 }
