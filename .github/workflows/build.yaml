@@ -2,8 +2,6 @@ name: build
 
 on:
   push:
-    branches:
-      - "*"
     tags:
       - "v*"
   pull_request:
@@ -44,6 +42,11 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ github.head_ref }},enable=${{ github.event_name == 'pull_request' }}
       - name: Login to Quay.io Container Registry
         uses: docker/login-action@v3
         with:
