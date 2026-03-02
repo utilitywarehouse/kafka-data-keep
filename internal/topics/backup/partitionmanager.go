@@ -181,3 +181,16 @@ func (m *partitionsWriterManager) PauseIdleWriters(ctx context.Context) error {
 	}
 	return errors.Join(errs...)
 }
+
+func (m *partitionsWriterManager) FlushAll(ctx context.Context) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	var errs []error
+	for _, w := range m.writers {
+		if err := w.flushLocked(ctx); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
