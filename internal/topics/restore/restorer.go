@@ -101,18 +101,23 @@ func (r *kafkaS3Restorer) computeLastRestoredOffset(ctx context.Context, topic s
 	seedBrokers := r.consumer.OptValue(kgo.SeedBrokers).([]string)    //nolint:errcheck // this would fail only if the franz-go lib changes, and we'll catch that in integration tests
 	tlsConfig := r.consumer.OptValue(kgo.DialTLSConfig).(*tls.Config) //nolint:errcheck // this would fail only if the franz-go lib changes, and we'll catch that in integration tests
 
-	lastRecord, err := kafkaint.ReadLatest(ctx, seedBrokers, tlsConfig, r.restoreTopicName(topic), partitionInt)
+	lastRecordPerPart, err := kafkaint.ReadLatest(ctx, seedBrokers, tlsConfig, r.restoreTopicName(topic), partitionInt)
 	if err != nil {
 		return -1, fmt.Errorf("failed to read latest record for topic %s partition %d: %w", topic, partitionInt, err)
 	}
 
-	if lastRecord == nil {
+	if lastRecordPerPart == nil {
 		slog.DebugContext(ctx, "compute last restored offset: no last record found", "topic", topic, "partition", partitionInt)
 		return -1, nil
 	}
 
 	// if there is no last record, just start from -1
-	rec := lastRecord[partitionInt]
+	rec := lastRecordPerPart[partitionInt]
+	if rec == nil {
+		slog.DebugContext(ctx, "compute last restored offset: no last record found", "topic", topic, "partition", partitionInt)
+		return -1, nil
+	}
+
 	lastRestoredOffset, err := GetSourceOffsetFromHeader(rec)
 	if err != nil {
 		return -1, fmt.Errorf("failed to get original offset from header: %w", err)
