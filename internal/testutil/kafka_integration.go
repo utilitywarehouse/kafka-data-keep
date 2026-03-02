@@ -220,6 +220,9 @@ func ReadAll(t *testing.T, topic string, kafkaBrokers string) ([]*kgo.Record, er
 			}
 
 			fetches.EachPartition(func(ftp kgo.FetchTopicPartition) {
+				if len(ftp.Records) == 0 {
+					return
+				}
 				records = append(records, ftp.Records...)
 				lastRecord := ftp.Records[len(ftp.Records)-1]
 
