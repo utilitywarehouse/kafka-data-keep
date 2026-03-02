@@ -119,12 +119,17 @@ func (p *planner) filterTopics(topics []string) ([]string, error) {
 	}
 
 	var result []string
+	included := make(map[string]struct{}, len(topics))
 	/* we want the result to be ordered by the included topics regex list */
 	for _, includeRegex := range includeRegexes {
 		for _, topic := range topics {
 			/* include the topic if it matches the regex and doesn't match any of the exclude regexes'*/
 			if includeRegex.MatchString(topic) && !internal.MatchesAny(topic, excludeRegexes) {
-				result = append(result, topic)
+				_, alreadyIncluded := included[topic]
+				if !alreadyIncluded {
+					result = append(result, topic)
+					included[topic] = struct{}{}
+				}
 			}
 		}
 	}
