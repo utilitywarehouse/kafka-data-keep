@@ -395,6 +395,9 @@ func (r *Restorer) searchOffset(ctx context.Context, entry groupOffset, startOff
 		"restored_record_source_offset", firstRecSrcOffset)
 
 	for i, rec := range recs {
+		if i == 0 { // we already checked the first record earlier, so skipping it
+			continue
+		}
 		srcOff, err := topicsrestore.GetSourceOffsetFromHeader(rec)
 		if err != nil {
 			return -1, fmt.Errorf("reading source offset: %w", err)

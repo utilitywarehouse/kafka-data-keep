@@ -139,11 +139,13 @@ func runPauseIdleWriters(ctx context.Context, pwManager *partitionsWriterManager
 	tickerMillis := min(pwManager.config.PartitionIdleThreshold.Milliseconds(), time.Minute.Milliseconds())
 	slog.InfoContext(ctx, "Start pausing idle writers", "interval", tickerMillis)
 
+	ticker := time.NewTicker(time.Duration(tickerMillis) * time.Millisecond)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-time.Tick(time.Duration(tickerMillis) * time.Millisecond):
+		case <-ticker.C:
 			if err := pwManager.PauseIdleWriters(ctx); err != nil {
 				return fmt.Errorf("failed pausing idle writers: %w", err)
 			}
