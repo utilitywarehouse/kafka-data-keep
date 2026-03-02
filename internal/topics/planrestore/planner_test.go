@@ -62,6 +62,12 @@ func TestPlanner_filterTopics(t *testing.T) {
 			inputTopics:        []string{"apple", "banana", "cherry"},
 			expected:           []string{"banana"},
 		},
+		{
+			name:        "Topic matches multiple include regexes",
+			topicsRegex: `accounting, accounting-support\.`,
+			inputTopics: []string{"accounting-support.test", "accounting.topic2", "pubsub.topic1", "pubsub.topic2", "pubsub.not-needed"},
+			expected:    []string{"accounting-support.test", "accounting.topic2"},
+		},
 	}
 
 	for _, tt := range tests {
