@@ -358,7 +358,12 @@ func (p *partitionWriter) commitOffset(ctx context.Context) error {
 		commitErr = err
 		close(done)
 	})
-	<-done
+
+	select {
+	case <-done:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 
 	return commitErr
 }
