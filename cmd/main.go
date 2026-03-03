@@ -65,7 +65,6 @@ func mainWrap() error {
 func loadTopicsBackupAppConfig(args []string) (topicsbackup.AppConfig, error) {
 	var cfg topicsbackup.AppConfig
 	fs := flag.NewFlagSet("topics-backup", flag.ExitOnError)
-
 	// Kafka Connection
 	fs.StringVar(
 		&cfg.Brokers,

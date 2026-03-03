@@ -19,8 +19,7 @@ import (
 
 // AppConfig holds the configuration for the consumer groups restore command.
 type AppConfig struct {
-	Brokers             string
-	BrokersDNSSrv       string
+	internal.KafkaConfig
 	S3Bucket            string
 	S3Region            string
 	S3Endpoint          string

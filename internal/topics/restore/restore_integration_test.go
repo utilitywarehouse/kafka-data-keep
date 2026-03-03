@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/utilitywarehouse/kafka-data-keep/internal"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/testutil"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/backup"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/planrestore"
@@ -88,7 +89,9 @@ func TestRestore(t *testing.T) {
 	// 8. Run Restore
 	restoreGroup := newRandomName("e2e-restore")
 	restoreCfg := restore.AppConfig{
-		Brokers:            kafkaBrokers,
+		KafkaConfig: internal.KafkaConfig{
+			Brokers: kafkaBrokers,
+		},
 		PlanTopic:          planTopic,
 		RestoreTopicPrefix: "restored-",
 		ConsumerGroup:      restoreGroup,
@@ -258,7 +261,9 @@ func runPlanRestore(ctx context.Context, t *testing.T, kadmClient *kadm.Client, 
 
 	// Run Plan Restore
 	planCfg := planrestore.AppConfig{
-		Brokers:            kafkaBrokers,
+		KafkaConfig: internal.KafkaConfig{
+			Brokers: kafkaBrokers,
+		},
 		PlanTopic:          planTopic,
 		S3Bucket:           bucketName,
 		S3Prefix:           s3Prefix,
@@ -304,7 +309,9 @@ func feedTopicAndRunBackup(t *testing.T, kadmClient *kadm.Client, kafkaBrokers s
 	workingDir := t.TempDir()
 
 	backupCfg := backup.AppConfig{
-		Brokers:                kafkaBrokers,
+		KafkaConfig: internal.KafkaConfig{
+			Brokers: kafkaBrokers,
+		},
 		TopicsRegex:            srcTopic,
 		GroupID:                backupGroup,
 		MinFileSize:            1, // minimum file size to force flush and commit after every batch read from kafka

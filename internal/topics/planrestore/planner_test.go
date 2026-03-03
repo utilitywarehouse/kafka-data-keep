@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/utilitywarehouse/kafka-data-keep/internal"
 )
 
 func TestPlanner_filterTopics(t *testing.T) {
@@ -74,6 +75,9 @@ func TestPlanner_filterTopics(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			p := &planner{
 				cfg: AppConfig{
+					KafkaConfig: internal.KafkaConfig{
+						Brokers: "localhost:9092",
+					},
 					RestoreTopicsRegex: tt.topicsRegex,
 					ExcludeTopicsRegex: tt.excludeTopicsRegex,
 				},

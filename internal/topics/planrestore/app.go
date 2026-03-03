@@ -16,8 +16,7 @@ import (
 )
 
 type AppConfig struct {
-	Brokers            string
-	BrokersDNSSrv      string
+	internal.KafkaConfig
 	RestoreTopicsRegex string
 	ExcludeTopicsRegex string
 	PlanTopic          string
