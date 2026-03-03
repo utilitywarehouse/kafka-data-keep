@@ -573,6 +573,7 @@ func TestBackupIntegration(t *testing.T) {
 			S3Prefix:               s3Prefix,
 			S3Endpoint:             s3Endpoint,
 			S3Region:               testutil.MinioRegion,
+			EnableFlushOnSignal:    true,
 		}
 
 		// Run backup with a cancellable context
