@@ -12,19 +12,19 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/utilitywarehouse/kafka-data-keep/internal"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec/avro"
 	ints3 "github.com/utilitywarehouse/kafka-data-keep/internal/s3"
 	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
 )
 
 type AppConfig struct {
-	Brokers       string
-	BrokersDNSSrv string
-	S3Bucket      string
-	S3Region      string
-	S3Endpoint    string
-	S3Location    string
-	RunInterval   time.Duration
+	internal.KafkaConfig
+	S3Bucket    string
+	S3Region    string
+	S3Endpoint  string
+	S3Location  string
+	RunInterval time.Duration
 }
 
 func Run(ctx context.Context, cfg AppConfig) error {

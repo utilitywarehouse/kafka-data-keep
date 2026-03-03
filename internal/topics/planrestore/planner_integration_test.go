@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/utilitywarehouse/kafka-data-keep/internal"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/testutil"
 )
 
@@ -59,7 +60,9 @@ func TestPlanRestoreIntegration(t *testing.T) {
 
 	// 3. Run planner
 	cfg := AppConfig{
-		Brokers:            kafkaBrokers,
+		KafkaConfig: internal.KafkaConfig{
+			Brokers: kafkaBrokers,
+		},
 		PlanTopic:          planTopic,
 		S3Bucket:           bucketName,
 		S3Prefix:           "kafka-backup",

@@ -6,6 +6,11 @@ import (
 	"strings"
 )
 
+type KafkaConfig struct {
+	Brokers       string
+	BrokersDNSSrv string
+}
+
 func CompileRegexes(regexStr string) ([]*regexp.Regexp, error) {
 	var regexes []*regexp.Regexp
 	if regexStr != "" {
