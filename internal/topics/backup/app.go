@@ -33,6 +33,7 @@ type AppConfig struct {
 	S3Endpoint             string
 	S3Region               string
 	S3Prefix               string
+	EnableFlushOnSignal    bool
 }
 
 func Run(ctx context.Context, cfg AppConfig) error {
@@ -99,9 +100,11 @@ func Run(ctx context.Context, cfg AppConfig) error {
 		return runPauseIdleWriters(ctx, mgr)
 	})
 
-	eg.Go(func() error {
-		return runFlushOnSignal(ctx, mgr)
-	})
+	if cfg.EnableFlushOnSignal {
+		eg.Go(func() error {
+			return runFlushOnSignal(ctx, mgr)
+		})
+	}
 
 	err = eg.Wait()
 	slog.InfoContext(ctx, "Backup application exiting .... running cleanup", "error", err)

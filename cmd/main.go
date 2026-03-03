@@ -148,6 +148,7 @@ func loadTopicsBackupAppConfig(args []string) (topicsbackup.AppConfig, error) {
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
 	}
+	cfg.EnableFlushOnSignal = true
 	return cfg, nil
 }
 
