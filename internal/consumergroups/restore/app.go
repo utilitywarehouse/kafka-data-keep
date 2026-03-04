@@ -14,7 +14,6 @@ import (
 	"github.com/utilitywarehouse/kafka-data-keep/internal"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec/avro"
-	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
 )
 
 // AppConfig holds the configuration for the consumer groups restore command.
@@ -157,18 +156,10 @@ func initS3Client(ctx context.Context, cfg AppConfig) (*s3.Client, error) {
 	return s3Client, nil
 }
 
-func initKafkaClient(cfg AppConfig) (*kafka.Client, error) {
-	var connectOpt kgo.Opt
-
-	if cfg.BrokersDNSSrv != "" {
-		connectOpt = kafka.SeedBrokersFromDNS(cfg.BrokersDNSSrv)
-	} else if cfg.Brokers != "" {
-		connectOpt = kgo.SeedBrokers(internal.SplitAndTrim(cfg.Brokers, ",")...)
-	}
-
-	client, err := kafka.NewClient(connectOpt)
+func initKafkaClient(cfg AppConfig) (*kgo.Client, error) {
+	opts, err := internal.KafkaConnOpts(cfg.KafkaConfig)
 	if err != nil {
 		return nil, err
 	}
-	return client, nil
+	return kgo.NewClient(opts...)
 }

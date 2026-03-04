@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -15,7 +14,6 @@ import (
 	"github.com/utilitywarehouse/kafka-data-keep/internal"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec/avro"
 	ints3 "github.com/utilitywarehouse/kafka-data-keep/internal/s3"
-	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
 )
 
 type AppConfig struct {
@@ -59,7 +57,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	}
 	defer client.Close()
 
-	kadmClient := kadm.NewClient(client.Client)
+	kadmClient := kadm.NewClient(client)
 	defer kadmClient.Close()
 
 	encFactory := &avro.GroupEncoderFactory{}
@@ -80,13 +78,10 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	}
 }
 
-func initKafkaClient(cfg AppConfig) (*kafka.Client, error) {
-	var connectOpt kgo.Opt
-	if cfg.BrokersDNSSrv != "" {
-		connectOpt = kafka.SeedBrokersFromDNS(cfg.BrokersDNSSrv)
-	} else if cfg.Brokers != "" {
-		connectOpt = kgo.SeedBrokers(strings.Split(cfg.Brokers, ",")...)
+func initKafkaClient(cfg AppConfig) (*kgo.Client, error) {
+	opts, err := internal.KafkaConnOpts(cfg.KafkaConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	return kafka.NewClient(connectOpt)
+	return kgo.NewClient(opts...)
 }
