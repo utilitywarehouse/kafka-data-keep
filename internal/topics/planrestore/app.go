@@ -74,15 +74,15 @@ func Run(ctx context.Context, cfg AppConfig) error {
 }
 
 func initKafkaClient(cfg AppConfig) (*kafka.Client, error) {
-	opts := []kgo.Opt{
+	opts, err := internal.KafkaConnOpts(cfg.KafkaConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	opts = append(opts, []kgo.Opt{
 		kafka.WithTracer(nil), // do not record traces
 		kgo.DefaultProduceTopic(cfg.PlanTopic),
-	}
-	if cfg.BrokersDNSSrv != "" {
-		opts = append(opts, kafka.SeedBrokersFromDNS(cfg.BrokersDNSSrv))
-	} else {
-		opts = append(opts, kgo.SeedBrokers(internal.SplitAndTrim(cfg.Brokers, ",")...))
-	}
+	}...)
 
 	return kafka.NewClient(opts...)
 }

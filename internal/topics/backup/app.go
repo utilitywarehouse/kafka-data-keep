@@ -112,7 +112,12 @@ func Run(ctx context.Context, cfg AppConfig) error {
 
 const maxPollRecords = 10000 // this affects how many records are processed per poll, not how many are fetched from Kafka
 func initKafkaClient(cfg AppConfig, mgr *partitionsWriterManager) (*kafka.Client, error) {
-	opts := []kgo.Opt{
+	opts, err := internal.KafkaConnOpts(cfg.KafkaConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	opts = append(opts, []kgo.Opt{
 		kgo.ConsumeRegex(), // use regex to consume topics
 		kgo.ConsumeTopics(internal.SplitAndTrim(cfg.TopicsRegex, ",")...),
 		kafka.WithMaxPollRecords(maxPollRecords),
@@ -130,12 +135,8 @@ func initKafkaClient(cfg AppConfig, mgr *partitionsWriterManager) (*kafka.Client
 		kgo.OnPartitionsLost(func(ctx context.Context, _ *kgo.Client, p map[string][]int32) {
 			mgr.OnPartitionLost(ctx, p)
 		}),
-	}
-	if cfg.BrokersDNSSrv != "" {
-		opts = append(opts, kafka.SeedBrokersFromDNS(cfg.BrokersDNSSrv))
-	} else {
-		opts = append(opts, kgo.SeedBrokers(internal.SplitAndTrim(cfg.Brokers, ",")...))
-	}
+	}...)
+
 	if cfg.ExcludeTopicsRegex != "" {
 		opts = append(opts, kgo.ConsumeExcludeTopics(internal.SplitAndTrim(cfg.ExcludeTopicsRegex, ",")...))
 	}

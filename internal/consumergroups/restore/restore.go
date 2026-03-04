@@ -14,7 +14,6 @@ import (
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec"
 	kafkaint "github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 	topicsrestore "github.com/utilitywarehouse/kafka-data-keep/internal/topics/restore"
-	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
 )
 
 // groupOffset holds a single consumer group's offset for one partition.
@@ -36,7 +35,7 @@ type Restorer struct {
 }
 
 // NewRestorer creates a new Restorer.
-func NewRestorer(client *kafka.Client, restoreGroupsPrefix, restoreTopicsPrefix string) (*Restorer, error) {
+func NewRestorer(client *kgo.Client, restoreGroupsPrefix, restoreTopicsPrefix string) (*Restorer, error) {
 	// read the connection config from the initialised client
 	seedBrokers := client.OptValue(kgo.SeedBrokers).([]string)    //nolint:errcheck // this would fail only if the franz-go lib changes, and we'll catch that in integration tests
 	tlsConfig := client.OptValue(kgo.DialTLSConfig).(*tls.Config) //nolint:errcheck // this would fail only if the franz-go lib changes, and we'll catch that in integration tests
@@ -54,7 +53,7 @@ func NewRestorer(client *kafka.Client, restoreGroupsPrefix, restoreTopicsPrefix 
 	}
 
 	return &Restorer{
-		kadmClient:          kadm.NewClient(client.Client),
+		kadmClient:          kadm.NewClient(client),
 		restoreGroupsPrefix: restoreGroupsPrefix,
 		restoreTopicsPrefix: restoreTopicsPrefix,
 		consumeClient:       consumeClient,
