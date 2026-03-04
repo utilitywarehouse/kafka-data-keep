@@ -3,12 +3,16 @@ package internal
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/plugin/kotel"
+	"github.com/twmb/franz-go/plugin/kslog"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/crypto/tlsconfig"
 )
 
@@ -75,6 +79,18 @@ func KafkaConnOpts(cfg KafkaConfig) ([]kgo.Opt, error) {
 	return opts, nil
 }
 
+func KafkaBaseOpts(cfg KafkaConfig) ([]kgo.Opt, error) {
+	opts, err := KafkaConnOpts(cfg)
+	if err != nil {
+		return nil, err
+	}
+	opts = append(opts,
+		kgo.WithHooks(kotel.NewMeter()), // record metrics
+		kgo.WithLogger(kslog.New(NewSlogger(slog.LevelInfo))),
+	)
+	return opts, nil
+}
+
 func seedBrokers(cfg KafkaConfig) ([]string, error) {
 	if cfg.BrokersDNSSrv != "" {
 		return resolveSeedBrokersFromDNS(cfg.BrokersDNSSrv)
@@ -102,4 +118,14 @@ func resolveSeedBrokersFromDNS(srvAddress string) ([]string, error) {
 		brokers[i] = net.JoinHostPort(addr.Target, strconv.Itoa(int(addr.Port)))
 	}
 	return brokers, nil
+}
+
+func NewSlogger(level slog.Leveler) *slog.Logger {
+	handler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		AddSource: true,
+		Level:     level,
+	})
+
+	logger := slog.New(handler)
+	return logger
 }

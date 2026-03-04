@@ -74,7 +74,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 }
 
 func initKafkaClient(cfg AppConfig) (*kafka.Client, error) {
-	opts, err := internal.KafkaConnOpts(cfg.KafkaConfig)
+	opts, err := internal.KafkaBaseOpts(cfg.KafkaConfig)
 	if err != nil {
 		return nil, err
 	}

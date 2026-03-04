@@ -83,7 +83,7 @@ func initKafkaConsumer(cfg AppConfig) (*kafka.SimpleConsumer, error) {
 		kgo.HeartbeatInterval(15 * time.Second),        // increase heartbeat interval to 15 seconds, as processing a record is slow (~1s / record)
 		kgo.RecordPartitioner(kgo.ManualPartitioner()), // use a manual partitioner, as all the restore records have a partition set and we should keep the same partition
 	}
-	connOpts, err := internal.KafkaConnOpts(cfg.KafkaConfig)
+	connOpts, err := internal.KafkaBaseOpts(cfg.KafkaConfig)
 	if err != nil {
 		return nil, err
 	}

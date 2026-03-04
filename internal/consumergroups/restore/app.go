@@ -157,7 +157,7 @@ func initS3Client(ctx context.Context, cfg AppConfig) (*s3.Client, error) {
 }
 
 func initKafkaClient(cfg AppConfig) (*kgo.Client, error) {
-	opts, err := internal.KafkaConnOpts(cfg.KafkaConfig)
+	opts, err := internal.KafkaBaseOpts(cfg.KafkaConfig)
 	if err != nil {
 		return nil, err
 	}

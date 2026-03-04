@@ -16,7 +16,6 @@ import (
 	"github.com/utilitywarehouse/kafka-data-keep/internal"
 	ints3 "github.com/utilitywarehouse/kafka-data-keep/internal/s3"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/codec/avro"
-	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -110,8 +109,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	return err
 }
 
-const maxPollRecords = 10000 // this affects how many records are processed per poll, not how many are fetched from Kafka
-func initKafkaClient(cfg AppConfig, mgr *partitionsWriterManager) (*kafka.Client, error) {
+func initKafkaClient(cfg AppConfig, mgr *partitionsWriterManager) (*kgo.Client, error) {
 	opts, err := internal.KafkaConnOpts(cfg.KafkaConfig)
 	if err != nil {
 		return nil, err
@@ -120,9 +118,7 @@ func initKafkaClient(cfg AppConfig, mgr *partitionsWriterManager) (*kafka.Client
 	opts = append(opts, []kgo.Opt{
 		kgo.ConsumeRegex(), // use regex to consume topics
 		kgo.ConsumeTopics(internal.SplitAndTrim(cfg.TopicsRegex, ",")...),
-		kafka.WithMaxPollRecords(maxPollRecords),
-		kafka.WithConsumeOldestOffset(),
-		kafka.WithTracer(nil), // do not record traces
+		kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()),
 		kgo.ConsumerGroup(cfg.GroupID),
 		kgo.DisableAutoCommit(),    // We will commit manually
 		kgo.BlockRebalanceOnPoll(), // block rebalance while processing records
@@ -141,7 +137,7 @@ func initKafkaClient(cfg AppConfig, mgr *partitionsWriterManager) (*kafka.Client
 		opts = append(opts, kgo.ConsumeExcludeTopics(internal.SplitAndTrim(cfg.ExcludeTopicsRegex, ",")...))
 	}
 
-	return kafka.NewClient(opts...)
+	return kgo.NewClient(opts...)
 }
 
 func runPauseIdleWriters(ctx context.Context, pwManager *partitionsWriterManager) error {
