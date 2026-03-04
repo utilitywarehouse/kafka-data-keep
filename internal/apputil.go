@@ -9,11 +9,16 @@ import (
 	"strings"
 
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/crypto/tlsconfig"
 )
 
 type KafkaConfig struct {
 	Brokers       string
 	BrokersDNSSrv string
+	MTLSAuth      bool
+	MTLSCA        string
+	MTLSCert      string
+	MTLSKey       string
 }
 
 func CompileRegexes(regexStr string) ([]*regexp.Regexp, error) {
@@ -53,8 +58,21 @@ func KafkaConnOpts(cfg KafkaConfig) ([]kgo.Opt, error) {
 		return nil, fmt.Errorf("failed constructing the kafka connection options: %w", err)
 	}
 
-	// todo[sb] add TLS options
-	return []kgo.Opt{kgo.SeedBrokers(brokers...)}, nil
+	opts := []kgo.Opt{kgo.SeedBrokers(brokers...)}
+
+	if cfg.MTLSAuth {
+		tlsCfg, err := tlsconfig.New(
+			tlsconfig.WithCAPath(cfg.MTLSCA),
+			tlsconfig.WithCertPath(cfg.MTLSCert),
+			tlsconfig.WithKeyPath(cfg.MTLSKey),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create TLS config: %w", err)
+		}
+		opts = append(opts, kgo.DialTLSConfig(tlsCfg))
+	}
+
+	return opts, nil
 }
 
 func seedBrokers(cfg KafkaConfig) ([]string, error) {

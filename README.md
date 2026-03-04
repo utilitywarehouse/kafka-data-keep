@@ -60,6 +60,10 @@ The `topics-backup` subcommand supports the following flags and environment vari
 | :--- | :--- | :--- | :--- |
 | `-brokers` | `KAFKA_BROKERS` | `localhost:9092` | Kafka brokers (comma separated) |
 | `-brokersDNSSrv` | `KAFKA_BROKERS_DNS_SRV` | | DNS SRV record with the kafka seed brokers |
+| `-kafka-mtls-auth` | `KAFKA_MTLS_AUTH` | `false` | Kafka cluster uses mTLS authentication |
+| `-kafka-mtls-ca-cert-path` | `KAFKA_MTLS_CA_CERT_PATH` | `/certs/ca.crt` | The path of the file containing the CA cert |
+| `-kafka-mtls-client-cert-path` | `KAFKA_MTLS_CLIENT_CERT_PATH` | `/certs/tls.crt` | The path of the file containing the client cert |
+| `-kafka-mtls-client-key-path` | `KAFKA_MTLS_CLIENT_KEY_PATH` | `/certs/tls.key` | The path of the file containing the client private key |
 | `-topics-regex` | `KAFKA_TOPICS_REGEX` | `.*` | List of kafka topics regex to consume (comma separated) |
 | `-exclude-topics-regex` | `KAFKA_EXCLUDE_TOPICS_REGEX` | | List of kafka topics regex to exclude from consuming (comma separated) |
 | `-group-id` | `KAFKA_GROUP_ID` | `kafka-data-keep` | Kafka consumer group ID |
@@ -120,6 +124,10 @@ The `plan-restore` subcommand supports the following flags and environment varia
 | :--- | :--- | :--- | :--- |
 | `-brokers` | `KAFKA_BROKERS` | `localhost:9092` | Kafka brokers (comma separated) |
 | `-brokersDNSSrv` | `KAFKA_BROKERS_DNS_SRV` | | DNS SRV record with the kafka seed brokers |
+| `-kafka-mtls-auth` | `KAFKA_MTLS_AUTH` | `false` | Kafka cluster uses mTLS authentication |
+| `-kafka-mtls-ca-cert-path` | `KAFKA_MTLS_CA_CERT_PATH` | `/certs/ca.crt` | The path of the file containing the CA cert |
+| `-kafka-mtls-client-cert-path` | `KAFKA_MTLS_CLIENT_CERT_PATH` | `/certs/tls.crt` | The path of the file containing the client cert |
+| `-kafka-mtls-client-key-path` | `KAFKA_MTLS_CLIENT_KEY_PATH` | `/certs/tls.key` | The path of the file containing the client private key |
 | `-restore-topics-regex` | `RESTORE_TOPICS_REGEX` | `.*` | List of regex to match topics to restore (comma separated). The topics will be restored in the order specified in this list. |
 | `-exclude-topics-regex` | `EXCLUDE_TOPICS_REGEX` | | List of regex to exclude topics from restore (comma separated) |
 | `-plan-topic` | `PLAN_TOPIC` | `pubsub.plan-topic-restore` | Kafka topic to send the restore plan to |
@@ -176,6 +184,10 @@ The `topics-restore` subcommand supports the following flags and environment var
 |:------------------------|:-----------------------------| :--- | :--- |
 | `-brokers`              | `KAFKA_BROKERS`              | `localhost:9092` | Kafka brokers (comma separated) |
 | `-brokersDNSSrv`        | `KAFKA_BROKERS_DNS_SRV`      | | DNS SRV record with the kafka seed brokers |
+| `-kafka-mtls-auth`      | `KAFKA_MTLS_AUTH`            | `false` | Kafka cluster uses mTLS authentication |
+| `-kafka-mtls-ca-cert-path` | `KAFKA_MTLS_CA_CERT_PATH` | `/certs/ca.crt` | The path of the file containing the CA cert |
+| `-kafka-mtls-client-cert-path` | `KAFKA_MTLS_CLIENT_CERT_PATH` | `/certs/tls.crt` | The path of the file containing the client cert |
+| `-kafka-mtls-client-key-path` | `KAFKA_MTLS_CLIENT_KEY_PATH` | `/certs/tls.key` | The path of the file containing the client private key |
 | `-plan-topic`           | `KAFKA_PLAN_TOPIC`           | `pubsub.plan-topic-restore` | Kafka topic to consume the plan from |
 | `-restore-topic-prefix` | `KAFKA_RESTORE_TOPIC_PREFIX` | `pubsub.restore-test.` | Prefix to add to the restored topics |
 | `-group-id`             | `KAFKA_GROUP_ID`             | `pubsub.msk-data-keep-restore` | Kafka consumer group ID |
@@ -227,6 +239,10 @@ The `consumer-groups-backup` subcommand supports the following flags and environ
 | :--- | :--- | :--- | :--- |
 | `-brokers` | `KAFKA_BROKERS` | `localhost:9092` | Kafka brokers (comma separated) |
 | `-brokersDNSSrv` | `KAFKA_BROKERS_DNS_SRV` | | DNS SRV record with the kafka seed brokers |
+| `-kafka-mtls-auth` | `KAFKA_MTLS_AUTH` | `false` | Kafka cluster uses mTLS authentication |
+| `-kafka-mtls-ca-cert-path` | `KAFKA_MTLS_CA_CERT_PATH` | `/certs/ca.crt` | The path of the file containing the CA cert |
+| `-kafka-mtls-client-cert-path` | `KAFKA_MTLS_CLIENT_CERT_PATH` | `/certs/tls.crt` | The path of the file containing the client cert |
+| `-kafka-mtls-client-key-path` | `KAFKA_MTLS_CLIENT_KEY_PATH` | `/certs/tls.key` | The path of the file containing the client private key |
 | `-s3-bucket` | `S3_BUCKET` | | S3 bucket name where to store the backups |
 | `-s3-location` | `S3_LOCATION` | | The S3 location (full path key) to use for the backup file |
 | `-run-interval` | `RUN_INTERVAL` | `1m` | Interval between backups (duration, e.g. `30s`, `5m`) |
@@ -266,6 +282,10 @@ The `consumer-groups-restore` subcommand supports the following flags and enviro
 | :--- | :--- | :--- | :--- |
 | `-brokers` | `KAFKA_BROKERS` | `localhost:9092` | Kafka brokers (comma separated) |
 | `-brokersDNSSrv` | `KAFKA_BROKERS_DNS_SRV` | | DNS SRV record with the kafka seed brokers |
+| `-kafka-mtls-auth` | `KAFKA_MTLS_AUTH` | `false` | Kafka cluster uses mTLS authentication |
+| `-kafka-mtls-ca-cert-path` | `KAFKA_MTLS_CA_CERT_PATH` | `/certs/ca.crt` | The path of the file containing the CA cert |
+| `-kafka-mtls-client-cert-path` | `KAFKA_MTLS_CLIENT_CERT_PATH` | `/certs/tls.crt` | The path of the file containing the client cert |
+| `-kafka-mtls-client-key-path` | `KAFKA_MTLS_CLIENT_KEY_PATH` | `/certs/tls.key` | The path of the file containing the client private key |
 | `-s3-bucket` | `S3_BUCKET` | | S3 bucket name where the consumer groups backup is stored |
 | `-s3-location` | `S3_LOCATION` | | The S3 location (full path key) of the consumer groups backup file |
 | `-restore-groups-prefix` | `RESTORE_GROUPS_PREFIX` | | Prefix to add to the restored consumer group names |

@@ -9,6 +9,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.96.2
 	github.com/google/uuid v1.6.0
 	github.com/hamba/avro/v2 v2.31.0
+	github.com/johanbrandhorst/certify v1.9.0
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go/modules/minio v0.40.0
 	github.com/testcontainers/testcontainers-go/modules/redpanda v0.40.0
@@ -16,6 +17,7 @@ require (
 	github.com/twmb/franz-go/pkg/kadm v1.17.2
 	github.com/twmb/franz-go/pkg/kmsg v1.12.0
 	github.com/utilitywarehouse/go-operational v0.0.0-20250423084238-c80547bcb12b
+	github.com/utilitywarehouse/uwos-go/crypto/tlsconfig v1.4.4
 	github.com/utilitywarehouse/uwos-go/pubsub/kafka v1.9.0
 	github.com/utilitywarehouse/uwos-go/telemetry v1.41.0
 	github.com/utilitywarehouse/uwos-go/x/build v1.3.1
@@ -75,7 +77,6 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.1 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
-	github.com/johanbrandhorst/certify v1.9.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.18.4 // indirect
 	github.com/lmittmann/tint v1.1.2 // indirect
@@ -113,7 +114,6 @@ require (
 	github.com/tklauser/numcpus v0.10.0 // indirect
 	github.com/twmb/franz-go/plugin/kotel v1.6.0 // indirect
 	github.com/twmb/franz-go/plugin/kslog v1.0.0 // indirect
-	github.com/utilitywarehouse/uwos-go/crypto/tlsconfig v1.4.4 // indirect
 	github.com/utilitywarehouse/uwos-go/io v1.6.24 // indirect
 	github.com/utilitywarehouse/uwos-go/runtime/k8sruntime v1.5.3 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect

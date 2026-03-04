@@ -32,6 +32,17 @@ spec:
           env:
             - name: KAFKA_BROKERS
               value: TBD
+            # Convenient way of passing the seed brokers in a single DNS SRV record with the service name being "kafka"
+            - name: KAFKA_BROKERS_DNS_SRV
+              value: ""
+            - name: KAFKA_MTLS_AUTH
+              value: "false"
+            - name: KAFKA_MTLS_CA_CERT_PATH
+              value: /certs/ca.crt
+            - name: KAFKA_MTLS_CLIENT_CERT_PATH
+              value: /certs/tls.crt
+            - name: KAFKA_MTLS_CLIENT_KEY_PATH
+              value: /certs/tls.key
             - name: KAFKA_PLAN_TOPIC
               value: pubsub.plan-topic-restore
             - name: KAFKA_GROUP_ID
