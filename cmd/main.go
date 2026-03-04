@@ -78,6 +78,30 @@ func loadTopicsBackupAppConfig(args []string) (topicsbackup.AppConfig, error) {
 		getEnv("KAFKA_BROKERS_DNS_SRV", ""),
 		"DNS SRV record with the kafka seed brokers",
 	)
+	fs.BoolVar(
+		&cfg.MTLSAuth,
+		"kafka-mtls-auth",
+		getEnvBool("KAFKA_MTLS_AUTH", false),
+		"Kafka cluster uses mTLS authentication",
+	)
+	fs.StringVar(
+		&cfg.MTLSCA,
+		"kafka-mtls-ca-cert-path",
+		getEnv("KAFKA_MTLS_CA_CERT_PATH", "/certs/ca.crt"),
+		"The path of the file containing the CA cert",
+	)
+	fs.StringVar(
+		&cfg.MTLSCert,
+		"kafka-mtls-client-cert-path",
+		getEnv("KAFKA_MTLS_CLIENT_CERT_PATH", "/certs/tls.crt"),
+		"The path of the file containing the client cert",
+	)
+	fs.StringVar(
+		&cfg.MTLSKey,
+		"kafka-mtls-client-key-path",
+		getEnv("KAFKA_MTLS_CLIENT_KEY_PATH", "/certs/tls.key"),
+		"The path of the file containing the client private key",
+	)
 
 	// Kafka Consumer
 	fs.StringVar(
@@ -251,6 +275,30 @@ func loadTopicsPlanRestoreAppConfig(args []string) (topicsplanrestore.AppConfig,
 		getEnv("KAFKA_BROKERS_DNS_SRV", ""),
 		"DNS SRV record with the kafka seed brokers",
 	)
+	fs.BoolVar(
+		&cfg.MTLSAuth,
+		"kafka-mtls-auth",
+		getEnvBool("KAFKA_MTLS_AUTH", false),
+		"Kafka cluster uses mTLS authentication",
+	)
+	fs.StringVar(
+		&cfg.MTLSCA,
+		"kafka-mtls-ca-cert-path",
+		getEnv("KAFKA_MTLS_CA_CERT_PATH", "/certs/ca.crt"),
+		"The path of the file containing the CA cert",
+	)
+	fs.StringVar(
+		&cfg.MTLSCert,
+		"kafka-mtls-client-cert-path",
+		getEnv("KAFKA_MTLS_CLIENT_CERT_PATH", "/certs/tls.crt"),
+		"The path of the file containing the client cert",
+	)
+	fs.StringVar(
+		&cfg.MTLSKey,
+		"kafka-mtls-client-key-path",
+		getEnv("KAFKA_MTLS_CLIENT_KEY_PATH", "/certs/tls.key"),
+		"The path of the file containing the client private key",
+	)
 
 	fs.StringVar(
 		&cfg.RestoreTopicsRegex,
@@ -333,6 +381,30 @@ func loadTopicsRestoreAppConfig(args []string) (topicsrestore.AppConfig, error) 
 		getEnv("KAFKA_BROKERS_DNS_SRV", ""),
 		"DNS SRV record with the kafka seed brokers",
 	)
+	fs.BoolVar(
+		&cfg.MTLSAuth,
+		"kafka-mtls-auth",
+		getEnvBool("KAFKA_MTLS_AUTH", false),
+		"Kafka cluster uses mTLS authentication",
+	)
+	fs.StringVar(
+		&cfg.MTLSCA,
+		"kafka-mtls-ca-cert-path",
+		getEnv("KAFKA_MTLS_CA_CERT_PATH", "/certs/ca.crt"),
+		"The path of the file containing the CA cert",
+	)
+	fs.StringVar(
+		&cfg.MTLSCert,
+		"kafka-mtls-client-cert-path",
+		getEnv("KAFKA_MTLS_CLIENT_CERT_PATH", "/certs/tls.crt"),
+		"The path of the file containing the client cert",
+	)
+	fs.StringVar(
+		&cfg.MTLSKey,
+		"kafka-mtls-client-key-path",
+		getEnv("KAFKA_MTLS_CLIENT_KEY_PATH", "/certs/tls.key"),
+		"The path of the file containing the client private key",
+	)
 
 	// Kafka Consumer
 	fs.StringVar(
@@ -409,6 +481,17 @@ func getEnvDuration(key string, fallback time.Duration) time.Duration {
 	return fallback
 }
 
+func getEnvBool(key string, fallback bool) bool {
+	if value, ok := os.LookupEnv(key); ok {
+		b, err := strconv.ParseBool(value)
+		if err != nil {
+			return fallback
+		}
+		return b
+	}
+	return fallback
+}
+
 func consumerGroupsBackupCmd(ctx context.Context, args []string) error {
 	cfg, err := loadConsumerGroupsBackupAppConfig(args)
 	if err != nil {
@@ -436,6 +519,30 @@ func loadConsumerGroupsBackupAppConfig(args []string) (consumergroupsbackup.AppC
 		"brokersDNSSrv",
 		getEnv("KAFKA_BROKERS_DNS_SRV", ""),
 		"DNS SRV record with the kafka seed brokers",
+	)
+	fs.BoolVar(
+		&cfg.MTLSAuth,
+		"kafka-mtls-auth",
+		getEnvBool("KAFKA_MTLS_AUTH", false),
+		"Kafka cluster uses mTLS authentication",
+	)
+	fs.StringVar(
+		&cfg.MTLSCA,
+		"kafka-mtls-ca-cert-path",
+		getEnv("KAFKA_MTLS_CA_CERT_PATH", "/certs/ca.crt"),
+		"The path of the file containing the CA cert",
+	)
+	fs.StringVar(
+		&cfg.MTLSCert,
+		"kafka-mtls-client-cert-path",
+		getEnv("KAFKA_MTLS_CLIENT_CERT_PATH", "/certs/tls.crt"),
+		"The path of the file containing the client cert",
+	)
+	fs.StringVar(
+		&cfg.MTLSKey,
+		"kafka-mtls-client-key-path",
+		getEnv("KAFKA_MTLS_CLIENT_KEY_PATH", "/certs/tls.key"),
+		"The path of the file containing the client private key",
 	)
 
 	fs.StringVar(
@@ -504,6 +611,30 @@ func loadConsumerGroupsRestoreAppConfig(args []string) (consumergroupsrestore.Ap
 		"brokersDNSSrv",
 		getEnv("KAFKA_BROKERS_DNS_SRV", ""),
 		"DNS SRV record with the kafka seed brokers",
+	)
+	fs.BoolVar(
+		&cfg.MTLSAuth,
+		"kafka-mtls-auth",
+		getEnvBool("KAFKA_MTLS_AUTH", false),
+		"Kafka cluster uses mTLS authentication",
+	)
+	fs.StringVar(
+		&cfg.MTLSCA,
+		"kafka-mtls-ca-cert-path",
+		getEnv("KAFKA_MTLS_CA_CERT_PATH", "/certs/ca.crt"),
+		"The path of the file containing the CA cert",
+	)
+	fs.StringVar(
+		&cfg.MTLSCert,
+		"kafka-mtls-client-cert-path",
+		getEnv("KAFKA_MTLS_CLIENT_CERT_PATH", "/certs/tls.crt"),
+		"The path of the file containing the client cert",
+	)
+	fs.StringVar(
+		&cfg.MTLSKey,
+		"kafka-mtls-client-key-path",
+		getEnv("KAFKA_MTLS_CLIENT_KEY_PATH", "/certs/tls.key"),
+		"The path of the file containing the client private key",
 	)
 
 	fs.StringVar(
