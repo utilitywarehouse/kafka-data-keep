@@ -31,6 +31,14 @@ spec:
           env:
             - name: KAFKA_BROKERS
               value: TBD
+            - name: KAFKA_MTLS_AUTH
+              value: "false"
+            - name: KAFKA_MTLS_CA_CERT_PATH
+              value: /certs/ca.crt
+            - name: KAFKA_MTLS_CLIENT_CERT_PATH
+              value: /certs/tls.crt
+            - name: KAFKA_MTLS_CLIENT_KEY_PATH
+              value: /certs/tls.key
             - name: RESTORE_TOPICS_REGEX
               value: TBD
             - name: EXCLUDE_TOPICS_REGEX
