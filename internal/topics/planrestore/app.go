@@ -10,13 +10,12 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/utilitywarehouse/kafka-data-keep/internal"
-	internalkafka "github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
+	kafkaint "github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
 )
 
 type AppConfig struct {
-	internal.KafkaConfig
+	kafkaint.Config
 	RestoreTopicsRegex string
 	ExcludeTopicsRegex string
 	PlanTopic          string
@@ -56,7 +55,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 
 	seedBrokers := kafkaClient.OptValue(kgo.SeedBrokers).([]string)    //nolint:errcheck // this would fail only if the franz-go lib changes, and we'll catch that in integration tests
 	tlsConfig := kafkaClient.OptValue(kgo.DialTLSConfig).(*tls.Config) //nolint:errcheck // this would fail only if the franz-go lib changes, and we'll catch that in integration tests
-	latestReader, err := internalkafka.NewLatestReader(seedBrokers, tlsConfig)
+	latestReader, err := kafkaint.NewLatestReader(seedBrokers, tlsConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create latest reader: %w", err)
 	}
@@ -74,7 +73,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 }
 
 func initKafkaClient(cfg AppConfig) (*kafka.Client, error) {
-	opts, err := internal.KafkaBaseOpts(cfg.KafkaConfig)
+	opts, err := kafkaint.BaseOpts(cfg.Config)
 	if err != nil {
 		return nil, err
 	}

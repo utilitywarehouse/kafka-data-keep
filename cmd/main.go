@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"github.com/utilitywarehouse/go-operational/op"
-	"github.com/utilitywarehouse/kafka-data-keep/internal"
 	consumergroupsbackup "github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/backup"
 	consumergroupsrestore "github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/restore"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 	topicsbackup "github.com/utilitywarehouse/kafka-data-keep/internal/topics/backup"
 	topicsplanrestore "github.com/utilitywarehouse/kafka-data-keep/internal/topics/planrestore"
 	topicsrestore "github.com/utilitywarehouse/kafka-data-keep/internal/topics/restore"
@@ -66,7 +66,7 @@ func mainWrap() error {
 func loadTopicsBackupAppConfig(args []string) (topicsbackup.AppConfig, error) {
 	var cfg topicsbackup.AppConfig
 	fs := flag.NewFlagSet("topics-backup", flag.ExitOnError)
-	bindKafkaConfig(fs, &cfg.KafkaConfig)
+	bindKafkaConfig(fs, &cfg.Config)
 
 	// Kafka Consumer
 	fs.StringVar(
@@ -228,7 +228,7 @@ func loadTopicsPlanRestoreAppConfig(args []string) (topicsplanrestore.AppConfig,
 	var cfg topicsplanrestore.AppConfig
 	fs := flag.NewFlagSet("topics-plan-restore", flag.ExitOnError)
 
-	bindKafkaConfig(fs, &cfg.KafkaConfig)
+	bindKafkaConfig(fs, &cfg.Config)
 
 	fs.StringVar(
 		&cfg.RestoreTopicsRegex,
@@ -298,7 +298,7 @@ func loadTopicsRestoreAppConfig(args []string) (topicsrestore.AppConfig, error) 
 	var cfg topicsrestore.AppConfig
 	fs := flag.NewFlagSet("topics-restore", flag.ExitOnError)
 
-	bindKafkaConfig(fs, &cfg.KafkaConfig)
+	bindKafkaConfig(fs, &cfg.Config)
 
 	// Kafka Consumer
 	fs.StringVar(
@@ -402,7 +402,7 @@ func loadConsumerGroupsBackupAppConfig(args []string) (consumergroupsbackup.AppC
 	var cfg consumergroupsbackup.AppConfig
 	fs := flag.NewFlagSet("consumer-groups-backup", flag.ExitOnError)
 
-	bindKafkaConfig(fs, &cfg.KafkaConfig)
+	bindKafkaConfig(fs, &cfg.Config)
 
 	fs.StringVar(
 		&cfg.S3Bucket,
@@ -459,7 +459,7 @@ func loadConsumerGroupsRestoreAppConfig(args []string) (consumergroupsrestore.Ap
 	var cfg consumergroupsrestore.AppConfig
 	fs := flag.NewFlagSet("consumer-groups-restore", flag.ExitOnError)
 
-	bindKafkaConfig(fs, &cfg.KafkaConfig)
+	bindKafkaConfig(fs, &cfg.Config)
 
 	fs.StringVar(
 		&cfg.S3Bucket,
@@ -525,7 +525,7 @@ func loadConsumerGroupsRestoreAppConfig(args []string) (consumergroupsrestore.Ap
 	return cfg, nil
 }
 
-func bindKafkaConfig(fs *flag.FlagSet, cfg *internal.KafkaConfig) {
+func bindKafkaConfig(fs *flag.FlagSet, cfg *kafka.Config) {
 	fs.StringVar(
 		&cfg.Brokers,
 		"brokers",

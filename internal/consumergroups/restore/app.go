@@ -14,11 +14,12 @@ import (
 	"github.com/utilitywarehouse/kafka-data-keep/internal"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec/avro"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 )
 
 // AppConfig holds the configuration for the consumer groups restore command.
 type AppConfig struct {
-	internal.KafkaConfig
+	kafka.Config
 	S3Bucket            string
 	S3Region            string
 	S3Endpoint          string
@@ -157,7 +158,7 @@ func initS3Client(ctx context.Context, cfg AppConfig) (*s3.Client, error) {
 }
 
 func initKafkaClient(cfg AppConfig) (*kgo.Client, error) {
-	opts, err := internal.KafkaBaseOpts(cfg.KafkaConfig)
+	opts, err := kafka.BaseOpts(cfg.Config)
 	if err != nil {
 		return nil, err
 	}

@@ -17,10 +17,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/utilitywarehouse/kafka-data-keep/internal"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec/avro"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/restore"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/testutil"
 	topicsrestore "github.com/utilitywarehouse/kafka-data-keep/internal/topics/restore"
 )
@@ -194,7 +194,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 		// RestoreTopicsPrefix is empty: the topics created above are the restored topics directly.
 		// RestoreGroupsPrefix is "restored-": committed group IDs will be "restored-<original>".
 		restoreCfg := restore.AppConfig{
-			KafkaConfig: internal.KafkaConfig{
+			Config: kafka.Config{
 				Brokers: kafkaBrokers,
 			},
 			S3Bucket:            cgRestoreBucketName,
@@ -298,7 +298,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 		s3Location := writeBackupToS3(t, s3Client, cgRestoreBucketName, backupGroups)
 
 		restoreCfg := restore.AppConfig{
-			KafkaConfig: internal.KafkaConfig{
+			Config: kafka.Config{
 				Brokers: kafkaBrokers,
 			},
 			S3Bucket:            cgRestoreBucketName,
@@ -363,7 +363,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 		s3Location := writeBackupToS3(t, s3Client, cgRestoreBucketName, backupGroups)
 
 		restoreCfg := restore.AppConfig{
-			KafkaConfig: internal.KafkaConfig{
+			Config: kafka.Config{
 				Brokers: kafkaBrokers,
 			},
 			S3Bucket:            cgRestoreBucketName,
@@ -430,7 +430,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 		s3Location := writeBackupToS3(t, s3Client, cgRestoreBucketName, backupGroups)
 
 		restoreCfg := restore.AppConfig{
-			KafkaConfig: internal.KafkaConfig{
+			Config: kafka.Config{
 				Brokers: kafkaBrokers,
 			},
 			S3Bucket:            cgRestoreBucketName,
@@ -495,7 +495,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 		s3Location := writeBackupToS3(t, s3Client, cgRestoreBucketName, backupGroups)
 
 		restoreCfg := restore.AppConfig{
-			KafkaConfig: internal.KafkaConfig{
+			Config: kafka.Config{
 				Brokers: kafkaBrokers,
 			},
 			S3Bucket:            cgRestoreBucketName,

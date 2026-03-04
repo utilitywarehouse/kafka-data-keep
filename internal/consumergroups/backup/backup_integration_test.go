@@ -13,9 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/utilitywarehouse/kafka-data-keep/internal"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec/avro"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/testutil"
 )
 
@@ -82,7 +82,7 @@ func TestBackupIntegration(t *testing.T) {
 	runInterval := 500 * time.Millisecond
 
 	cfg := AppConfig{
-		KafkaConfig: internal.KafkaConfig{
+		Config: kafka.Config{
 			Brokers: kafkaBrokers,
 		},
 		S3Bucket:    bucketName,

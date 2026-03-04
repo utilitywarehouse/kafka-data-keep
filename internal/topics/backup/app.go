@@ -14,13 +14,14 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal"
+	kafkaint "github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 	ints3 "github.com/utilitywarehouse/kafka-data-keep/internal/s3"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/codec/avro"
 	"golang.org/x/sync/errgroup"
 )
 
 type AppConfig struct {
-	internal.KafkaConfig
+	kafkaint.Config
 	TopicsRegex            string
 	ExcludeTopicsRegex     string
 	GroupID                string
@@ -110,7 +111,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 }
 
 func initKafkaClient(cfg AppConfig, mgr *partitionsWriterManager) (*kgo.Client, error) {
-	opts, err := internal.KafkaConnOpts(cfg.KafkaConfig)
+	opts, err := kafkaint.ConnOpts(cfg.Config)
 	if err != nil {
 		return nil, err
 	}

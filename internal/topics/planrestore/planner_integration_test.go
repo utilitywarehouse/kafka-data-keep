@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/utilitywarehouse/kafka-data-keep/internal"
+	kafkaint "github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/testutil"
 )
 
@@ -60,7 +60,7 @@ func TestPlanRestoreIntegration(t *testing.T) {
 
 	// 3. Run planner
 	cfg := AppConfig{
-		KafkaConfig: internal.KafkaConfig{
+		Config: kafkaint.Config{
 			Brokers: kafkaBrokers,
 		},
 		PlanTopic:          planTopic,
