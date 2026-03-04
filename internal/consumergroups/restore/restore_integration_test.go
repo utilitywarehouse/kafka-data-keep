@@ -99,7 +99,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 		topic2 := randomName("test-multiple-2")
 
 		// Create two topics with two partitions each.
-		_, err = kadmClient.CreateTopic(ctx, 2, 1, nil, topic1)
+		_, err := kadmClient.CreateTopic(ctx, 2, 1, nil, topic1)
 		require.NoError(t, err)
 		_, err = kadmClient.CreateTopic(ctx, 2, 1, nil, topic2)
 		require.NoError(t, err)
@@ -259,7 +259,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 		restoredTopic := cgRestoreTopicPrefix + topic
 
 		// Create a single topic
-		_, err = kadmClient.CreateTopic(ctx, 2, 1, nil, restoredTopic)
+		_, err := kadmClient.CreateTopic(ctx, 2, 1, nil, restoredTopic)
 		require.NoError(t, err)
 
 		// write messages to this topic
@@ -328,7 +328,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 		topic := randomName("test-offset-after")
 
 		// Create a single topic
-		_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, topic)
+		_, err := kadmClient.CreateTopic(ctx, 1, 1, nil, topic)
 		require.NoError(t, err)
 
 		// write messages to this topic
@@ -394,7 +394,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 		restoreTopicName := restoreTopicPrefix + topic
 
 		// Create a single topic
-		_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, restoreTopicName)
+		_, err := kadmClient.CreateTopic(ctx, 1, 1, nil, restoreTopicName)
 		require.NoError(t, err)
 
 		// write messages to this topic
@@ -458,7 +458,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 		topic := randomName("test-offset-not-backed-up")
 
 		// Create a single topic
-		_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, topic)
+		_, err := kadmClient.CreateTopic(ctx, 1, 1, nil, topic)
 		require.NoError(t, err)
 
 		// write messages to this topic
