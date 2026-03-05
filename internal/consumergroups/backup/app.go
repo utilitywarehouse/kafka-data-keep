@@ -51,7 +51,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	s3Client := s3.NewFromConfig(awsCfg, s3ClientOpts...)
 	uploader := ints3.NewUploader(s3Client, cfg.S3Bucket)
 
-	client, err := initKafkaClient(cfg)
+	client, err := initKafkaClient(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("failed to create kafka client: %w", err)
 	}
@@ -78,10 +78,17 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	}
 }
 
-func initKafkaClient(cfg AppConfig) (*kgo.Client, error) {
+func initKafkaClient(ctx context.Context, cfg AppConfig) (*kgo.Client, error) {
 	opts, err := kafka.BaseOpts(cfg.Config)
 	if err != nil {
 		return nil, err
 	}
-	return kgo.NewClient(opts...)
+	client, err := kgo.NewClient(opts...)
+	if err != nil {
+		return client, err
+	}
+	if err := client.Ping(ctx); err != nil {
+		return client, fmt.Errorf("failed pinging kafka: %w", err)
+	}
+	return client, nil
 }

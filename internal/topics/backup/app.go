@@ -82,7 +82,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 		slog.InfoContext(ctx, "Finished closing partition manager", "error", err)
 	}()
 
-	client, err := initKafkaClient(cfg, mgr)
+	client, err := initKafkaClient(ctx, cfg, mgr)
 	if err != nil {
 		return fmt.Errorf("failed to create kafka client: %w", err)
 	}
@@ -110,7 +110,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	return err
 }
 
-func initKafkaClient(cfg AppConfig, mgr *partitionsWriterManager) (*kgo.Client, error) {
+func initKafkaClient(ctx context.Context, cfg AppConfig, mgr *partitionsWriterManager) (*kgo.Client, error) {
 	opts, err := kafkaint.BaseOpts(cfg.Config)
 	if err != nil {
 		return nil, err
@@ -138,7 +138,14 @@ func initKafkaClient(cfg AppConfig, mgr *partitionsWriterManager) (*kgo.Client, 
 		opts = append(opts, kgo.ConsumeExcludeTopics(internal.SplitAndTrim(cfg.ExcludeTopicsRegex, ",")...))
 	}
 
-	return kgo.NewClient(opts...)
+	client, err := kgo.NewClient(opts...)
+	if err != nil {
+		return client, err
+	}
+	if err := client.Ping(ctx); err != nil {
+		return client, fmt.Errorf("failed pinging kafka: %w", err)
+	}
+	return client, nil
 }
 
 func runPauseIdleWriters(ctx context.Context, pwManager *partitionsWriterManager) error {
