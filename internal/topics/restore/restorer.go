@@ -12,13 +12,12 @@ import (
 	kafkaint "github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/codec/avro"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/planrestore"
-	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
 )
 
 type kafkaS3Restorer struct {
-	s3Client *s3.Client
-	consumer *kafka.SimpleConsumer
-	cfg      AppConfig
+	s3Client    *s3.Client
+	kafkaClient *kgo.Client
+	cfg         AppConfig
 
 	// map containing the original offset of the last restored message per partition
 	lastProcessedOffsetByPartition map[string]int64
@@ -28,15 +27,41 @@ type kafkaS3Restorer struct {
 
 func (r *kafkaS3Restorer) Run(ctx context.Context) error {
 	r.lastProcessedOffsetByPartition = make(map[string]int64)
-	return r.consumer.Consume(ctx, func(ctx context.Context, rec *kgo.Record) error {
-		key := string(rec.Value)
-		err := r.restoreFile(ctx, key)
-		if err != nil {
-			return fmt.Errorf("failed restoring file %s: %w", key, err)
+
+	c := r.kafkaClient
+	defer func() {
+		/*	commit using background context to make sure it is not interrupted by a context canceled */
+		if err := c.CommitMarkedOffsets(context.Background()); err != nil {
+			slog.ErrorContext(ctx, "failed committing marked offsets on consume stop", slog.Any("error", err))
+		}
+		c.AllowRebalance()
+	}()
+
+	for {
+		// use a low max poll, as it takes ~1s to process one record, and we should give it a chance to process rebalances.
+		f := c.PollRecords(ctx, 10)
+		stopProcessing, err := kafkaint.HandleFetches(ctx, &f)
+		if stopProcessing || err != nil {
+			return err
 		}
 
-		return err
-	})
+		it := f.RecordIter()
+
+		for !it.Done() {
+			if ctx.Err() != nil { // check if context was cancelled
+				return nil // nolint:nilerr
+			}
+			rec := it.Next()
+
+			key := string(rec.Value)
+			err := r.restoreFile(ctx, key)
+			if err != nil {
+				return fmt.Errorf("failed restoring file %s: %w", key, err)
+			}
+			c.MarkCommitRecords(rec)
+		}
+		c.AllowRebalance()
+	}
 }
 
 func (r *kafkaS3Restorer) restoreFile(ctx context.Context, key string) error {
@@ -62,7 +87,7 @@ func (r *kafkaS3Restorer) restoreFile(ctx context.Context, key string) error {
 	// getting the original topic offset before calling ProduceSync, as on this method the offset will be overwritten with the actual offset in the target topic
 	lastRecordOffset := recs[len(recs)-1].Offset
 
-	res := r.consumer.ProduceSync(ctx, recs...)
+	res := r.kafkaClient.ProduceSync(ctx, recs...)
 	if res.FirstErr() != nil {
 		return fmt.Errorf("failed to produce records: %w", res.FirstErr())
 	}

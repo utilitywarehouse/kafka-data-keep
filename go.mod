@@ -20,7 +20,6 @@ require (
 	github.com/twmb/franz-go/plugin/kslog v1.0.0
 	github.com/utilitywarehouse/go-operational v0.0.0-20250423084238-c80547bcb12b
 	github.com/utilitywarehouse/uwos-go/crypto/tlsconfig v1.4.4
-	github.com/utilitywarehouse/uwos-go/pubsub/kafka v1.9.0
 	github.com/utilitywarehouse/uwos-go/telemetry v1.41.0
 	github.com/utilitywarehouse/uwos-go/x/build v1.3.1
 	go.opentelemetry.io/otel v1.41.0
@@ -69,6 +68,7 @@ require (
 	github.com/envoyproxy/go-control-plane/envoy v1.36.0 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.2.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
+	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.1 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -142,6 +142,7 @@ require (
 	golang.org/x/oauth2 v0.30.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
+	golang.org/x/time v0.5.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20251124214823-79d6a2a48846 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251124214823-79d6a2a48846 // indirect
 	google.golang.org/grpc v1.75.1 // indirect
