@@ -12,12 +12,12 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec/avro"
-	"github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
+	kafkaint "github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 	ints3 "github.com/utilitywarehouse/kafka-data-keep/internal/s3"
 )
 
 type AppConfig struct {
-	kafka.Config
+	kafkaint.Config
 	S3Bucket    string
 	S3Region    string
 	S3Endpoint  string
@@ -79,7 +79,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 }
 
 func initKafkaClient(ctx context.Context, cfg AppConfig) (*kgo.Client, error) {
-	opts, err := kafka.BaseOpts(cfg.Config)
+	opts, err := kafkaint.BaseOpts(cfg.Config)
 	if err != nil {
 		return nil, err
 	}
