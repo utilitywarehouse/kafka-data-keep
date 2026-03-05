@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/utilitywarehouse/uwos-go/crypto/tlsconfig"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/crypto/tlsconfig"
 )
 
 func TestNew(t *testing.T) {

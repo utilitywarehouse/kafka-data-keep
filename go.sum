@@ -676,8 +676,6 @@ github.com/urfave/cli v1.20.0/go.mod h1:70zkFmudgCuE/ngEzBv17Jvp/497gISqfk5gWijb
 github.com/urfave/cli v1.22.1/go.mod h1:Gos4lmkARVdJ6EkW0WaNv/tZAAMe9V7XWyB60NtXRu0=
 github.com/utilitywarehouse/go-operational v0.0.0-20250423084238-c80547bcb12b h1:CDmTsF4ZGaktK4PdofcB7Mittb8jhGAWUa5P/Z89F+w=
 github.com/utilitywarehouse/go-operational v0.0.0-20250423084238-c80547bcb12b/go.mod h1:NVEoiRSDBsLOEk9X+pwskLIPWL5YGmZMaGP0kXnpvhM=
-github.com/utilitywarehouse/uwos-go/crypto/tlsconfig v1.4.4 h1:A5GVxcupTKQmSK3YENwfkQEHNRgBdRsJEI9nxc4U+2c=
-github.com/utilitywarehouse/uwos-go/crypto/tlsconfig v1.4.4/go.mod h1:TzRF9kcuX1z/CdF3n9G8ThwadtIhstwKKiUnTdSDK9o=
 github.com/utilitywarehouse/uwos-go/io v1.6.24 h1:zPyOSnHxBEasJJfC46t/7grKRsVUBMUL0H4Rd9tyj3Y=
 github.com/utilitywarehouse/uwos-go/io v1.6.24/go.mod h1:f1oq1IqbX286EJu8JzKWBbQXn3R0Q8FOsKYWtjZyZQw=
 github.com/utilitywarehouse/uwos-go/runtime/k8sruntime v1.5.3 h1:vBHS0TfiMZYAtjwX+wd/O1v+UoBGpYCVlXnsb7RWTHE=

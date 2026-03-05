@@ -19,7 +19,6 @@ require (
 	github.com/twmb/franz-go/plugin/kotel v1.6.0
 	github.com/twmb/franz-go/plugin/kslog v1.0.0
 	github.com/utilitywarehouse/go-operational v0.0.0-20250423084238-c80547bcb12b
-	github.com/utilitywarehouse/uwos-go/crypto/tlsconfig v1.4.4
 	github.com/utilitywarehouse/uwos-go/telemetry v1.41.0
 	github.com/utilitywarehouse/uwos-go/x/build v1.3.1
 	go.opentelemetry.io/otel v1.41.0
