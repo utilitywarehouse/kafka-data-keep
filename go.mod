@@ -16,6 +16,8 @@ require (
 	github.com/twmb/franz-go v1.20.7
 	github.com/twmb/franz-go/pkg/kadm v1.17.2
 	github.com/twmb/franz-go/pkg/kmsg v1.12.0
+	github.com/twmb/franz-go/plugin/kotel v1.6.0
+	github.com/twmb/franz-go/plugin/kslog v1.0.0
 	github.com/utilitywarehouse/go-operational v0.0.0-20250423084238-c80547bcb12b
 	github.com/utilitywarehouse/uwos-go/crypto/tlsconfig v1.4.4
 	github.com/utilitywarehouse/uwos-go/pubsub/kafka v1.9.0
@@ -112,8 +114,6 @@ require (
 	github.com/testcontainers/testcontainers-go v0.40.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.15 // indirect
 	github.com/tklauser/numcpus v0.10.0 // indirect
-	github.com/twmb/franz-go/plugin/kotel v1.6.0 // indirect
-	github.com/twmb/franz-go/plugin/kslog v1.0.0 // indirect
 	github.com/utilitywarehouse/uwos-go/io v1.6.24 // indirect
 	github.com/utilitywarehouse/uwos-go/runtime/k8sruntime v1.5.3 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect

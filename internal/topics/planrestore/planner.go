@@ -10,14 +10,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal"
-	kafka2 "github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
-	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
+	kafkaint "github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 )
 
 type planner struct {
 	s3Client     *s3.Client
-	kafkaClient  *kafka.Client
-	latestReader *kafka2.LatestReader
+	kafkaClient  *kgo.Client
+	latestReader *kafkaint.LatestReader
 	cfg          AppConfig
 }
 

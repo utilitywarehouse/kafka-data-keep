@@ -17,10 +17,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/utilitywarehouse/kafka-data-keep/internal"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec/avro"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/restore"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/testutil"
 	topicsrestore "github.com/utilitywarehouse/kafka-data-keep/internal/topics/restore"
 )
@@ -99,7 +99,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 		topic2 := randomName("test-multiple-2")
 
 		// Create two topics with two partitions each.
-		_, err = kadmClient.CreateTopic(ctx, 2, 1, nil, topic1)
+		_, err := kadmClient.CreateTopic(ctx, 2, 1, nil, topic1)
 		require.NoError(t, err)
 		_, err = kadmClient.CreateTopic(ctx, 2, 1, nil, topic2)
 		require.NoError(t, err)
@@ -194,7 +194,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 		// RestoreTopicsPrefix is empty: the topics created above are the restored topics directly.
 		// RestoreGroupsPrefix is "restored-": committed group IDs will be "restored-<original>".
 		restoreCfg := restore.AppConfig{
-			KafkaConfig: internal.KafkaConfig{
+			Config: kafka.Config{
 				Brokers: kafkaBrokers,
 			},
 			S3Bucket:            cgRestoreBucketName,
@@ -259,7 +259,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 		restoredTopic := cgRestoreTopicPrefix + topic
 
 		// Create a single topic
-		_, err = kadmClient.CreateTopic(ctx, 2, 1, nil, restoredTopic)
+		_, err := kadmClient.CreateTopic(ctx, 2, 1, nil, restoredTopic)
 		require.NoError(t, err)
 
 		// write messages to this topic
@@ -298,7 +298,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 		s3Location := writeBackupToS3(t, s3Client, cgRestoreBucketName, backupGroups)
 
 		restoreCfg := restore.AppConfig{
-			KafkaConfig: internal.KafkaConfig{
+			Config: kafka.Config{
 				Brokers: kafkaBrokers,
 			},
 			S3Bucket:            cgRestoreBucketName,
@@ -328,7 +328,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 		topic := randomName("test-offset-after")
 
 		// Create a single topic
-		_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, topic)
+		_, err := kadmClient.CreateTopic(ctx, 1, 1, nil, topic)
 		require.NoError(t, err)
 
 		// write messages to this topic
@@ -363,7 +363,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 		s3Location := writeBackupToS3(t, s3Client, cgRestoreBucketName, backupGroups)
 
 		restoreCfg := restore.AppConfig{
-			KafkaConfig: internal.KafkaConfig{
+			Config: kafka.Config{
 				Brokers: kafkaBrokers,
 			},
 			S3Bucket:            cgRestoreBucketName,
@@ -394,7 +394,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 		restoreTopicName := restoreTopicPrefix + topic
 
 		// Create a single topic
-		_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, restoreTopicName)
+		_, err := kadmClient.CreateTopic(ctx, 1, 1, nil, restoreTopicName)
 		require.NoError(t, err)
 
 		// write messages to this topic
@@ -430,7 +430,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 		s3Location := writeBackupToS3(t, s3Client, cgRestoreBucketName, backupGroups)
 
 		restoreCfg := restore.AppConfig{
-			KafkaConfig: internal.KafkaConfig{
+			Config: kafka.Config{
 				Brokers: kafkaBrokers,
 			},
 			S3Bucket:            cgRestoreBucketName,
@@ -458,7 +458,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 		topic := randomName("test-offset-not-backed-up")
 
 		// Create a single topic
-		_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, topic)
+		_, err := kadmClient.CreateTopic(ctx, 1, 1, nil, topic)
 		require.NoError(t, err)
 
 		// write messages to this topic
@@ -495,7 +495,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 		s3Location := writeBackupToS3(t, s3Client, cgRestoreBucketName, backupGroups)
 
 		restoreCfg := restore.AppConfig{
-			KafkaConfig: internal.KafkaConfig{
+			Config: kafka.Config{
 				Brokers: kafkaBrokers,
 			},
 			S3Bucket:            cgRestoreBucketName,

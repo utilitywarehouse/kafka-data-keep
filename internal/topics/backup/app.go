@@ -14,14 +14,14 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal"
+	kafkaint "github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 	ints3 "github.com/utilitywarehouse/kafka-data-keep/internal/s3"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/codec/avro"
-	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
 	"golang.org/x/sync/errgroup"
 )
 
 type AppConfig struct {
-	internal.KafkaConfig
+	kafkaint.Config
 	TopicsRegex            string
 	ExcludeTopicsRegex     string
 	GroupID                string
@@ -82,7 +82,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 		slog.InfoContext(ctx, "Finished closing partition manager", "error", err)
 	}()
 
-	client, err := initKafkaClient(cfg, mgr)
+	client, err := initKafkaClient(ctx, cfg, mgr)
 	if err != nil {
 		return fmt.Errorf("failed to create kafka client: %w", err)
 	}
@@ -110,9 +110,8 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	return err
 }
 
-const maxPollRecords = 10000 // this affects how many records are processed per poll, not how many are fetched from Kafka
-func initKafkaClient(cfg AppConfig, mgr *partitionsWriterManager) (*kafka.Client, error) {
-	opts, err := internal.KafkaConnOpts(cfg.KafkaConfig)
+func initKafkaClient(ctx context.Context, cfg AppConfig, mgr *partitionsWriterManager) (*kgo.Client, error) {
+	opts, err := kafkaint.BaseOpts(cfg.Config)
 	if err != nil {
 		return nil, err
 	}
@@ -120,9 +119,7 @@ func initKafkaClient(cfg AppConfig, mgr *partitionsWriterManager) (*kafka.Client
 	opts = append(opts, []kgo.Opt{
 		kgo.ConsumeRegex(), // use regex to consume topics
 		kgo.ConsumeTopics(internal.SplitAndTrim(cfg.TopicsRegex, ",")...),
-		kafka.WithMaxPollRecords(maxPollRecords),
-		kafka.WithConsumeOldestOffset(),
-		kafka.WithTracer(nil), // do not record traces
+		kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()),
 		kgo.ConsumerGroup(cfg.GroupID),
 		kgo.DisableAutoCommit(),    // We will commit manually
 		kgo.BlockRebalanceOnPoll(), // block rebalance while processing records
@@ -141,7 +138,14 @@ func initKafkaClient(cfg AppConfig, mgr *partitionsWriterManager) (*kafka.Client
 		opts = append(opts, kgo.ConsumeExcludeTopics(internal.SplitAndTrim(cfg.ExcludeTopicsRegex, ",")...))
 	}
 
-	return kafka.NewClient(opts...)
+	client, err := kgo.NewClient(opts...)
+	if err != nil {
+		return client, err
+	}
+	if err := client.Ping(ctx); err != nil {
+		return client, fmt.Errorf("failed pinging kafka: %w", err)
+	}
+	return client, nil
 }
 
 func runPauseIdleWriters(ctx context.Context, pwManager *partitionsWriterManager) error {

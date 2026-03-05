@@ -14,11 +14,12 @@ import (
 	"github.com/utilitywarehouse/kafka-data-keep/internal"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec/avro"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 )
 
 // AppConfig holds the configuration for the consumer groups restore command.
 type AppConfig struct {
-	internal.KafkaConfig
+	kafka.Config
 	S3Bucket            string
 	S3Region            string
 	S3Endpoint          string
@@ -55,7 +56,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	}
 	slog.InfoContext(ctx, "Decoded consumer group offsets from S3", "count", len(offsets))
 
-	client, err := initKafkaClient(cfg)
+	client, err := initKafkaClient(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("creating kafka client: %w", err)
 	}
@@ -156,10 +157,17 @@ func initS3Client(ctx context.Context, cfg AppConfig) (*s3.Client, error) {
 	return s3Client, nil
 }
 
-func initKafkaClient(cfg AppConfig) (*kgo.Client, error) {
-	opts, err := internal.KafkaConnOpts(cfg.KafkaConfig)
+func initKafkaClient(ctx context.Context, cfg AppConfig) (*kgo.Client, error) {
+	opts, err := kafka.BaseOpts(cfg.Config)
 	if err != nil {
 		return nil, err
 	}
-	return kgo.NewClient(opts...)
+	client, err := kgo.NewClient(opts...)
+	if err != nil {
+		return client, err
+	}
+	if err := client.Ping(ctx); err != nil {
+		return client, fmt.Errorf("failed pinging kafka: %w", err)
+	}
+	return client, nil
 }

@@ -11,13 +11,12 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/utilitywarehouse/kafka-data-keep/internal"
 	kafkaint "github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 	"github.com/utilitywarehouse/uwos-go/pubsub/kafka"
 )
 
 type AppConfig struct {
-	internal.KafkaConfig
+	kafkaint.Config
 	PlanTopic          string
 	RestoreTopicPrefix string
 	ConsumerGroup      string
@@ -83,7 +82,7 @@ func initKafkaConsumer(cfg AppConfig) (*kafka.SimpleConsumer, error) {
 		kgo.HeartbeatInterval(15 * time.Second),        // increase heartbeat interval to 15 seconds, as processing a record is slow (~1s / record)
 		kgo.RecordPartitioner(kgo.ManualPartitioner()), // use a manual partitioner, as all the restore records have a partition set and we should keep the same partition
 	}
-	connOpts, err := internal.KafkaConnOpts(cfg.KafkaConfig)
+	connOpts, err := kafkaint.BaseOpts(cfg.Config)
 	if err != nil {
 		return nil, err
 	}

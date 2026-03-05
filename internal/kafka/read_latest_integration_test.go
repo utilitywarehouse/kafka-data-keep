@@ -53,7 +53,7 @@ func TestReadLastRecords(t *testing.T) {
 
 		topic := "test-topic-full"
 		partitions := int32(15)
-		_, err = kadmClient.CreateTopics(ctx, partitions, 1, nil, topic)
+		_, err := kadmClient.CreateTopics(ctx, partitions, 1, nil, topic)
 		require.NoError(t, err)
 
 		// 3. Produce messages
