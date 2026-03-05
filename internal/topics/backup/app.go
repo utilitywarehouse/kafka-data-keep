@@ -111,7 +111,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 }
 
 func initKafkaClient(cfg AppConfig, mgr *partitionsWriterManager) (*kgo.Client, error) {
-	opts, err := kafkaint.ConnOpts(cfg.Config)
+	opts, err := kafkaint.BaseOpts(cfg.Config)
 	if err != nil {
 		return nil, err
 	}
