@@ -5,7 +5,7 @@ go 1.25.4
 require (
 	github.com/aws/aws-sdk-go-v2 v1.41.3
 	github.com/aws/aws-sdk-go-v2/config v1.32.11
-	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.22.5
+	github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager v0.1.7
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.96.3
 	github.com/google/uuid v1.6.0
 	github.com/hamba/avro/v2 v2.31.0

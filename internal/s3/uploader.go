@@ -7,18 +7,17 @@ import (
 	"path/filepath"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
 )
 
 // Uploader handles uploading files to S3.
 type Uploader struct {
-	client manager.UploadAPIClient
+	client transfermanager.S3APIClient
 	bucket string
 }
 
 // NewUploader creates a new Uploader.
-func NewUploader(client manager.UploadAPIClient, bucket string) *Uploader {
+func NewUploader(client transfermanager.S3APIClient, bucket string) *Uploader {
 	return &Uploader{
 		client: client,
 		bucket: bucket,
@@ -37,8 +36,8 @@ func (u *Uploader) Upload(ctx context.Context, localPath, key string) (err error
 		}
 	}()
 
-	uploader := manager.NewUploader(u.client)
-	_, err = uploader.Upload(ctx, &s3.PutObjectInput{
+	tm := transfermanager.New(u.client)
+	_, err = tm.UploadObject(ctx, &transfermanager.UploadObjectInput{
 		Bucket: aws.String(u.bucket),
 		Key:    aws.String(key),
 		Body:   f,
