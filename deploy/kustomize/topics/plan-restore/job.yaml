@@ -54,3 +54,9 @@ spec:
               value: kafka-backup
             - name: AWS_REGION
               value: TBD
+            - name: LOG_LEVEL
+              value: INFO
+            - name: LOG_FORMAT
+              value: text
+            - name: KGO_LOG_LEVEL
+              value: INFO

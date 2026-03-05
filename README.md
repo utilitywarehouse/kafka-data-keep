@@ -74,6 +74,9 @@ The `topics-backup` subcommand supports the following flags and environment vari
 | `-working-dir` | `WORKING_DIR` | `kafka-backup-data` | Working directory for local files |
 | `-s3-endpoint` | `AWS_ENDPOINT_URL` | | S3 endpoint URL (for LocalStack or custom S3-compatible storage) |
 | `-s3-region` | `AWS_REGION` | `eu-west-1` | S3 region |
+| `-log-level` | `LOG_LEVEL` | `INFO` | The log level to use |
+| `-log-format` | `LOG_FORMAT` | `text` | The log format to use (text, json) |
+| `-kgo-log-level` | `KGO_LOG_LEVEL` | `INFO` | The log level for the franz-go library |
 
 ## Graceful Shutdown and Persistence
 
@@ -135,6 +138,9 @@ The `plan-restore` subcommand supports the following flags and environment varia
 | `-s3-prefix` | `S3_PREFIX` | `msk-backup` | The prefix for the backup files in S3 |
 | `-s3-endpoint` | `AWS_ENDPOINT_URL` | | S3 endpoint URL (for LocalStack or custom S3-compatible storage) |
 | `-s3-region` | `AWS_REGION` | `eu-west-1` | S3 region |
+| `-log-level` | `LOG_LEVEL` | `INFO` | The log level to use |
+| `-log-format` | `LOG_FORMAT` | `text` | The log format to use (text, json) |
+| `-kgo-log-level` | `KGO_LOG_LEVEL` | `INFO` | The log level for the franz-go library |
 
 ## Usage Example
 
@@ -194,6 +200,9 @@ The `topics-restore` subcommand supports the following flags and environment var
 | `-s3-bucket`            | `S3_BUCKET`                  | | S3 bucket name where the backups are stored |
 | `-s3-endpoint`          | `AWS_ENDPOINT_URL`           | | S3 endpoint URL (for LocalStack or custom S3-compatible storage) |
 | `-s3-region`            | `AWS_REGION`                 | `eu-west-1` | S3 region |
+| `-log-level` | `LOG_LEVEL` | `INFO` | The log level to use |
+| `-log-format` | `LOG_FORMAT` | `text` | The log format to use (text, json) |
+| `-kgo-log-level` | `KGO_LOG_LEVEL` | `INFO` | The log level for the franz-go library |
 
 ## Usage Example
 
@@ -248,6 +257,9 @@ The `consumer-groups-backup` subcommand supports the following flags and environ
 | `-run-interval` | `RUN_INTERVAL` | `1m` | Interval between backups (duration, e.g. `30s`, `5m`) |
 | `-s3-endpoint` | `AWS_ENDPOINT_URL` | | S3 endpoint URL (for LocalStack or custom S3-compatible storage) |
 | `-s3-region` | `AWS_REGION` | `eu-west-1` | S3 region |
+| `-log-level` | `LOG_LEVEL` | `INFO` | The log level to use |
+| `-log-format` | `LOG_FORMAT` | `text` | The log format to use (text, json) |
+| `-kgo-log-level` | `KGO_LOG_LEVEL` | `INFO` | The log level for the franz-go library |
 
 ### Usage Example
 
@@ -295,6 +307,9 @@ The `consumer-groups-restore` subcommand supports the following flags and enviro
 | `-loop-interval` | `LOOP_INTERVAL` | `1m` | Duration between consumer group restore iterations (e.g. `30s`, `5m`) |
 | `-s3-endpoint` | `AWS_ENDPOINT_URL` | | S3 endpoint URL (for LocalStack or custom S3-compatible storage) |
 | `-s3-region` | `AWS_REGION` | `eu-west-1` | S3 region |
+| `-log-level` | `LOG_LEVEL` | `INFO` | The log level to use |
+| `-log-format` | `LOG_FORMAT` | `text` | The log format to use (text, json) |
+| `-kgo-log-level` | `KGO_LOG_LEVEL` | `INFO` | The log level for the franz-go library |
 
 ### Usage Example
 

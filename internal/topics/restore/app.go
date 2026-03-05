@@ -11,11 +11,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/utilitywarehouse/kafka-data-keep/internal"
 	kafkaint "github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 )
 
 type AppConfig struct {
 	kafkaint.Config
+	internal.LogConfig
 	PlanTopic          string
 	RestoreTopicPrefix string
 	ConsumerGroup      string
@@ -71,7 +73,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 }
 
 func initKafkaClient(ctx context.Context, cfg AppConfig) (*kgo.Client, error) {
-	opts, err := kafkaint.BaseOpts(cfg.Config)
+	opts, err := kafkaint.BaseOpts(cfg.Config, cfg.LogConfig)
 	if err != nil {
 		return nil, err
 	}

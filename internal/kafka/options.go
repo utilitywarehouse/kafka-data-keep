@@ -3,7 +3,6 @@ package kafka
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net"
 	"strconv"
 
@@ -46,14 +45,16 @@ func ConnOpts(cfg Config) ([]kgo.Opt, error) {
 	return opts, nil
 }
 
-func BaseOpts(cfg Config) ([]kgo.Opt, error) {
+func BaseOpts(cfg Config, logConfig internal.LogConfig) ([]kgo.Opt, error) {
 	opts, err := ConnOpts(cfg)
 	if err != nil {
 		return nil, err
 	}
+
+	kgoLogger := internal.NewSlogger(logConfig.KGOLogLevel, logConfig.LogFormat)
 	opts = append(opts,
 		kgo.WithHooks(kotel.NewMeter()), // record metrics
-		kgo.WithLogger(kslog.New(internal.NewSlogger(slog.LevelInfo))),
+		kgo.WithLogger(kslog.New(kgoLogger)),
 	)
 	return opts, nil
 }

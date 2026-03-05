@@ -8,6 +8,12 @@ import (
 	"strings"
 )
 
+type LogConfig struct {
+	LogLevel    string
+	LogFormat   string
+	KGOLogLevel string
+}
+
 func CompileRegexes(regexStr string) ([]*regexp.Regexp, error) {
 	var regexes []*regexp.Regexp
 	if regexStr != "" {
@@ -39,12 +45,33 @@ func MatchesAny(s string, regexes []*regexp.Regexp) bool {
 	return false
 }
 
-func NewSlogger(level slog.Leveler) *slog.Logger {
-	handler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		AddSource: true,
-		Level:     level,
-	})
+func InitGlobalLog(cfg LogConfig) {
+	slog.SetDefault(NewSlogger(cfg.LogLevel, cfg.LogFormat))
+}
 
-	logger := slog.New(handler)
-	return logger
+func NewSlogger(level string, format string) *slog.Logger {
+	l := ParseLogLevel(level)
+
+	var handler slog.Handler
+	switch format {
+	case "json", "JSON":
+		handler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			AddSource: true,
+			Level:     l,
+		})
+	default:
+		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+			AddSource: true,
+			Level:     l,
+		})
+	}
+	return slog.New(handler)
+}
+
+func ParseLogLevel(level string) slog.Level {
+	var l slog.Level
+	if err := l.UnmarshalText([]byte(strings.ToUpper(level))); err != nil {
+		return slog.LevelInfo
+	}
+	return l
 }

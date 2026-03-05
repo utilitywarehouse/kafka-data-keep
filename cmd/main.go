@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/utilitywarehouse/go-operational/op"
+	"github.com/utilitywarehouse/kafka-data-keep/internal"
 	consumergroupsbackup "github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/backup"
 	consumergroupsrestore "github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/restore"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
@@ -21,7 +22,6 @@ import (
 	topicsplanrestore "github.com/utilitywarehouse/kafka-data-keep/internal/topics/planrestore"
 	topicsrestore "github.com/utilitywarehouse/kafka-data-keep/internal/topics/restore"
 	"github.com/utilitywarehouse/uwos-go/telemetry"
-	"github.com/utilitywarehouse/uwos-go/telemetry/log"
 	"github.com/utilitywarehouse/uwos-go/x/build"
 	"golang.org/x/sync/errgroup"
 )
@@ -67,6 +67,7 @@ func loadTopicsBackupAppConfig(args []string) (topicsbackup.AppConfig, error) {
 	var cfg topicsbackup.AppConfig
 	fs := flag.NewFlagSet("topics-backup", flag.ExitOnError)
 	bindKafkaConfig(fs, &cfg.Config)
+	bindLogConfig(fs, &cfg.LogConfig)
 
 	// Kafka Consumer
 	fs.StringVar(
@@ -152,9 +153,6 @@ func runCmd(ctx context.Context, args []string, startOpsServer bool, cmd func(co
 		_ = shutdown.Close()
 	}()
 
-	logger := log.New()
-	slog.SetDefault(logger)
-
 	eg, ctx := errgroup.WithContext(ctx)
 
 	if startOpsServer {
@@ -206,6 +204,7 @@ func topicsBackupCmd(ctx context.Context, args []string) error {
 		return fmt.Errorf("failed parsing backup config: %w", err)
 	}
 
+	internal.InitGlobalLog(cfg.LogConfig)
 	if err := topicsbackup.Run(ctx, cfg); err != nil {
 		return fmt.Errorf("error running backup: %w", err)
 	}
@@ -218,6 +217,8 @@ func topicsPlanRestoreCmd(ctx context.Context, args []string) error {
 		return fmt.Errorf("failed parsing plan-restore config: %w", err)
 	}
 
+	internal.InitGlobalLog(cfg.LogConfig)
+
 	if err := topicsplanrestore.Run(ctx, cfg); err != nil {
 		return fmt.Errorf("error running plan-restore: %w", err)
 	}
@@ -229,6 +230,7 @@ func loadTopicsPlanRestoreAppConfig(args []string) (topicsplanrestore.AppConfig,
 	fs := flag.NewFlagSet("topics-plan-restore", flag.ExitOnError)
 
 	bindKafkaConfig(fs, &cfg.Config)
+	bindLogConfig(fs, &cfg.LogConfig)
 
 	fs.StringVar(
 		&cfg.RestoreTopicsRegex,
@@ -288,6 +290,8 @@ func topicsRestoreCmd(ctx context.Context, args []string) error {
 		return fmt.Errorf("failed parsing restore config: %w", err)
 	}
 
+	internal.InitGlobalLog(cfg.LogConfig)
+
 	if err := topicsrestore.Run(ctx, cfg); err != nil {
 		return fmt.Errorf("error running restore: %w", err)
 	}
@@ -299,6 +303,7 @@ func loadTopicsRestoreAppConfig(args []string) (topicsrestore.AppConfig, error) 
 	fs := flag.NewFlagSet("topics-restore", flag.ExitOnError)
 
 	bindKafkaConfig(fs, &cfg.Config)
+	bindLogConfig(fs, &cfg.LogConfig)
 
 	// Kafka Consumer
 	fs.StringVar(
@@ -392,6 +397,8 @@ func consumerGroupsBackupCmd(ctx context.Context, args []string) error {
 		return fmt.Errorf("failed parsing consumer-groups-backup config: %w", err)
 	}
 
+	internal.InitGlobalLog(cfg.LogConfig)
+
 	if err := consumergroupsbackup.Run(ctx, cfg); err != nil {
 		return fmt.Errorf("error running consumer-groups-backup: %w", err)
 	}
@@ -403,6 +410,7 @@ func loadConsumerGroupsBackupAppConfig(args []string) (consumergroupsbackup.AppC
 	fs := flag.NewFlagSet("consumer-groups-backup", flag.ExitOnError)
 
 	bindKafkaConfig(fs, &cfg.Config)
+	bindLogConfig(fs, &cfg.LogConfig)
 
 	fs.StringVar(
 		&cfg.S3Bucket,
@@ -449,6 +457,8 @@ func consumerGroupsRestoreCmd(ctx context.Context, args []string) error {
 		return fmt.Errorf("failed parsing consumer-groups-restore config: %w", err)
 	}
 
+	internal.InitGlobalLog(cfg.LogConfig)
+
 	if err := consumergroupsrestore.Run(ctx, cfg); err != nil {
 		return fmt.Errorf("error running consumer-groups-restore: %w", err)
 	}
@@ -460,6 +470,7 @@ func loadConsumerGroupsRestoreAppConfig(args []string) (consumergroupsrestore.Ap
 	fs := flag.NewFlagSet("consumer-groups-restore", flag.ExitOnError)
 
 	bindKafkaConfig(fs, &cfg.Config)
+	bindLogConfig(fs, &cfg.LogConfig)
 
 	fs.StringVar(
 		&cfg.S3Bucket,
@@ -561,5 +572,26 @@ func bindKafkaConfig(fs *flag.FlagSet, cfg *kafka.Config) {
 		"kafka-mtls-client-key-path",
 		getEnv("KAFKA_MTLS_CLIENT_KEY_PATH", "/certs/tls.key"),
 		"The path of the file containing the client private key",
+	)
+}
+
+func bindLogConfig(fs *flag.FlagSet, cfg *internal.LogConfig) {
+	fs.StringVar(
+		&cfg.LogLevel,
+		"log-level",
+		getEnv("LOG_LEVEL", "INFO"),
+		"The log level to use",
+	)
+	fs.StringVar(
+		&cfg.KGOLogLevel,
+		"kgo-log-level",
+		getEnv("KGO_LOG_LEVEL", "INFO"),
+		"The log level for the franz-go library",
+	)
+	fs.StringVar(
+		&cfg.LogFormat,
+		"log-format",
+		getEnv("LOG_FORMAT", "text"),
+		"The log format to use (text, json)",
 	)
 }
