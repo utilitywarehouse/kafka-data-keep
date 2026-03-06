@@ -10,9 +10,12 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/utilitywarehouse/go-operational/op"
 	"github.com/utilitywarehouse/kafka-data-keep/internal"
 	consumergroupsbackup "github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/backup"
@@ -21,8 +24,11 @@ import (
 	topicsbackup "github.com/utilitywarehouse/kafka-data-keep/internal/topics/backup"
 	topicsplanrestore "github.com/utilitywarehouse/kafka-data-keep/internal/topics/planrestore"
 	topicsrestore "github.com/utilitywarehouse/kafka-data-keep/internal/topics/restore"
-	"github.com/utilitywarehouse/uwos-go/telemetry"
 	"github.com/utilitywarehouse/uwos-go/x/build"
+	"go.opentelemetry.io/contrib/instrumentation/runtime"
+	"go.opentelemetry.io/otel"
+	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
+	"go.opentelemetry.io/otel/sdk/metric"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -144,14 +150,10 @@ func loadTopicsBackupAppConfig(args []string) (topicsbackup.AppConfig, error) {
 const opsAddr = "0.0.0.0:8081"
 
 func runCmd(ctx context.Context, args []string, startOpsServer bool, cmd func(context.Context, []string) error) error {
-	shutdown, err := telemetry.Register(ctx)
+	err := initOtelMetrics()
 	if err != nil {
-		return fmt.Errorf("failed registering telemetry services, err: %w", err)
+		return err
 	}
-
-	defer func() {
-		_ = shutdown.Close()
-	}()
 
 	eg, ctx := errgroup.WithContext(ctx)
 
@@ -170,6 +172,38 @@ func runCmd(ctx context.Context, args []string, startOpsServer bool, cmd func(co
 	})
 
 	return eg.Wait()
+}
+
+var metricInit sync.Once
+
+func initOtelMetrics() error {
+	// using the prometheus exporter
+	exporter, err := otelprom.New(
+		otelprom.WithRegisterer(prometheus.DefaultRegisterer),
+		otelprom.WithoutScopeInfo(),
+	)
+	if err != nil {
+		return fmt.Errorf("failed initializing prometheus exporter: %w", err)
+	}
+	otel.SetMeterProvider(metric.NewMeterProvider(metric.WithReader(exporter)))
+
+	var metricInitErr error
+	metricInit.Do(func() {
+		// We use OpenTelemetry runtime/go metrics
+		// go.opentelemetry.io/contrib/instrumentation/runtime
+		//
+		// As they can be expensive to collect, we disable the Prometheus
+		// client also registering the same metrics
+		prometheus.Unregister(collectors.NewGoCollector())
+
+		metricInitErr = runtime.Start(runtime.WithMinimumReadMemStatsInterval(10 * time.Second))
+	})
+
+	if metricInitErr != nil {
+		return fmt.Errorf("telemetry: failed to start runtime metric instrumentation: %w", metricInitErr)
+	}
+
+	return nil
 }
 
 // Starts the operational server on the specified address expected in the format host:port and will stop it when the provided context is done.
