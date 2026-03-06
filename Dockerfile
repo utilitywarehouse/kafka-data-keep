@@ -28,7 +28,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     --mount=type=secret,id=github_token \
     --mount=type=bind,target=. \
-    go build -o /kafka-data-keep -ldflags "-s -w" ./cmd/main.go
+    go build -o /kafka-data-keep -ldflags "-s -w -X 'main.gitSHA=${GIT_SHA}' -X 'main.buildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)'" ./cmd/main.go
 
 FROM alpine:3.23
 

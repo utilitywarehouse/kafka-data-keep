@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"runtime/debug"
 	"strconv"
 	"sync"
 	"syscall"
@@ -32,6 +31,11 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+var (
+	gitSHA    = "unknown"
+	buildTime = "unknown"
+)
+
 func main() {
 	if err := mainWrap(); err != nil {
 		slog.Error("app error", "error", err)
@@ -40,10 +44,11 @@ func main() {
 }
 
 func mainWrap() error {
-	buildInfo, ok := debug.ReadBuildInfo()
-	if ok {
-		slog.Info("Running app", "build_info", buildInfo.Settings)
-	}
+	slog.Info(
+		"Running version",
+		slog.String("git_sha", gitSHA),
+		slog.String("build_time", buildTime),
+	)
 
 	// Handle signals for graceful shutdown
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
