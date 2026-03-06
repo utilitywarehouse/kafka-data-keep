@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strconv"
 	"sync"
 	"syscall"
@@ -40,10 +41,10 @@ func main() {
 }
 
 func mainWrap() error {
-	slog.Info(
-		"Running version",
-		slog.String("version", build.Version()),
-	)
+	buildInfo, ok := debug.ReadBuildInfo()
+	if ok {
+		slog.Info("Running app", "build_info", buildInfo.String())
+	}
 
 	// Handle signals for graceful shutdown
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
