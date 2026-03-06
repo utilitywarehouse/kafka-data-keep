@@ -178,7 +178,10 @@ var metricInit sync.Once
 
 func initOtelMetrics() error {
 	// using the prometheus exporter
-	exporter, err := otelprom.New(otelprom.WithRegisterer(prometheus.DefaultRegisterer))
+	exporter, err := otelprom.New(
+		otelprom.WithRegisterer(prometheus.DefaultRegisterer),
+		otelprom.WithoutScopeInfo(),
+	)
 	if err != nil {
 		return fmt.Errorf("failed initializing prometheus exporter: %w", err)
 	}
