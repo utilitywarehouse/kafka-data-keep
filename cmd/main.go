@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -16,7 +15,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
-	"github.com/utilitywarehouse/go-operational/op"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/utilitywarehouse/kafka-data-keep/internal"
 	consumergroupsbackup "github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/backup"
 	consumergroupsrestore "github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/restore"
@@ -28,7 +27,6 @@ import (
 	"go.opentelemetry.io/otel"
 	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/sdk/metric"
-	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -60,15 +58,15 @@ func mainWrap() error {
 
 	switch os.Args[1] {
 	case "topics-backup":
-		return runCmd(ctx, os.Args[2:], true, topicsBackupCmd)
+		return runCmd(ctx, os.Args[2:], topicsBackupCmd)
 	case "topics-plan-restore":
-		return runCmd(ctx, os.Args[2:], false, topicsPlanRestoreCmd)
+		return runCmd(ctx, os.Args[2:], topicsPlanRestoreCmd)
 	case "topics-restore":
-		return runCmd(ctx, os.Args[2:], true, topicsRestoreCmd)
+		return runCmd(ctx, os.Args[2:], topicsRestoreCmd)
 	case "consumer-groups-backup":
-		return runCmd(ctx, os.Args[2:], true, consumerGroupsBackupCmd)
+		return runCmd(ctx, os.Args[2:], consumerGroupsBackupCmd)
 	case "consumer-groups-restore":
-		return runCmd(ctx, os.Args[2:], false, consumerGroupsRestoreCmd)
+		return runCmd(ctx, os.Args[2:], consumerGroupsRestoreCmd)
 	default:
 		return fmt.Errorf("expected 'topics-backup|topics-plan-restore|topics-restore|consumer-groups-backup|consumer-groups-restore' subcommand")
 	}
@@ -154,34 +152,19 @@ func loadTopicsBackupAppConfig(args []string) (topicsbackup.AppConfig, error) {
 
 const opsAddr = "0.0.0.0:8081"
 
-func runCmd(ctx context.Context, args []string, startOpsServer bool, cmd func(context.Context, []string) error) error {
-	err := initOtelMetrics()
+func runCmd(ctx context.Context, args []string, cmd func(context.Context, []string) error) error {
+	err := initOtelMetrics(ctx)
 	if err != nil {
 		return err
 	}
 
-	eg, ctx := errgroup.WithContext(ctx)
-
-	if startOpsServer {
-		eg.Go(func() error {
-			opStatus := op.NewStatus("kafka-data-keep", "kafka data keep").
-				WithInstrumentedChecks().
-				ReadyAlways()
-
-			return runOpsServer(ctx, opsAddr, opStatus)
-		})
-	}
-
-	eg.Go(func() error {
-		return cmd(ctx, args)
-	})
-
-	return eg.Wait()
+	// todo[sb] expose pprof only internally
+	return cmd(ctx, args)
 }
 
 var metricInit sync.Once
 
-func initOtelMetrics() error {
+func initOtelMetrics(ctx context.Context) error {
 	// using the prometheus exporter
 	exporter, err := otelprom.New(
 		otelprom.WithRegisterer(prometheus.DefaultRegisterer),
@@ -208,33 +191,43 @@ func initOtelMetrics() error {
 		return fmt.Errorf("telemetry: failed to start runtime metric instrumentation: %w", metricInitErr)
 	}
 
+	// start the http server for metrics
+	m := http.NewServeMux()
+	m.Handle("/__/metrics", promhttp.Handler())
+
+	runHTTPServer(ctx, opsAddr, m, "metrics server")
 	return nil
 }
 
 // Starts the operational server on the specified address expected in the format host:port and will stop it when the provided context is done.
-func runOpsServer(ctx context.Context, operationalAddr string, opStatus *op.Status) error {
-	opServer := &http.Server{
-		Addr:              operationalAddr,
-		Handler:           op.NewHandler(opStatus),
-		ReadHeaderTimeout: 10 * time.Second,
-	}
+func runHTTPServer(ctx context.Context, addr string, handler http.Handler, description string) {
+	opServer := &http.Server{Addr: addr, ReadHeaderTimeout: 10 * time.Second, Handler: handler}
+	errCh := make(chan error, 1)
+	defer close(errCh)
+	go func() {
+		slog.InfoContext(ctx, "starting http server", "address", addr, "description", description)
+		errCh <- opServer.ListenAndServe()
+	}()
 
-	eg, ctx := errgroup.WithContext(ctx)
-	eg.Go(func() error {
-		slog.InfoContext(ctx, "operational server listening", "addr", operationalAddr)
-		if err := opServer.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-			return fmt.Errorf("serving operational server: %w", err)
+	go func() {
+		select {
+		case err := <-errCh:
+			slog.InfoContext(ctx, "stopped http server", "error", err, "address", addr, "description", description)
+		case <-ctx.Done():
+			slog.InfoContext(ctx, "stopping http server", "address", addr, "description", description)
+			//	give the server 10 seconds to shut down
+			sCtx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+			defer cancel()
+			if err := opServer.Shutdown(sCtx); err != nil {
+				slog.ErrorContext(ctx, "failed to gracefully shutdown http server", "error", err, "address", addr, "description", description)
+				// force close if the graceful shutdown failed.
+				err := opServer.Close()
+				if err != nil {
+					slog.ErrorContext(ctx, "failed to forcefully shutdown http server", "error", err, "address", addr, "description", description)
+				}
+			}
 		}
-		return nil
-	})
-	eg.Go(func() error {
-		<-ctx.Done()
-		slog.InfoContext(ctx, "stopping operational server")
-		sCtx, cancel := context.WithTimeout(context.Background(), time.Second*30)
-		defer cancel()
-		return opServer.Shutdown(sCtx)
-	})
-	return eg.Wait()
+	}()
 }
 
 func topicsBackupCmd(ctx context.Context, args []string) error {
