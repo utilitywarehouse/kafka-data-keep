@@ -644,8 +644,6 @@ github.com/urfave/cli v1.20.0/go.mod h1:70zkFmudgCuE/ngEzBv17Jvp/497gISqfk5gWijb
 github.com/urfave/cli v1.22.1/go.mod h1:Gos4lmkARVdJ6EkW0WaNv/tZAAMe9V7XWyB60NtXRu0=
 github.com/utilitywarehouse/go-operational v0.0.0-20250423084238-c80547bcb12b h1:CDmTsF4ZGaktK4PdofcB7Mittb8jhGAWUa5P/Z89F+w=
 github.com/utilitywarehouse/go-operational v0.0.0-20250423084238-c80547bcb12b/go.mod h1:NVEoiRSDBsLOEk9X+pwskLIPWL5YGmZMaGP0kXnpvhM=
-github.com/utilitywarehouse/uwos-go/x/build v1.3.1 h1:60qp3b78ap5mhWpDR+hDHCS3nl7nxWMhko/CJxKx7LU=
-github.com/utilitywarehouse/uwos-go/x/build v1.3.1/go.mod h1:lPcK+lTj6WqqCcbni1Q48nOiA/P1K+ce8NQdGs+I5Nw=
 github.com/valyala/bytebufferpool v1.0.0/go.mod h1:6bBcMArwyJ5K/AmCkWv1jt77kVWyCJ6HpOuEn7z0Csc=
 github.com/valyala/fasttemplate v1.0.1/go.mod h1:UQGH1tvbgY+Nz5t2n7tXsz52dQxojPUpymEIMZ47gx8=
 github.com/weppos/publicsuffix-go v0.13.0/go.mod h1:z3LCPQ38eedDQSwmsSRW4Y7t2L8Ln16JPQ02lHAdn5k=

@@ -25,7 +25,6 @@ import (
 	topicsbackup "github.com/utilitywarehouse/kafka-data-keep/internal/topics/backup"
 	topicsplanrestore "github.com/utilitywarehouse/kafka-data-keep/internal/topics/planrestore"
 	topicsrestore "github.com/utilitywarehouse/kafka-data-keep/internal/topics/restore"
-	"github.com/utilitywarehouse/uwos-go/x/build"
 	"go.opentelemetry.io/contrib/instrumentation/runtime"
 	"go.opentelemetry.io/otel"
 	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
@@ -160,7 +159,7 @@ func runCmd(ctx context.Context, args []string, startOpsServer bool, cmd func(co
 
 	if startOpsServer {
 		eg.Go(func() error {
-			opStatus := op.NewStatus(build.ServiceName, "kafka data keep").
+			opStatus := op.NewStatus("kafka-data-keep", "kafka data keep").
 				WithInstrumentedChecks().
 				ReadyAlways()
 
