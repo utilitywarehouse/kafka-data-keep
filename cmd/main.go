@@ -24,12 +24,16 @@ import (
 	topicsbackup "github.com/utilitywarehouse/kafka-data-keep/internal/topics/backup"
 	topicsplanrestore "github.com/utilitywarehouse/kafka-data-keep/internal/topics/planrestore"
 	topicsrestore "github.com/utilitywarehouse/kafka-data-keep/internal/topics/restore"
-	"github.com/utilitywarehouse/uwos-go/x/build"
 	"go.opentelemetry.io/contrib/instrumentation/runtime"
 	"go.opentelemetry.io/otel"
 	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"golang.org/x/sync/errgroup"
+)
+
+var (
+	gitSHA    = "unknown"
+	buildTime = "unknown"
 )
 
 func main() {
@@ -42,7 +46,8 @@ func main() {
 func mainWrap() error {
 	slog.Info(
 		"Running version",
-		slog.String("version", build.Version()),
+		slog.String("git_sha", gitSHA),
+		slog.String("build_time", buildTime),
 	)
 
 	// Handle signals for graceful shutdown
@@ -159,7 +164,7 @@ func runCmd(ctx context.Context, args []string, startOpsServer bool, cmd func(co
 
 	if startOpsServer {
 		eg.Go(func() error {
-			opStatus := op.NewStatus(build.ServiceName, "kafka data keep").
+			opStatus := op.NewStatus("kafka-data-keep", "kafka data keep").
 				WithInstrumentedChecks().
 				ReadyAlways()
 
