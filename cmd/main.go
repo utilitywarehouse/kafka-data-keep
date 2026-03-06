@@ -42,7 +42,7 @@ func main() {
 func mainWrap() error {
 	buildInfo, ok := debug.ReadBuildInfo()
 	if ok {
-		slog.Info("Running app", "build_info", buildInfo.String())
+		slog.Info("Running app", "build_info", buildInfo.Settings)
 	}
 
 	// Handle signals for graceful shutdown
