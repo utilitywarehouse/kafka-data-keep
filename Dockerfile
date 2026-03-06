@@ -28,7 +28,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     --mount=type=secret,id=github_token \
     --mount=type=bind,target=. \
-    go build -o /kafka-data-keep -ldflags "-s -w -X github.com/utilitywarehouse/uwos-go/x/build.ServiceName=kafka-data-keep -X github.com/utilitywarehouse/uwos-go/x/build.TeamName=system -X github.com/utilitywarehouse/uwos-go/x/build.GitSHA=${GIT_SHA}" ./cmd/main.go
+    go build -o /kafka-data-keep -ldflags "-s -w" ./cmd/main.go
 
 FROM alpine:3.23
 
