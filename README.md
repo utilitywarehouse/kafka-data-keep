@@ -330,3 +330,9 @@ The `consumer-groups-restore` subcommand supports the following flags and enviro
   -loop-interval "1m" \
   -s3-region "us-east-1"
 ```
+
+# HTTP Endpoints
+
+All commands expose an HTTP server on the port specified by `--metrics-port` or `METRICS_PORT` environment variable (default: `8081`). 
+The following endpoints are available:
+- `/__/metrics`: Prometheus metrics
