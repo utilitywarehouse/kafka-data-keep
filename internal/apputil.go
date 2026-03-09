@@ -166,12 +166,12 @@ func initPProfServer(ctx context.Context, port string) {
 
 // RunHTTPServer starts an HTTP server on the specified address expected in the format host:port and will stop it when the provided context is done.
 func RunHTTPServer(ctx context.Context, addr string, handler http.Handler, description string) {
-	opServer := &http.Server{Addr: addr, ReadHeaderTimeout: 10 * time.Second, Handler: handler}
+	server := &http.Server{Addr: addr, ReadHeaderTimeout: 10 * time.Second, Handler: handler}
 	errCh := make(chan error, 1)
-	defer close(errCh)
 	go func() {
 		slog.InfoContext(ctx, "starting http server", "address", addr, "description", description)
-		errCh <- opServer.ListenAndServe()
+		errCh <- server.ListenAndServe()
+		close(errCh)
 	}()
 
 	//nolint:gosec // using the background context for clean-up, as the current context was cancelled
@@ -184,10 +184,10 @@ func RunHTTPServer(ctx context.Context, addr string, handler http.Handler, descr
 			//	give the server 10 seconds to shut down.
 			sCtx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 			defer cancel()
-			if err := opServer.Shutdown(sCtx); err != nil {
+			if err := server.Shutdown(sCtx); err != nil {
 				slog.ErrorContext(ctx, "failed to gracefully shutdown http server", "error", err, "address", addr, "description", description)
 				// force close if the graceful shutdown failed.
-				err := opServer.Close()
+				err := server.Close()
 				if err != nil {
 					slog.ErrorContext(ctx, "failed to forcefully shutdown http server", "error", err, "address", addr, "description", description)
 				}
