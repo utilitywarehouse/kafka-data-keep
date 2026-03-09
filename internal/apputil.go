@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -180,7 +181,7 @@ func RunHTTPServer(ctx context.Context, addr string, handler http.Handler, descr
 	server := &http.Server{Addr: addr, ReadHeaderTimeout: 10 * time.Second, Handler: handler}
 	go func() {
 		slog.InfoContext(ctx, "starting http server", "address", addr, "description", description)
-		if err := server.ListenAndServe(); err != nil {
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.ErrorContext(ctx, "error running the http server", "description", description, "error", err)
 		}
 		slog.InfoContext(ctx, "stopped http server", "description", description)
