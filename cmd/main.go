@@ -69,6 +69,7 @@ func loadTopicsBackupAppConfig(args []string) (topicsbackup.AppConfig, error) {
 	bindKafkaConfig(fs, &cfg.Config)
 	bindLogConfig(fs, &cfg.OpsConfig)
 	bindMetricsConfig(fs, &cfg.OpsConfig)
+	bindPProfConfig(fs, &cfg.OpsConfig)
 
 	// Kafka Consumer
 	fs.StringVar(
@@ -181,6 +182,7 @@ func loadTopicsPlanRestoreAppConfig(args []string) (topicsplanrestore.AppConfig,
 	bindKafkaConfig(fs, &cfg.Config)
 	bindLogConfig(fs, &cfg.OpsConfig)
 	bindMetricsConfig(fs, &cfg.OpsConfig)
+	bindPProfConfig(fs, &cfg.OpsConfig)
 
 	fs.StringVar(
 		&cfg.RestoreTopicsRegex,
@@ -257,6 +259,7 @@ func loadTopicsRestoreAppConfig(args []string) (topicsrestore.AppConfig, error) 
 	bindKafkaConfig(fs, &cfg.Config)
 	bindLogConfig(fs, &cfg.OpsConfig)
 	bindMetricsConfig(fs, &cfg.OpsConfig)
+	bindPProfConfig(fs, &cfg.OpsConfig)
 
 	// Kafka Consumer
 	fs.StringVar(
@@ -367,6 +370,7 @@ func loadConsumerGroupsBackupAppConfig(args []string) (consumergroupsbackup.AppC
 	bindKafkaConfig(fs, &cfg.Config)
 	bindLogConfig(fs, &cfg.OpsConfig)
 	bindMetricsConfig(fs, &cfg.OpsConfig)
+	bindPProfConfig(fs, &cfg.OpsConfig)
 
 	fs.StringVar(
 		&cfg.S3Bucket,
@@ -430,6 +434,7 @@ func loadConsumerGroupsRestoreAppConfig(args []string) (consumergroupsrestore.Ap
 	bindKafkaConfig(fs, &cfg.Config)
 	bindLogConfig(fs, &cfg.OpsConfig)
 	bindMetricsConfig(fs, &cfg.OpsConfig)
+	bindPProfConfig(fs, &cfg.OpsConfig)
 
 	fs.StringVar(
 		&cfg.S3Bucket,
@@ -561,5 +566,20 @@ func bindMetricsConfig(fs *flag.FlagSet, cfg *internal.OpsConfig) {
 		"metrics-port",
 		getEnv("METRICS_PORT", "8081"),
 		"The port to use for the metrics server",
+	)
+}
+
+func bindPProfConfig(fs *flag.FlagSet, cfg *internal.OpsConfig) {
+	fs.BoolVar(
+		&cfg.EnablePProf,
+		"enable-pprof",
+		getEnvBool("ENABLE_PPROF", false),
+		"Enable pprof server for profiling",
+	)
+	fs.StringVar(
+		&cfg.PProfPort,
+		"pprof-port",
+		getEnv("PPROF_PORT", "6060"),
+		"The port to use for the pprof server",
 	)
 }

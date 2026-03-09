@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"regexp"
 	"strings"
@@ -56,6 +57,8 @@ type OpsConfig struct {
 	LogFormat   string
 	KGOLogLevel string
 	MetricsPort string
+	EnablePProf bool
+	PProfPort   string
 }
 
 func InitAppOps(ctx context.Context, cfg OpsConfig) error {
@@ -66,6 +69,11 @@ func InitAppOps(ctx context.Context, cfg OpsConfig) error {
 	if err := initMetricsServer(ctx, cfg.MetricsPort); err != nil {
 		return err
 	}
+
+	if cfg.EnablePProf {
+		initPProfServer(ctx, cfg.PProfPort)
+	}
+
 	return nil
 }
 
@@ -135,6 +143,25 @@ func initMetricsServer(ctx context.Context, port string) error {
 	addr := fmt.Sprintf("0.0.0.0:%s", port)
 	RunHTTPServer(ctx, addr, m, "metrics server")
 	return nil
+}
+
+func initPProfServer(ctx context.Context, port string) {
+	m := http.NewServeMux()
+	m.HandleFunc("/debug/pprof/", pprof.Index)
+	m.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	m.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	m.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	m.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	m.Handle("/debug/pprof/goroutine", pprof.Handler("goroutine"))
+	m.Handle("/debug/pprof/heap", pprof.Handler("heap"))
+	m.Handle("/debug/pprof/threadcreate", pprof.Handler("threadcreate"))
+	m.Handle("/debug/pprof/block", pprof.Handler("block"))
+	m.Handle("/debug/pprof/mutex", pprof.Handler("mutex"))
+	m.Handle("/debug/pprof/allocs", pprof.Handler("allocs"))
+
+	// running pprof only on localhost, so it cannot be abused remotely.
+	addr := fmt.Sprintf("127.0.0.1:%s", port)
+	RunHTTPServer(ctx, addr, m, "pprof server")
 }
 
 // RunHTTPServer starts an HTTP server on the specified address expected in the format host:port and will stop it when the provided context is done.

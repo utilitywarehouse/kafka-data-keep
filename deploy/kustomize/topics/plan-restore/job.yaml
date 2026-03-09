@@ -62,3 +62,7 @@ spec:
               value: INFO
             - name: METRICS_PORT
               value: "8081"
+            - name: ENABLE_PPROF
+              value: "false"
+            - name: PPROF_PORT
+              value: "6060"
