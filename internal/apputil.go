@@ -98,6 +98,8 @@ func ParseLogLevel(level string) slog.Level {
 
 var metricInit sync.Once
 
+const metricsPath = "/__/metrics"
+
 func initMetricsServer(ctx context.Context, port string) error {
 	// using the prometheus exporter
 	exporter, err := otelprom.New(
@@ -127,7 +129,7 @@ func initMetricsServer(ctx context.Context, port string) error {
 
 	// start the http server for metrics
 	m := http.NewServeMux()
-	m.Handle("/__/metrics", promhttp.Handler())
+	m.Handle(metricsPath, promhttp.Handler())
 
 	// running the metrics on all interfaces, so it can be queried by Prometheus
 	addr := fmt.Sprintf("0.0.0.0:%s", port)
