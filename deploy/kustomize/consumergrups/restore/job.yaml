@@ -62,6 +62,8 @@ spec:
               value: text
             - name: KGO_LOG_LEVEL
               value: INFO
+            - name: METRICS_PORT
+              value: "8081"
           resources:
             requests:
               cpu: "0"

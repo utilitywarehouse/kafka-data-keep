@@ -79,6 +79,8 @@ spec:
               value: text
             - name: KGO_LOG_LEVEL
               value: INFO
+            - name: METRICS_PORT
+              value: "8081"
           ports:
             - containerPort: 8081
               name: ops

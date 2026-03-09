@@ -68,6 +68,7 @@ func loadTopicsBackupAppConfig(args []string) (topicsbackup.AppConfig, error) {
 	fs := flag.NewFlagSet("topics-backup", flag.ExitOnError)
 	bindKafkaConfig(fs, &cfg.Config)
 	bindLogConfig(fs, &cfg.OpsConfig)
+	bindMetricsConfig(fs, &cfg.OpsConfig)
 
 	// Kafka Consumer
 	fs.StringVar(
@@ -179,6 +180,7 @@ func loadTopicsPlanRestoreAppConfig(args []string) (topicsplanrestore.AppConfig,
 
 	bindKafkaConfig(fs, &cfg.Config)
 	bindLogConfig(fs, &cfg.OpsConfig)
+	bindMetricsConfig(fs, &cfg.OpsConfig)
 
 	fs.StringVar(
 		&cfg.RestoreTopicsRegex,
@@ -254,6 +256,7 @@ func loadTopicsRestoreAppConfig(args []string) (topicsrestore.AppConfig, error) 
 
 	bindKafkaConfig(fs, &cfg.Config)
 	bindLogConfig(fs, &cfg.OpsConfig)
+	bindMetricsConfig(fs, &cfg.OpsConfig)
 
 	// Kafka Consumer
 	fs.StringVar(
@@ -363,6 +366,7 @@ func loadConsumerGroupsBackupAppConfig(args []string) (consumergroupsbackup.AppC
 
 	bindKafkaConfig(fs, &cfg.Config)
 	bindLogConfig(fs, &cfg.OpsConfig)
+	bindMetricsConfig(fs, &cfg.OpsConfig)
 
 	fs.StringVar(
 		&cfg.S3Bucket,
@@ -425,6 +429,7 @@ func loadConsumerGroupsRestoreAppConfig(args []string) (consumergroupsrestore.Ap
 
 	bindKafkaConfig(fs, &cfg.Config)
 	bindLogConfig(fs, &cfg.OpsConfig)
+	bindMetricsConfig(fs, &cfg.OpsConfig)
 
 	fs.StringVar(
 		&cfg.S3Bucket,
@@ -547,5 +552,14 @@ func bindLogConfig(fs *flag.FlagSet, cfg *internal.OpsConfig) {
 		"log-format",
 		getEnv("LOG_FORMAT", "text"),
 		"The log format to use (text, json)",
+	)
+}
+
+func bindMetricsConfig(fs *flag.FlagSet, cfg *internal.OpsConfig) {
+	fs.StringVar(
+		&cfg.MetricsPort,
+		"metrics-port",
+		getEnv("METRICS_PORT", "8081"),
+		"The port to use for the metrics server",
 	)
 }

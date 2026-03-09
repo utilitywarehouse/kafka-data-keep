@@ -55,6 +55,7 @@ type OpsConfig struct {
 	LogLevel    string
 	LogFormat   string
 	KGOLogLevel string
+	MetricsPort string
 }
 
 func InitAppOps(ctx context.Context, cfg OpsConfig) error {
@@ -62,7 +63,7 @@ func InitAppOps(ctx context.Context, cfg OpsConfig) error {
 	slog.SetDefault(NewSlogger(cfg.LogLevel, cfg.LogFormat))
 
 	// init metrics
-	if err := initOtelMetrics(ctx); err != nil {
+	if err := initMetricsServer(ctx, cfg.MetricsPort); err != nil {
 		return err
 	}
 	return nil
@@ -95,11 +96,9 @@ func ParseLogLevel(level string) slog.Level {
 	return l
 }
 
-const opsAddr = "0.0.0.0:8081"
-
 var metricInit sync.Once
 
-func initOtelMetrics(ctx context.Context) error {
+func initMetricsServer(ctx context.Context, port string) error {
 	// using the prometheus exporter
 	exporter, err := otelprom.New(
 		otelprom.WithRegisterer(prometheus.DefaultRegisterer),
@@ -130,7 +129,9 @@ func initOtelMetrics(ctx context.Context) error {
 	m := http.NewServeMux()
 	m.Handle("/__/metrics", promhttp.Handler())
 
-	RunHTTPServer(ctx, opsAddr, m, "metrics server")
+	// running the metrics on all interfaces, so it can be queried by Prometheus
+	addr := fmt.Sprintf("0.0.0.0:%s", port)
+	RunHTTPServer(ctx, addr, m, "metrics server")
 	return nil
 }
 

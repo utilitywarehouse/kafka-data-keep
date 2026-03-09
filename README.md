@@ -77,6 +77,7 @@ The `topics-backup` subcommand supports the following flags and environment vari
 | `-log-level` | `LOG_LEVEL` | `INFO` | The log level to use |
 | `-log-format` | `LOG_FORMAT` | `text` | The log format to use (text, json) |
 | `-kgo-log-level` | `KGO_LOG_LEVEL` | `INFO` | The log level for the franz-go library |
+| `-metrics-port` | `METRICS_PORT` | `8081` | The port to use for the metrics server |
 
 ## Graceful Shutdown and Persistence
 
@@ -141,6 +142,7 @@ The `plan-restore` subcommand supports the following flags and environment varia
 | `-log-level` | `LOG_LEVEL` | `INFO` | The log level to use |
 | `-log-format` | `LOG_FORMAT` | `text` | The log format to use (text, json) |
 | `-kgo-log-level` | `KGO_LOG_LEVEL` | `INFO` | The log level for the franz-go library |
+| `-metrics-port` | `METRICS_PORT` | `8081` | The port to use for the metrics server |
 
 ## Usage Example
 
@@ -203,6 +205,7 @@ The `topics-restore` subcommand supports the following flags and environment var
 | `-log-level` | `LOG_LEVEL` | `INFO` | The log level to use |
 | `-log-format` | `LOG_FORMAT` | `text` | The log format to use (text, json) |
 | `-kgo-log-level` | `KGO_LOG_LEVEL` | `INFO` | The log level for the franz-go library |
+| `-metrics-port` | `METRICS_PORT` | `8081` | The port to use for the metrics server |
 
 ## Usage Example
 
@@ -260,6 +263,7 @@ The `consumer-groups-backup` subcommand supports the following flags and environ
 | `-log-level` | `LOG_LEVEL` | `INFO` | The log level to use |
 | `-log-format` | `LOG_FORMAT` | `text` | The log format to use (text, json) |
 | `-kgo-log-level` | `KGO_LOG_LEVEL` | `INFO` | The log level for the franz-go library |
+| `-metrics-port` | `METRICS_PORT` | `8081` | The port to use for the metrics server |
 
 ### Usage Example
 
@@ -310,6 +314,7 @@ The `consumer-groups-restore` subcommand supports the following flags and enviro
 | `-log-level` | `LOG_LEVEL` | `INFO` | The log level to use |
 | `-log-format` | `LOG_FORMAT` | `text` | The log format to use (text, json) |
 | `-kgo-log-level` | `KGO_LOG_LEVEL` | `INFO` | The log level for the franz-go library |
+| `-metrics-port` | `METRICS_PORT` | `8081` | The port to use for the metrics server |
 
 ### Usage Example
 
