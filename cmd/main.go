@@ -209,13 +209,14 @@ func runHTTPServer(ctx context.Context, addr string, handler http.Handler, descr
 		errCh <- opServer.ListenAndServe()
 	}()
 
+	//nolint:gosec // using the background context for clean-up, as the current context was cancelled
 	go func() {
 		select {
 		case err := <-errCh:
 			slog.InfoContext(ctx, "stopped http server", "error", err, "address", addr, "description", description)
 		case <-ctx.Done():
 			slog.InfoContext(ctx, "stopping http server", "address", addr, "description", description)
-			//	give the server 10 seconds to shut down
+			//	give the server 10 seconds to shut down.
 			sCtx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 			defer cancel()
 			if err := opServer.Shutdown(sCtx); err != nil {
