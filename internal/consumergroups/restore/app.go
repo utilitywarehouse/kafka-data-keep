@@ -20,7 +20,7 @@ import (
 // AppConfig holds the configuration for the consumer groups restore command.
 type AppConfig struct {
 	kafka.Config
-	internal.LogConfig
+	internal.OpsConfig
 	S3Bucket            string
 	S3Region            string
 	S3Endpoint          string
@@ -159,7 +159,7 @@ func initS3Client(ctx context.Context, cfg AppConfig) (*s3.Client, error) {
 }
 
 func initKafkaClient(ctx context.Context, cfg AppConfig) (*kgo.Client, error) {
-	opts, err := kafka.BaseOpts(cfg.Config, cfg.LogConfig)
+	opts, err := kafka.BaseOpts(cfg.Config, cfg.OpsConfig)
 	if err != nil {
 		return nil, err
 	}

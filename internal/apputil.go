@@ -1,18 +1,24 @@
 package internal
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"regexp"
 	"strings"
-)
+	"sync"
+	"time"
 
-type LogConfig struct {
-	LogLevel    string
-	LogFormat   string
-	KGOLogLevel string
-}
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/contrib/instrumentation/runtime"
+	"go.opentelemetry.io/otel"
+	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
+	"go.opentelemetry.io/otel/sdk/metric"
+)
 
 func CompileRegexes(regexStr string) ([]*regexp.Regexp, error) {
 	var regexes []*regexp.Regexp
@@ -45,8 +51,21 @@ func MatchesAny(s string, regexes []*regexp.Regexp) bool {
 	return false
 }
 
-func InitGlobalLog(cfg LogConfig) {
+type OpsConfig struct {
+	LogLevel    string
+	LogFormat   string
+	KGOLogLevel string
+}
+
+func InitAppOps(ctx context.Context, cfg OpsConfig) error {
+	// init log
 	slog.SetDefault(NewSlogger(cfg.LogLevel, cfg.LogFormat))
+
+	// init metrics
+	if err := initOtelMetrics(ctx); err != nil {
+		return err
+	}
+	return nil
 }
 
 func NewSlogger(level string, format string) *slog.Logger {
@@ -74,4 +93,75 @@ func ParseLogLevel(level string) slog.Level {
 		return slog.LevelInfo
 	}
 	return l
+}
+
+const opsAddr = "0.0.0.0:8081"
+
+var metricInit sync.Once
+
+func initOtelMetrics(ctx context.Context) error {
+	// using the prometheus exporter
+	exporter, err := otelprom.New(
+		otelprom.WithRegisterer(prometheus.DefaultRegisterer),
+		otelprom.WithoutScopeInfo(),
+	)
+	if err != nil {
+		return fmt.Errorf("failed initializing prometheus exporter: %w", err)
+	}
+	otel.SetMeterProvider(metric.NewMeterProvider(metric.WithReader(exporter)))
+
+	var metricInitErr error
+	metricInit.Do(func() {
+		// We use OpenTelemetry runtime/go metrics
+		// go.opentelemetry.io/contrib/instrumentation/runtime
+		//
+		// As they can be expensive to collect, we disable the Prometheus
+		// client also registering the same metrics
+		prometheus.Unregister(collectors.NewGoCollector())
+
+		metricInitErr = runtime.Start(runtime.WithMinimumReadMemStatsInterval(10 * time.Second))
+	})
+
+	if metricInitErr != nil {
+		return fmt.Errorf("telemetry: failed to start runtime metric instrumentation: %w", metricInitErr)
+	}
+
+	// start the http server for metrics
+	m := http.NewServeMux()
+	m.Handle("/__/metrics", promhttp.Handler())
+
+	RunHTTPServer(ctx, opsAddr, m, "metrics server")
+	return nil
+}
+
+// RunHTTPServer starts an HTTP server on the specified address expected in the format host:port and will stop it when the provided context is done.
+func RunHTTPServer(ctx context.Context, addr string, handler http.Handler, description string) {
+	opServer := &http.Server{Addr: addr, ReadHeaderTimeout: 10 * time.Second, Handler: handler}
+	errCh := make(chan error, 1)
+	defer close(errCh)
+	go func() {
+		slog.InfoContext(ctx, "starting http server", "address", addr, "description", description)
+		errCh <- opServer.ListenAndServe()
+	}()
+
+	//nolint:gosec // using the background context for clean-up, as the current context was cancelled
+	go func() {
+		select {
+		case err := <-errCh:
+			slog.InfoContext(ctx, "stopped http server", "error", err, "address", addr, "description", description)
+		case <-ctx.Done():
+			slog.InfoContext(ctx, "stopping http server", "address", addr, "description", description)
+			//	give the server 10 seconds to shut down.
+			sCtx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+			defer cancel()
+			if err := opServer.Shutdown(sCtx); err != nil {
+				slog.ErrorContext(ctx, "failed to gracefully shutdown http server", "error", err, "address", addr, "description", description)
+				// force close if the graceful shutdown failed.
+				err := opServer.Close()
+				if err != nil {
+					slog.ErrorContext(ctx, "failed to forcefully shutdown http server", "error", err, "address", addr, "description", description)
+				}
+			}
+		}
+	}()
 }

@@ -22,7 +22,7 @@ import (
 
 type AppConfig struct {
 	kafkaint.Config
-	internal.LogConfig
+	internal.OpsConfig
 	TopicsRegex            string
 	ExcludeTopicsRegex     string
 	GroupID                string
@@ -112,7 +112,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 }
 
 func initKafkaClient(ctx context.Context, cfg AppConfig, mgr *partitionsWriterManager) (*kgo.Client, error) {
-	opts, err := kafkaint.BaseOpts(cfg.Config, cfg.LogConfig)
+	opts, err := kafkaint.BaseOpts(cfg.Config, cfg.OpsConfig)
 	if err != nil {
 		return nil, err
 	}

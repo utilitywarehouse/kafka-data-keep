@@ -17,7 +17,7 @@ import (
 
 type AppConfig struct {
 	kafkaint.Config
-	internal.LogConfig
+	internal.OpsConfig
 	PlanTopic          string
 	RestoreTopicPrefix string
 	ConsumerGroup      string
@@ -73,7 +73,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 }
 
 func initKafkaClient(ctx context.Context, cfg AppConfig) (*kgo.Client, error) {
-	opts, err := kafkaint.BaseOpts(cfg.Config, cfg.LogConfig)
+	opts, err := kafkaint.BaseOpts(cfg.Config, cfg.OpsConfig)
 	if err != nil {
 		return nil, err
 	}
