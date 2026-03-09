@@ -61,20 +61,31 @@ type OpsConfig struct {
 	PProfPort   string
 }
 
-func InitAppOps(ctx context.Context, cfg OpsConfig) error {
+// CloseFunc is a function that performs cleanup, similar to context.CancelFunc.
+type CloseFunc func()
+
+func InitAppOps(ctx context.Context, cfg OpsConfig) (CloseFunc, error) {
 	// init log
 	slog.SetDefault(NewSlogger(cfg.LogLevel, cfg.LogFormat))
 
+	var closers []CloseFunc
+
 	// init metrics
-	if err := initMetricsServer(ctx, cfg.MetricsPort); err != nil {
-		return err
+	closeMetrics, err := initMetricsServer(ctx, cfg.MetricsPort)
+	if err != nil {
+		return nil, err
 	}
+	closers = append(closers, closeMetrics)
 
 	if cfg.EnablePProf {
-		initPProfServer(ctx, cfg.PProfPort)
+		closers = append(closers, initPProfServer(ctx, cfg.PProfPort))
 	}
 
-	return nil
+	return func() {
+		for _, c := range closers {
+			c()
+		}
+	}, nil
 }
 
 func NewSlogger(level string, format string) *slog.Logger {
@@ -108,14 +119,14 @@ var metricInit sync.Once
 
 const metricsPath = "/__/metrics"
 
-func initMetricsServer(ctx context.Context, port string) error {
+func initMetricsServer(ctx context.Context, port string) (CloseFunc, error) {
 	// using the prometheus exporter
 	exporter, err := otelprom.New(
 		otelprom.WithRegisterer(prometheus.DefaultRegisterer),
 		otelprom.WithoutScopeInfo(),
 	)
 	if err != nil {
-		return fmt.Errorf("failed initializing prometheus exporter: %w", err)
+		return nil, fmt.Errorf("failed initializing prometheus exporter: %w", err)
 	}
 	otel.SetMeterProvider(metric.NewMeterProvider(metric.WithReader(exporter)))
 
@@ -132,7 +143,7 @@ func initMetricsServer(ctx context.Context, port string) error {
 	})
 
 	if metricInitErr != nil {
-		return fmt.Errorf("telemetry: failed to start runtime metric instrumentation: %w", metricInitErr)
+		return nil, fmt.Errorf("telemetry: failed to start runtime metric instrumentation: %w", metricInitErr)
 	}
 
 	// start the http server for metrics
@@ -141,11 +152,10 @@ func initMetricsServer(ctx context.Context, port string) error {
 
 	// running the metrics on all interfaces, so it can be queried by Prometheus
 	addr := fmt.Sprintf("0.0.0.0:%s", port)
-	RunHTTPServer(ctx, addr, m, "metrics server")
-	return nil
+	return RunHTTPServer(ctx, addr, m, "metrics server"), nil
 }
 
-func initPProfServer(ctx context.Context, port string) {
+func initPProfServer(ctx context.Context, port string) CloseFunc {
 	m := http.NewServeMux()
 	m.HandleFunc("/debug/pprof/", pprof.Index)
 	m.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
@@ -161,37 +171,33 @@ func initPProfServer(ctx context.Context, port string) {
 
 	// running pprof only on localhost, so it cannot be abused remotely.
 	addr := fmt.Sprintf("127.0.0.1:%s", port)
-	RunHTTPServer(ctx, addr, m, "pprof server")
+	return RunHTTPServer(ctx, addr, m, "pprof server")
 }
 
-// RunHTTPServer starts an HTTP server on the specified address expected in the format host:port and will stop it when the provided context is done.
-func RunHTTPServer(ctx context.Context, addr string, handler http.Handler, description string) {
+// RunHTTPServer starts an HTTP server on the specified address expected in the format host:port.
+// It returns a closer function that will gracefully shut down the server.
+func RunHTTPServer(ctx context.Context, addr string, handler http.Handler, description string) CloseFunc {
 	server := &http.Server{Addr: addr, ReadHeaderTimeout: 10 * time.Second, Handler: handler}
-	errCh := make(chan error, 1)
 	go func() {
 		slog.InfoContext(ctx, "starting http server", "address", addr, "description", description)
-		errCh <- server.ListenAndServe()
-		close(errCh)
+		if err := server.ListenAndServe(); err != nil {
+			slog.ErrorContext(ctx, "error running the http server", "description", description, "error", err)
+		}
+		slog.InfoContext(ctx, "stopped http server", "description", description)
 	}()
 
-	//nolint:gosec // using the background context for clean-up, as the current context was cancelled
-	go func() {
-		select {
-		case err := <-errCh:
-			slog.InfoContext(ctx, "stopped http server", "error", err, "address", addr, "description", description)
-		case <-ctx.Done():
-			slog.InfoContext(ctx, "stopping http server", "address", addr, "description", description)
-			//	give the server 10 seconds to shut down.
-			sCtx, cancel := context.WithTimeout(context.Background(), time.Second*10)
-			defer cancel()
-			if err := server.Shutdown(sCtx); err != nil {
-				slog.ErrorContext(ctx, "failed to gracefully shutdown http server", "error", err, "address", addr, "description", description)
-				// force close if the graceful shutdown failed.
-				err := server.Close()
-				if err != nil {
-					slog.ErrorContext(ctx, "failed to forcefully shutdown http server", "error", err, "address", addr, "description", description)
-				}
+	return func() {
+		slog.InfoContext(ctx, "stopping http server", "description", description)
+		//	give the server 10 seconds to shut down.
+		sCtx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+		defer cancel()
+		if err := server.Shutdown(sCtx); err != nil {
+			slog.ErrorContext(ctx, "failed to gracefully shutdown http server", "error", err, "description", description)
+			// force close if the graceful shutdown failed.
+			err := server.Close()
+			if err != nil {
+				slog.ErrorContext(ctx, "failed to forcefully shutdown http server", "error", err, "description", description)
 			}
 		}
-	}()
+	}
 }

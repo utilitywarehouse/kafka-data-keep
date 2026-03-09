@@ -149,9 +149,11 @@ func topicsBackupCmd(ctx context.Context, args []string) error {
 		return fmt.Errorf("failed parsing backup config: %w", err)
 	}
 
-	if err := internal.InitAppOps(ctx, cfg.OpsConfig); err != nil {
+	closer, err := internal.InitAppOps(ctx, cfg.OpsConfig)
+	if err != nil {
 		return err
 	}
+	defer closer()
 
 	if err := topicsbackup.Run(ctx, cfg); err != nil {
 		return fmt.Errorf("error running backup: %w", err)
@@ -165,9 +167,11 @@ func topicsPlanRestoreCmd(ctx context.Context, args []string) error {
 		return fmt.Errorf("failed parsing plan-restore config: %w", err)
 	}
 
-	if err := internal.InitAppOps(ctx, cfg.OpsConfig); err != nil {
+	closer, err := internal.InitAppOps(ctx, cfg.OpsConfig)
+	if err != nil {
 		return err
 	}
+	defer closer()
 
 	if err := topicsplanrestore.Run(ctx, cfg); err != nil {
 		return fmt.Errorf("error running plan-restore: %w", err)
@@ -242,9 +246,11 @@ func topicsRestoreCmd(ctx context.Context, args []string) error {
 		return fmt.Errorf("failed parsing restore config: %w", err)
 	}
 
-	if err := internal.InitAppOps(ctx, cfg.OpsConfig); err != nil {
+	closer, err := internal.InitAppOps(ctx, cfg.OpsConfig)
+	if err != nil {
 		return err
 	}
+	defer closer()
 
 	if err := topicsrestore.Run(ctx, cfg); err != nil {
 		return fmt.Errorf("error running restore: %w", err)
@@ -353,9 +359,11 @@ func consumerGroupsBackupCmd(ctx context.Context, args []string) error {
 		return fmt.Errorf("failed parsing consumer-groups-backup config: %w", err)
 	}
 
-	if err := internal.InitAppOps(ctx, cfg.OpsConfig); err != nil {
+	closer, err := internal.InitAppOps(ctx, cfg.OpsConfig)
+	if err != nil {
 		return err
 	}
+	defer closer()
 
 	if err := consumergroupsbackup.Run(ctx, cfg); err != nil {
 		return fmt.Errorf("error running consumer-groups-backup: %w", err)
@@ -417,9 +425,11 @@ func consumerGroupsRestoreCmd(ctx context.Context, args []string) error {
 		return fmt.Errorf("failed parsing consumer-groups-restore config: %w", err)
 	}
 
-	if err := internal.InitAppOps(ctx, cfg.OpsConfig); err != nil {
+	closer, err := internal.InitAppOps(ctx, cfg.OpsConfig)
+	if err != nil {
 		return err
 	}
+	defer closer()
 
 	if err := consumergroupsrestore.Run(ctx, cfg); err != nil {
 		return fmt.Errorf("error running consumer-groups-restore: %w", err)
