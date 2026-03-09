@@ -2,21 +2,15 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
-	"sync"
 	"syscall"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/collectors"
-	"github.com/utilitywarehouse/go-operational/op"
 	"github.com/utilitywarehouse/kafka-data-keep/internal"
 	consumergroupsbackup "github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/backup"
 	consumergroupsrestore "github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/restore"
@@ -24,11 +18,6 @@ import (
 	topicsbackup "github.com/utilitywarehouse/kafka-data-keep/internal/topics/backup"
 	topicsplanrestore "github.com/utilitywarehouse/kafka-data-keep/internal/topics/planrestore"
 	topicsrestore "github.com/utilitywarehouse/kafka-data-keep/internal/topics/restore"
-	"go.opentelemetry.io/contrib/instrumentation/runtime"
-	"go.opentelemetry.io/otel"
-	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
-	"go.opentelemetry.io/otel/sdk/metric"
-	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -60,15 +49,15 @@ func mainWrap() error {
 
 	switch os.Args[1] {
 	case "topics-backup":
-		return runCmd(ctx, os.Args[2:], true, topicsBackupCmd)
+		return topicsBackupCmd(ctx, os.Args[2:])
 	case "topics-plan-restore":
-		return runCmd(ctx, os.Args[2:], false, topicsPlanRestoreCmd)
+		return topicsPlanRestoreCmd(ctx, os.Args[2:])
 	case "topics-restore":
-		return runCmd(ctx, os.Args[2:], true, topicsRestoreCmd)
+		return topicsRestoreCmd(ctx, os.Args[2:])
 	case "consumer-groups-backup":
-		return runCmd(ctx, os.Args[2:], true, consumerGroupsBackupCmd)
+		return consumerGroupsBackupCmd(ctx, os.Args[2:])
 	case "consumer-groups-restore":
-		return runCmd(ctx, os.Args[2:], false, consumerGroupsRestoreCmd)
+		return consumerGroupsRestoreCmd(ctx, os.Args[2:])
 	default:
 		return fmt.Errorf("expected 'topics-backup|topics-plan-restore|topics-restore|consumer-groups-backup|consumer-groups-restore' subcommand")
 	}
@@ -78,7 +67,9 @@ func loadTopicsBackupAppConfig(args []string) (topicsbackup.AppConfig, error) {
 	var cfg topicsbackup.AppConfig
 	fs := flag.NewFlagSet("topics-backup", flag.ExitOnError)
 	bindKafkaConfig(fs, &cfg.Config)
-	bindLogConfig(fs, &cfg.LogConfig)
+	bindLogConfig(fs, &cfg.OpsConfig)
+	bindMetricsConfig(fs, &cfg.OpsConfig)
+	bindPProfConfig(fs, &cfg.OpsConfig)
 
 	// Kafka Consumer
 	fs.StringVar(
@@ -152,98 +143,18 @@ func loadTopicsBackupAppConfig(args []string) (topicsbackup.AppConfig, error) {
 	return cfg, nil
 }
 
-const opsAddr = "0.0.0.0:8081"
-
-func runCmd(ctx context.Context, args []string, startOpsServer bool, cmd func(context.Context, []string) error) error {
-	err := initOtelMetrics()
-	if err != nil {
-		return err
-	}
-
-	eg, ctx := errgroup.WithContext(ctx)
-
-	if startOpsServer {
-		eg.Go(func() error {
-			opStatus := op.NewStatus("kafka-data-keep", "kafka data keep").
-				WithInstrumentedChecks().
-				ReadyAlways()
-
-			return runOpsServer(ctx, opsAddr, opStatus)
-		})
-	}
-
-	eg.Go(func() error {
-		return cmd(ctx, args)
-	})
-
-	return eg.Wait()
-}
-
-var metricInit sync.Once
-
-func initOtelMetrics() error {
-	// using the prometheus exporter
-	exporter, err := otelprom.New(
-		otelprom.WithRegisterer(prometheus.DefaultRegisterer),
-		otelprom.WithoutScopeInfo(),
-	)
-	if err != nil {
-		return fmt.Errorf("failed initializing prometheus exporter: %w", err)
-	}
-	otel.SetMeterProvider(metric.NewMeterProvider(metric.WithReader(exporter)))
-
-	var metricInitErr error
-	metricInit.Do(func() {
-		// We use OpenTelemetry runtime/go metrics
-		// go.opentelemetry.io/contrib/instrumentation/runtime
-		//
-		// As they can be expensive to collect, we disable the Prometheus
-		// client also registering the same metrics
-		prometheus.Unregister(collectors.NewGoCollector())
-
-		metricInitErr = runtime.Start(runtime.WithMinimumReadMemStatsInterval(10 * time.Second))
-	})
-
-	if metricInitErr != nil {
-		return fmt.Errorf("telemetry: failed to start runtime metric instrumentation: %w", metricInitErr)
-	}
-
-	return nil
-}
-
-// Starts the operational server on the specified address expected in the format host:port and will stop it when the provided context is done.
-func runOpsServer(ctx context.Context, operationalAddr string, opStatus *op.Status) error {
-	opServer := &http.Server{
-		Addr:              operationalAddr,
-		Handler:           op.NewHandler(opStatus),
-		ReadHeaderTimeout: 10 * time.Second,
-	}
-
-	eg, ctx := errgroup.WithContext(ctx)
-	eg.Go(func() error {
-		slog.InfoContext(ctx, "operational server listening", "addr", operationalAddr)
-		if err := opServer.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-			return fmt.Errorf("serving operational server: %w", err)
-		}
-		return nil
-	})
-	eg.Go(func() error {
-		<-ctx.Done()
-		slog.InfoContext(ctx, "stopping operational server")
-		sCtx, cancel := context.WithTimeout(context.Background(), time.Second*30)
-		defer cancel()
-		return opServer.Shutdown(sCtx)
-	})
-	return eg.Wait()
-}
-
 func topicsBackupCmd(ctx context.Context, args []string) error {
 	cfg, err := loadTopicsBackupAppConfig(args)
 	if err != nil {
 		return fmt.Errorf("failed parsing backup config: %w", err)
 	}
 
-	internal.InitGlobalLog(cfg.LogConfig)
+	closer, err := internal.InitAppOps(ctx, cfg.OpsConfig)
+	if err != nil {
+		return err
+	}
+	defer closer()
+
 	if err := topicsbackup.Run(ctx, cfg); err != nil {
 		return fmt.Errorf("error running backup: %w", err)
 	}
@@ -256,7 +167,11 @@ func topicsPlanRestoreCmd(ctx context.Context, args []string) error {
 		return fmt.Errorf("failed parsing plan-restore config: %w", err)
 	}
 
-	internal.InitGlobalLog(cfg.LogConfig)
+	closer, err := internal.InitAppOps(ctx, cfg.OpsConfig)
+	if err != nil {
+		return err
+	}
+	defer closer()
 
 	if err := topicsplanrestore.Run(ctx, cfg); err != nil {
 		return fmt.Errorf("error running plan-restore: %w", err)
@@ -269,7 +184,9 @@ func loadTopicsPlanRestoreAppConfig(args []string) (topicsplanrestore.AppConfig,
 	fs := flag.NewFlagSet("topics-plan-restore", flag.ExitOnError)
 
 	bindKafkaConfig(fs, &cfg.Config)
-	bindLogConfig(fs, &cfg.LogConfig)
+	bindLogConfig(fs, &cfg.OpsConfig)
+	bindMetricsConfig(fs, &cfg.OpsConfig)
+	bindPProfConfig(fs, &cfg.OpsConfig)
 
 	fs.StringVar(
 		&cfg.RestoreTopicsRegex,
@@ -329,7 +246,11 @@ func topicsRestoreCmd(ctx context.Context, args []string) error {
 		return fmt.Errorf("failed parsing restore config: %w", err)
 	}
 
-	internal.InitGlobalLog(cfg.LogConfig)
+	closer, err := internal.InitAppOps(ctx, cfg.OpsConfig)
+	if err != nil {
+		return err
+	}
+	defer closer()
 
 	if err := topicsrestore.Run(ctx, cfg); err != nil {
 		return fmt.Errorf("error running restore: %w", err)
@@ -342,7 +263,9 @@ func loadTopicsRestoreAppConfig(args []string) (topicsrestore.AppConfig, error) 
 	fs := flag.NewFlagSet("topics-restore", flag.ExitOnError)
 
 	bindKafkaConfig(fs, &cfg.Config)
-	bindLogConfig(fs, &cfg.LogConfig)
+	bindLogConfig(fs, &cfg.OpsConfig)
+	bindMetricsConfig(fs, &cfg.OpsConfig)
+	bindPProfConfig(fs, &cfg.OpsConfig)
 
 	// Kafka Consumer
 	fs.StringVar(
@@ -436,7 +359,11 @@ func consumerGroupsBackupCmd(ctx context.Context, args []string) error {
 		return fmt.Errorf("failed parsing consumer-groups-backup config: %w", err)
 	}
 
-	internal.InitGlobalLog(cfg.LogConfig)
+	closer, err := internal.InitAppOps(ctx, cfg.OpsConfig)
+	if err != nil {
+		return err
+	}
+	defer closer()
 
 	if err := consumergroupsbackup.Run(ctx, cfg); err != nil {
 		return fmt.Errorf("error running consumer-groups-backup: %w", err)
@@ -449,7 +376,9 @@ func loadConsumerGroupsBackupAppConfig(args []string) (consumergroupsbackup.AppC
 	fs := flag.NewFlagSet("consumer-groups-backup", flag.ExitOnError)
 
 	bindKafkaConfig(fs, &cfg.Config)
-	bindLogConfig(fs, &cfg.LogConfig)
+	bindLogConfig(fs, &cfg.OpsConfig)
+	bindMetricsConfig(fs, &cfg.OpsConfig)
+	bindPProfConfig(fs, &cfg.OpsConfig)
 
 	fs.StringVar(
 		&cfg.S3Bucket,
@@ -496,7 +425,11 @@ func consumerGroupsRestoreCmd(ctx context.Context, args []string) error {
 		return fmt.Errorf("failed parsing consumer-groups-restore config: %w", err)
 	}
 
-	internal.InitGlobalLog(cfg.LogConfig)
+	closer, err := internal.InitAppOps(ctx, cfg.OpsConfig)
+	if err != nil {
+		return err
+	}
+	defer closer()
 
 	if err := consumergroupsrestore.Run(ctx, cfg); err != nil {
 		return fmt.Errorf("error running consumer-groups-restore: %w", err)
@@ -509,7 +442,9 @@ func loadConsumerGroupsRestoreAppConfig(args []string) (consumergroupsrestore.Ap
 	fs := flag.NewFlagSet("consumer-groups-restore", flag.ExitOnError)
 
 	bindKafkaConfig(fs, &cfg.Config)
-	bindLogConfig(fs, &cfg.LogConfig)
+	bindLogConfig(fs, &cfg.OpsConfig)
+	bindMetricsConfig(fs, &cfg.OpsConfig)
+	bindPProfConfig(fs, &cfg.OpsConfig)
 
 	fs.StringVar(
 		&cfg.S3Bucket,
@@ -614,7 +549,7 @@ func bindKafkaConfig(fs *flag.FlagSet, cfg *kafka.Config) {
 	)
 }
 
-func bindLogConfig(fs *flag.FlagSet, cfg *internal.LogConfig) {
+func bindLogConfig(fs *flag.FlagSet, cfg *internal.OpsConfig) {
 	fs.StringVar(
 		&cfg.LogLevel,
 		"log-level",
@@ -632,5 +567,29 @@ func bindLogConfig(fs *flag.FlagSet, cfg *internal.LogConfig) {
 		"log-format",
 		getEnv("LOG_FORMAT", "text"),
 		"The log format to use (text, json)",
+	)
+}
+
+func bindMetricsConfig(fs *flag.FlagSet, cfg *internal.OpsConfig) {
+	fs.StringVar(
+		&cfg.MetricsPort,
+		"metrics-port",
+		getEnv("METRICS_PORT", "8081"),
+		"The port to use for the metrics server",
+	)
+}
+
+func bindPProfConfig(fs *flag.FlagSet, cfg *internal.OpsConfig) {
+	fs.BoolVar(
+		&cfg.EnablePProf,
+		"enable-pprof",
+		getEnvBool("ENABLE_PPROF", false),
+		"Enable pprof server for profiling",
+	)
+	fs.StringVar(
+		&cfg.PProfPort,
+		"pprof-port",
+		getEnv("PPROF_PORT", "6060"),
+		"The port to use for the pprof server",
 	)
 }

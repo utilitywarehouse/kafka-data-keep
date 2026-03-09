@@ -77,6 +77,9 @@ The `topics-backup` subcommand supports the following flags and environment vari
 | `-log-level` | `LOG_LEVEL` | `INFO` | The log level to use |
 | `-log-format` | `LOG_FORMAT` | `text` | The log format to use (text, json) |
 | `-kgo-log-level` | `KGO_LOG_LEVEL` | `INFO` | The log level for the franz-go library |
+| `-metrics-port` | `METRICS_PORT` | `8081` | The port to use for the metrics server |
+| `-enable-pprof` | `ENABLE_PPROF` | `false` | Enable pprof server for profiling |
+| `-pprof-port` | `PPROF_PORT` | `6060` | The port to use for the pprof server |
 
 ## Graceful Shutdown and Persistence
 
@@ -141,6 +144,9 @@ The `plan-restore` subcommand supports the following flags and environment varia
 | `-log-level` | `LOG_LEVEL` | `INFO` | The log level to use |
 | `-log-format` | `LOG_FORMAT` | `text` | The log format to use (text, json) |
 | `-kgo-log-level` | `KGO_LOG_LEVEL` | `INFO` | The log level for the franz-go library |
+| `-metrics-port` | `METRICS_PORT` | `8081` | The port to use for the metrics server |
+| `-enable-pprof` | `ENABLE_PPROF` | `false` | Enable pprof server for profiling |
+| `-pprof-port` | `PPROF_PORT` | `6060` | The port to use for the pprof server |
 
 ## Usage Example
 
@@ -203,6 +209,9 @@ The `topics-restore` subcommand supports the following flags and environment var
 | `-log-level` | `LOG_LEVEL` | `INFO` | The log level to use |
 | `-log-format` | `LOG_FORMAT` | `text` | The log format to use (text, json) |
 | `-kgo-log-level` | `KGO_LOG_LEVEL` | `INFO` | The log level for the franz-go library |
+| `-metrics-port` | `METRICS_PORT` | `8081` | The port to use for the metrics server |
+| `-enable-pprof` | `ENABLE_PPROF` | `false` | Enable pprof server for profiling |
+| `-pprof-port` | `PPROF_PORT` | `6060` | The port to use for the pprof server |
 
 ## Usage Example
 
@@ -260,6 +269,9 @@ The `consumer-groups-backup` subcommand supports the following flags and environ
 | `-log-level` | `LOG_LEVEL` | `INFO` | The log level to use |
 | `-log-format` | `LOG_FORMAT` | `text` | The log format to use (text, json) |
 | `-kgo-log-level` | `KGO_LOG_LEVEL` | `INFO` | The log level for the franz-go library |
+| `-metrics-port` | `METRICS_PORT` | `8081` | The port to use for the metrics server |
+| `-enable-pprof` | `ENABLE_PPROF` | `false` | Enable pprof server for profiling |
+| `-pprof-port` | `PPROF_PORT` | `6060` | The port to use for the pprof server |
 
 ### Usage Example
 
@@ -310,6 +322,9 @@ The `consumer-groups-restore` subcommand supports the following flags and enviro
 | `-log-level` | `LOG_LEVEL` | `INFO` | The log level to use |
 | `-log-format` | `LOG_FORMAT` | `text` | The log format to use (text, json) |
 | `-kgo-log-level` | `KGO_LOG_LEVEL` | `INFO` | The log level for the franz-go library |
+| `-metrics-port` | `METRICS_PORT` | `8081` | The port to use for the metrics server |
+| `-enable-pprof` | `ENABLE_PPROF` | `false` | Enable pprof server for profiling |
+| `-pprof-port` | `PPROF_PORT` | `6060` | The port to use for the pprof server |
 
 ### Usage Example
 
@@ -325,3 +340,17 @@ The `consumer-groups-restore` subcommand supports the following flags and enviro
   -loop-interval "1m" \
   -s3-region "us-east-1"
 ```
+
+# HTTP Endpoints
+
+All commands expose an HTTP server on the port specified by `--metrics-port` or `METRICS_PORT` environment variable (default: `8081`). 
+The following endpoints are available:
+- `/__/metrics`: Prometheus metrics
+
+If `--enable-pprof` or `ENABLE_PPROF` is set to `true`, a separate HTTP server is started on localhost using the port specified by `--pprof-port` or `PPROF_PORT` (default: `6060`).
+The following endpoints are available on this server:
+- `/debug/pprof/`: pprof index
+- `/debug/pprof/cmdline`: pprof cmdline
+- `/debug/pprof/profile`: pprof profile
+- `/debug/pprof/symbol`: pprof symbol
+- `/debug/pprof/trace`: pprof trace

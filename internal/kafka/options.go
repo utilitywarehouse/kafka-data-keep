@@ -45,7 +45,7 @@ func ConnOpts(cfg Config) ([]kgo.Opt, error) {
 	return opts, nil
 }
 
-func BaseOpts(cfg Config, logConfig internal.LogConfig) ([]kgo.Opt, error) {
+func BaseOpts(cfg Config, logConfig internal.OpsConfig) ([]kgo.Opt, error) {
 	opts, err := ConnOpts(cfg)
 	if err != nil {
 		return nil, err
