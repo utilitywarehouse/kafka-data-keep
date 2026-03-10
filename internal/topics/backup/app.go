@@ -9,9 +9,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
@@ -29,35 +26,23 @@ type AppConfig struct {
 	MinFileSize            int64
 	PartitionIdleThreshold time.Duration
 	WorkingDir             string
-	S3Bucket               string
-	S3Endpoint             string
-	S3Region               string
+	S3                     ints3.Config
 	S3Prefix               string
 	EnableFlushOnSignal    bool
 }
 
 func Run(ctx context.Context, cfg AppConfig) error {
-	if cfg.S3Bucket == "" {
+	if cfg.S3.Bucket == "" {
 		return fmt.Errorf("bucket must be provided")
 	}
 
-	// Initialise S3 client and uploader
-	awsCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(cfg.S3Region))
+	s3Client, err := ints3.NewClient(ctx, cfg.S3.Region, cfg.S3.Endpoint)
 	if err != nil {
-		return fmt.Errorf("unable to load SDK config: %w", err)
+		return fmt.Errorf("failed to create s3 client: %w", err)
 	}
+	uploader := ints3.NewUploader(s3Client, cfg.S3.Bucket)
 
-	// Create S3 client with path-style addressing if using custom endpoint
-	var s3ClientOpts []func(*s3.Options)
-	if cfg.S3Endpoint != "" {
-		s3ClientOpts = append(s3ClientOpts, func(o *s3.Options) {
-			o.BaseEndpoint = aws.String(cfg.S3Endpoint)
-			o.UsePathStyle = true
-		})
-	}
-
-	s3Client := s3.NewFromConfig(awsCfg, s3ClientOpts...)
-	uploader := ints3.NewUploader(s3Client, cfg.S3Bucket)
+	// Create working dir for local files
 
 	// Create working dir for local files
 	if err := os.MkdirAll(cfg.WorkingDir, 0o750); err != nil {

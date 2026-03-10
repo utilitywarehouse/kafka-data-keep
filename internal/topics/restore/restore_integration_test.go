@@ -22,6 +22,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
+	ints3 "github.com/utilitywarehouse/kafka-data-keep/internal/s3"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/testutil"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/backup"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/planrestore"
@@ -95,9 +96,11 @@ func TestRestore(t *testing.T) {
 		PlanTopic:          planTopic,
 		RestoreTopicPrefix: "restored-",
 		ConsumerGroup:      restoreGroup,
-		S3Bucket:           bucketName,
-		S3Endpoint:         s3Endpoint,
-		S3Region:           testutil.MinioRegion,
+		S3: ints3.Config{
+			Bucket:   bucketName,
+			Endpoint: s3Endpoint,
+			Region:   testutil.MinioRegion,
+		},
 	}
 
 	restoreCtx, restoreCancel := context.WithCancel(ctx)
@@ -264,11 +267,13 @@ func runPlanRestore(ctx context.Context, t *testing.T, kadmClient *kadm.Client, 
 		KafkaConfig: kafka.Config{
 			Brokers: kafkaBrokers,
 		},
-		PlanTopic:          planTopic,
-		S3Bucket:           bucketName,
+		PlanTopic: planTopic,
+		S3: ints3.Config{
+			Bucket:   bucketName,
+			Endpoint: s3Endpoint,
+			Region:   testutil.MinioRegion,
+		},
 		S3Prefix:           s3Prefix,
-		S3Endpoint:         s3Endpoint,
-		S3Region:           testutil.MinioRegion,
 		RestoreTopicsRegex: srcTopic, // Restore our source topic
 	}
 
@@ -317,10 +322,12 @@ func feedTopicAndRunBackup(t *testing.T, kadmClient *kadm.Client, kafkaBrokers s
 		MinFileSize:            1, // minimum file size to force flush and commit after every batch read from kafka
 		PartitionIdleThreshold: 50 * time.Millisecond,
 		WorkingDir:             workingDir,
-		S3Bucket:               bucketName,
-		S3Prefix:               s3Prefix,
-		S3Endpoint:             s3Endpoint,
-		S3Region:               testutil.MinioRegion,
+		S3: ints3.Config{
+			Bucket:   bucketName,
+			Endpoint: s3Endpoint,
+			Region:   testutil.MinioRegion,
+		},
+		S3Prefix: s3Prefix,
 	}
 
 	backupCtx, backupCancel := context.WithCancel(ctx)

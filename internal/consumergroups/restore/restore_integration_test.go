@@ -21,6 +21,7 @@ import (
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec/avro"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/restore"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
+	ints3 "github.com/utilitywarehouse/kafka-data-keep/internal/s3"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/testutil"
 	topicsrestore "github.com/utilitywarehouse/kafka-data-keep/internal/topics/restore"
 )
@@ -197,9 +198,11 @@ func TestConsumerGroupRestore(t *testing.T) {
 			KafkaConfig: kafka.Config{
 				Brokers: kafkaBrokers,
 			},
-			S3Bucket:            cgRestoreBucketName,
-			S3Region:            testutil.MinioRegion,
-			S3Endpoint:          s3Endpoint,
+			S3: ints3.Config{
+				Bucket:   cgRestoreBucketName,
+				Region:   testutil.MinioRegion,
+				Endpoint: s3Endpoint,
+			},
 			S3Location:          s3Location,
 			RestoreGroupsPrefix: cgRestoreGroupsPrefix,
 			RestoreTopicsPrefix: "", // topics are not prefixed
@@ -301,9 +304,11 @@ func TestConsumerGroupRestore(t *testing.T) {
 			KafkaConfig: kafka.Config{
 				Brokers: kafkaBrokers,
 			},
-			S3Bucket:            cgRestoreBucketName,
-			S3Region:            testutil.MinioRegion,
-			S3Endpoint:          s3Endpoint,
+			S3: ints3.Config{
+				Bucket:   cgRestoreBucketName,
+				Region:   testutil.MinioRegion,
+				Endpoint: s3Endpoint,
+			},
 			S3Location:          s3Location,
 			RestoreGroupsPrefix: cgRestoreGroupsPrefix,
 			RestoreTopicsPrefix: cgRestoreTopicPrefix,
@@ -366,9 +371,11 @@ func TestConsumerGroupRestore(t *testing.T) {
 			KafkaConfig: kafka.Config{
 				Brokers: kafkaBrokers,
 			},
-			S3Bucket:            cgRestoreBucketName,
-			S3Region:            testutil.MinioRegion,
-			S3Endpoint:          s3Endpoint,
+			S3: ints3.Config{
+				Bucket:   cgRestoreBucketName,
+				Region:   testutil.MinioRegion,
+				Endpoint: s3Endpoint,
+			},
 			S3Location:          s3Location,
 			RestoreGroupsPrefix: "",
 			RestoreTopicsPrefix: "", // topics are not prefixed
@@ -433,9 +440,11 @@ func TestConsumerGroupRestore(t *testing.T) {
 			KafkaConfig: kafka.Config{
 				Brokers: kafkaBrokers,
 			},
-			S3Bucket:            cgRestoreBucketName,
-			S3Region:            testutil.MinioRegion,
-			S3Endpoint:          s3Endpoint,
+			S3: ints3.Config{
+				Bucket:   cgRestoreBucketName,
+				Region:   testutil.MinioRegion,
+				Endpoint: s3Endpoint,
+			},
 			S3Location:          s3Location,
 			RestoreGroupsPrefix: "",
 			RestoreTopicsPrefix: restoreTopicPrefix,
@@ -498,9 +507,11 @@ func TestConsumerGroupRestore(t *testing.T) {
 			KafkaConfig: kafka.Config{
 				Brokers: kafkaBrokers,
 			},
-			S3Bucket:            cgRestoreBucketName,
-			S3Region:            testutil.MinioRegion,
-			S3Endpoint:          s3Endpoint,
+			S3: ints3.Config{
+				Bucket:   cgRestoreBucketName,
+				Region:   testutil.MinioRegion,
+				Endpoint: s3Endpoint,
+			},
 			S3Location:          s3Location,
 			RestoreGroupsPrefix: "",
 			RestoreTopicsPrefix: "", // topics are not prefixed

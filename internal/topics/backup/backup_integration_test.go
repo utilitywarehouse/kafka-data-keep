@@ -19,6 +19,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
+	ints3 "github.com/utilitywarehouse/kafka-data-keep/internal/s3"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/testutil"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/codec/avro"
 	"go.opentelemetry.io/otel"
@@ -93,10 +94,12 @@ func TestBackupIntegration(t *testing.T) {
 			MinFileSize:            5000,
 			PartitionIdleThreshold: 100 * time.Millisecond,
 			WorkingDir:             workingDir,
-			S3Bucket:               bucketName,
-			S3Prefix:               s3Prefix,
-			S3Endpoint:             s3Endpoint,
-			S3Region:               testutil.MinioRegion,
+			S3: ints3.Config{
+				Bucket:   bucketName,
+				Endpoint: s3Endpoint,
+				Region:   testutil.MinioRegion,
+			},
+			S3Prefix: s3Prefix,
 		}
 
 		// Run backup with a cancellable context (no timeout, we'll cancel after second batch)
@@ -172,10 +175,12 @@ func TestBackupIntegration(t *testing.T) {
 			PartitionIdleThreshold: 1 * time.Second,
 			MinFileSize:            100 * 1024 * 1024, // use a big limit, so we make sure no flush occurs
 			WorkingDir:             workingDir,
-			S3Bucket:               bucketName,
-			S3Prefix:               s3Prefix,
-			S3Endpoint:             s3Endpoint,
-			S3Region:               testutil.MinioRegion,
+			S3: ints3.Config{
+				Bucket:   bucketName,
+				Endpoint: s3Endpoint,
+				Region:   testutil.MinioRegion,
+			},
+			S3Prefix: s3Prefix,
 		}
 
 		// Run backup with a cancellable context (no timeout, we'll cancel after second batch)
@@ -226,10 +231,12 @@ func TestBackupIntegration(t *testing.T) {
 			PartitionIdleThreshold: 1 * time.Second,
 			MinFileSize:            100 * 1024 * 1024, // use a big limit, so we make sure no flush occurs
 			WorkingDir:             workingDir,
-			S3Bucket:               bucketName,
-			S3Prefix:               s3Prefix,
-			S3Endpoint:             s3Endpoint,
-			S3Region:               testutil.MinioRegion,
+			S3: ints3.Config{
+				Bucket:   bucketName,
+				Endpoint: s3Endpoint,
+				Region:   testutil.MinioRegion,
+			},
+			S3Prefix: s3Prefix,
 		}
 
 		// Run backup with a cancellable context (no timeout, we'll cancel after second batch)
@@ -296,10 +303,12 @@ func TestBackupIntegration(t *testing.T) {
 			PartitionIdleThreshold: 1 * time.Second,
 			MinFileSize:            100 * 1024 * 1024, // use a big limit, so we make sure no flush occurs
 			WorkingDir:             workingDir,
-			S3Bucket:               bucketName,
-			S3Prefix:               s3Prefix,
-			S3Endpoint:             s3Endpoint,
-			S3Region:               testutil.MinioRegion,
+			S3: ints3.Config{
+				Bucket:   bucketName,
+				Endpoint: s3Endpoint,
+				Region:   testutil.MinioRegion,
+			},
+			S3Prefix: s3Prefix,
 		}
 
 		// Run backup with a cancellable context (no timeout, we'll cancel after second batch)
@@ -377,10 +386,12 @@ func TestBackupIntegration(t *testing.T) {
 			PartitionIdleThreshold: 1 * time.Second,
 			MinFileSize:            100 * 1024 * 1024, // use a big limit, so we make sure no flush occurs
 			WorkingDir:             workingDir,
-			S3Bucket:               bucketName,
-			S3Prefix:               s3Prefix,
-			S3Endpoint:             s3Endpoint,
-			S3Region:               testutil.MinioRegion,
+			S3: ints3.Config{
+				Bucket:   bucketName,
+				Endpoint: s3Endpoint,
+				Region:   testutil.MinioRegion,
+			},
+			S3Prefix: s3Prefix,
 		}
 
 		// Run backup with a cancellable context (no timeout, we'll cancel after second batch)
@@ -452,10 +463,12 @@ func TestBackupIntegration(t *testing.T) {
 			PartitionIdleThreshold: 100 * time.Millisecond, // check for idle partitions very frequently
 			MinFileSize:            100 * 1024 * 1024,      // use a big limit, so the flush doesn't happen
 			WorkingDir:             workingDir,
-			S3Bucket:               bucketName,
-			S3Prefix:               s3Prefix,
-			S3Endpoint:             s3Endpoint,
-			S3Region:               testutil.MinioRegion,
+			S3: ints3.Config{
+				Bucket:   bucketName,
+				Endpoint: s3Endpoint,
+				Region:   testutil.MinioRegion,
+			},
+			S3Prefix: s3Prefix,
 		}
 
 		// Run backup with a cancellable context (no timeout, we'll cancel after second batch)
@@ -519,10 +532,12 @@ func TestBackupIntegration(t *testing.T) {
 			PartitionIdleThreshold: 1 * time.Second,
 			MinFileSize:            1, // use a small limit
 			WorkingDir:             workingDir,
-			S3Bucket:               bucketName,
-			S3Prefix:               s3Prefix,
-			S3Endpoint:             s3Endpoint,
-			S3Region:               testutil.MinioRegion,
+			S3: ints3.Config{
+				Bucket:   bucketName,
+				Endpoint: s3Endpoint,
+				Region:   testutil.MinioRegion,
+			},
+			S3Prefix: s3Prefix,
 		}
 
 		// write 150 records
@@ -586,11 +601,13 @@ func TestBackupIntegration(t *testing.T) {
 			MinFileSize:            100 * 1024 * 1024, // 100MB so no auto flush happens
 			PartitionIdleThreshold: 10 * time.Minute,
 			WorkingDir:             workingDir,
-			S3Bucket:               bucketName,
-			S3Prefix:               s3Prefix,
-			S3Endpoint:             s3Endpoint,
-			S3Region:               testutil.MinioRegion,
-			EnableFlushOnSignal:    true,
+			S3: ints3.Config{
+				Bucket:   bucketName,
+				Endpoint: s3Endpoint,
+				Region:   testutil.MinioRegion,
+			},
+			S3Prefix:            s3Prefix,
+			EnableFlushOnSignal: true,
 		}
 
 		// Run backup with a cancellable context

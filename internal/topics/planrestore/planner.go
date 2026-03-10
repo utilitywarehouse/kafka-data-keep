@@ -143,7 +143,7 @@ func (p *planner) listTopicsFromS3(ctx context.Context) ([]string, error) {
 	}
 
 	input := &s3.ListObjectsV2Input{
-		Bucket:    aws.String(p.cfg.S3Bucket),
+		Bucket:    aws.String(p.cfg.S3.Bucket),
 		Prefix:    aws.String(prefix),
 		Delimiter: aws.String("/"),
 	}
@@ -180,7 +180,7 @@ func (p *planner) listTopicsFromS3(ctx context.Context) ([]string, error) {
 
 func (p *planner) planForTopic(ctx context.Context, topic string, resumeFile string) error {
 	input := &s3.ListObjectsV2Input{
-		Bucket: aws.String(p.cfg.S3Bucket),
+		Bucket: aws.String(p.cfg.S3.Bucket),
 		Prefix: aws.String(p.cfg.S3Prefix + "/" + topic + "/"),
 	}
 

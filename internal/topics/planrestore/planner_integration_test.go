@@ -10,6 +10,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
+	ints3 "github.com/utilitywarehouse/kafka-data-keep/internal/s3"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/testutil"
 )
 
@@ -63,11 +64,14 @@ func TestPlanRestoreIntegration(t *testing.T) {
 		KafkaConfig: kafka.Config{
 			Brokers: kafkaBrokers,
 		},
-		PlanTopic:          planTopic,
-		S3Bucket:           bucketName,
-		S3Prefix:           "kafka-backup",
-		S3Endpoint:         s3Endpoint,
-		S3Region:           testutil.MinioRegion,
+		PlanTopic: planTopic,
+		S3: ints3.Config{
+			Bucket:   bucketName,
+			Endpoint: s3Endpoint,
+			Region:   testutil.MinioRegion,
+		},
+		S3Prefix: "kafka-backup",
+
 		RestoreTopicsRegex: "topic-.*",
 		ExcludeTopicsRegex: "topic-excluded",
 	}
