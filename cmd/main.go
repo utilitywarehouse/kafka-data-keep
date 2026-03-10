@@ -271,6 +271,7 @@ func getEnvInt64(key string, fallback int64) int64 {
 	if value, ok := os.LookupEnv(key); ok {
 		i, err := strconv.ParseInt(value, 10, 64)
 		if err != nil {
+			slog.Warn("invalid env value, using default", "key", key, "value", value)
 			return fallback
 		}
 		return i
@@ -282,6 +283,7 @@ func getEnvDuration(key string, fallback time.Duration) time.Duration {
 	if value, ok := os.LookupEnv(key); ok {
 		i, err := time.ParseDuration(value)
 		if err != nil {
+			slog.Warn("invalid env value, using default", "key", key, "value", value)
 			return fallback
 		}
 		return i
@@ -293,6 +295,7 @@ func getEnvBool(key string, fallback bool) bool {
 	if value, ok := os.LookupEnv(key); ok {
 		b, err := strconv.ParseBool(value)
 		if err != nil {
+			slog.Warn("invalid env value, using default", "key", key, "value", value)
 			return fallback
 		}
 		return b
