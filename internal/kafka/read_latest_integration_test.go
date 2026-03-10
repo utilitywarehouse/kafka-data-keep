@@ -44,7 +44,7 @@ func TestReadLastRecords(t *testing.T) {
 	kadmClient := kadm.NewClient(adminClient)
 	t.Cleanup(kadmClient.Close)
 
-	reader, err := NewLatestReader([]string{seedBroker}, nil)
+	reader, err := NewLatestReader(Config{Brokers: seedBroker})
 	require.NoError(t, err)
 	t.Cleanup(reader.Close)
 

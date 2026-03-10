@@ -2,7 +2,6 @@ package restore
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"time"
@@ -55,9 +54,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 
 	slog.InfoContext(ctx, "Starting restore application...")
 
-	seedBrokers := kafkaClient.OptValue(kgo.SeedBrokers).([]string)
-	tlsConfig := kafkaClient.OptValue(kgo.DialTLSConfig).(*tls.Config)
-	latestReader, err := kafkaint.NewLatestReader(seedBrokers, tlsConfig)
+	latestReader, err := kafkaint.NewLatestReader(cfg.KafkaConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create latest reader: %w", err)
 	}
