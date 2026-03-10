@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"fmt"
 	"io"
+	"log/slog"
 	"time"
 
 	"github.com/hamba/avro/v2/ocf"
@@ -53,6 +54,10 @@ func (e *recordEncoder) Flush() error {
 func toAvro(r *kgo.Record) kafkaRecord {
 	headers := make(map[string][]byte, len(r.Headers))
 	for _, h := range r.Headers {
+		if _, exists := headers[h.Key]; exists {
+			slog.Warn("duplicate header key detected — only last value will be preserved in backup",
+				"key", h.Key, "topic", r.Topic, "offset", r.Offset)
+		}
 		headers[h.Key] = h.Value
 	}
 
