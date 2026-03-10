@@ -1,6 +1,6 @@
 module github.com/utilitywarehouse/kafka-data-keep
 
-go 1.25.4
+go 1.25.8
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.41.3

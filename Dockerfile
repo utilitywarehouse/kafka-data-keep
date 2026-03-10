@@ -1,4 +1,4 @@
-FROM golang:1.25-alpine AS build
+FROM golang:1.25.8-alpine AS build
 
 RUN --mount=type=cache,target=/var/cache/apk \
     apk add git
