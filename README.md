@@ -14,6 +14,11 @@ The application functions as a Kafka consumer that backs up data to S3. It uses 
     - Once a file reaches a configured minimum size (`MinFileSize`), the file is uploaded to S3, the Kafka offsets are committed and the local file is deleted
 4.  **Idempotence**: The file naming convention (based on offsets) ensures that if the application restarts, it can resume without duplicating data or missing messages, as the offset commit happens only after a successful upload.
 
+## Known Limitations
+
+- **Duplicate Header Keys**: If a Kafka record contains multiple headers with the same key, only the last header value is kept. All previous values for that key are dropped during backup.
+
+
 ## File Naming and Directory Structure
 
 The application organizes files locally and in S3 using a structured hierarchy and a deterministic naming convention.
@@ -166,7 +171,7 @@ The `topics-restore` command consumes restore plan records from the plan topic (
 
 ### Data
 It restores the records in their original partition, keeping the order of the messages. 
-It keeps all the data from the original record: key, value, timestamp, headers.
+It keeps all the data from the original record: key, value, timestamp, headers (note: duplicate header keys are dropped during backup, see Topics backup limitations).
 In addition, it adds the `restore.source-offset` header to each restored message pointing to the original Kafka offset in the source topic. Uses this for resuming and deduplication.
 
 ### Deduplication
