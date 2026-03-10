@@ -12,15 +12,15 @@ import (
 
 // Uploader handles uploading files to S3.
 type Uploader struct {
-	client transfermanager.S3APIClient
-	bucket string
+	bucket          string
+	transferManager *transfermanager.Client
 }
 
 // NewUploader creates a new Uploader.
 func NewUploader(client transfermanager.S3APIClient, bucket string) *Uploader {
 	return &Uploader{
-		client: client,
-		bucket: bucket,
+		bucket:          bucket,
+		transferManager: transfermanager.New(client),
 	}
 }
 
@@ -36,8 +36,7 @@ func (u *Uploader) Upload(ctx context.Context, localPath, key string) (err error
 		}
 	}()
 
-	tm := transfermanager.New(u.client)
-	_, err = tm.UploadObject(ctx, &transfermanager.UploadObjectInput{
+	_, err = u.transferManager.UploadObject(ctx, &transfermanager.UploadObjectInput{
 		Bucket: aws.String(u.bucket),
 		Key:    aws.String(key),
 		Body:   f,
