@@ -20,9 +20,11 @@ type Config struct {
 	MTLSCA        string
 	MTLSCert      string
 	MTLSKey       string
+	LogLevel      string
+	LogFormat     string
 }
 
-func ConnOpts(cfg Config) ([]kgo.Opt, error) {
+func connOpts(cfg Config) ([]kgo.Opt, error) {
 	brokers, err := seedBrokers(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed constructing the kafka connection options: %w", err)
@@ -45,13 +47,13 @@ func ConnOpts(cfg Config) ([]kgo.Opt, error) {
 	return opts, nil
 }
 
-func BaseOpts(cfg Config, logConfig internal.OpsConfig) ([]kgo.Opt, error) {
-	opts, err := ConnOpts(cfg)
+func BaseOpts(cfg Config) ([]kgo.Opt, error) {
+	opts, err := connOpts(cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	kgoLogger := internal.NewSlogger(logConfig.KGOLogLevel, logConfig.LogFormat)
+	kgoLogger := internal.NewSlogger(cfg.LogLevel, cfg.LogFormat)
 	opts = append(opts,
 		kgo.WithHooks(kotel.NewMeter()), // record metrics
 		kgo.WithLogger(kslog.New(kgoLogger)),

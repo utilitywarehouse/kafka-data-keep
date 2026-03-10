@@ -139,6 +139,7 @@ func loadTopicsBackupAppConfig(args []string) (topicsbackup.AppConfig, error) {
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
 	}
+	cfg.Config.LogFormat = cfg.OpsConfig.LogFormat
 	cfg.EnableFlushOnSignal = true
 	return cfg, nil
 }
@@ -236,6 +237,7 @@ func loadTopicsPlanRestoreAppConfig(args []string) (topicsplanrestore.AppConfig,
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
 	}
+	cfg.Config.LogFormat = cfg.OpsConfig.LogFormat
 
 	return cfg, nil
 }
@@ -547,6 +549,12 @@ func bindKafkaConfig(fs *flag.FlagSet, cfg *kafka.Config) {
 		getEnv("KAFKA_MTLS_CLIENT_KEY_PATH", "/certs/tls.key"),
 		"The path of the file containing the client private key",
 	)
+	fs.StringVar(
+		&cfg.LogLevel,
+		"kgo-log-level",
+		getEnv("KGO_LOG_LEVEL", "INFO"),
+		"The log level for the franz-go library",
+	)
 }
 
 func bindLogConfig(fs *flag.FlagSet, cfg *internal.OpsConfig) {
@@ -555,12 +563,6 @@ func bindLogConfig(fs *flag.FlagSet, cfg *internal.OpsConfig) {
 		"log-level",
 		getEnv("LOG_LEVEL", "INFO"),
 		"The log level to use",
-	)
-	fs.StringVar(
-		&cfg.KGOLogLevel,
-		"kgo-log-level",
-		getEnv("KGO_LOG_LEVEL", "INFO"),
-		"The log level for the franz-go library",
 	)
 	fs.StringVar(
 		&cfg.LogFormat,

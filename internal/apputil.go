@@ -56,7 +56,6 @@ func MatchesAny(s string, regexes []*regexp.Regexp) bool {
 type OpsConfig struct {
 	LogLevel    string
 	LogFormat   string
-	KGOLogLevel string
 	MetricsPort string
 	EnablePProf bool
 	PProfPort   string

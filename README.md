@@ -64,6 +64,7 @@ The `topics-backup` subcommand supports the following flags and environment vari
 | `-kafka-mtls-ca-cert-path` | `KAFKA_MTLS_CA_CERT_PATH` | `/certs/ca.crt` | The path of the file containing the CA cert |
 | `-kafka-mtls-client-cert-path` | `KAFKA_MTLS_CLIENT_CERT_PATH` | `/certs/tls.crt` | The path of the file containing the client cert |
 | `-kafka-mtls-client-key-path` | `KAFKA_MTLS_CLIENT_KEY_PATH` | `/certs/tls.key` | The path of the file containing the client private key |
+| `-kgo-log-level` | `KGO_LOG_LEVEL` | `INFO` | The log level for the franz-go library |
 | `-topics-regex` | `KAFKA_TOPICS_REGEX` | `.*` | List of kafka topics regex to consume (comma separated) |
 | `-exclude-topics-regex` | `KAFKA_EXCLUDE_TOPICS_REGEX` | | List of kafka topics regex to exclude from consuming (comma separated) |
 | `-group-id` | `KAFKA_GROUP_ID` | `kafka-data-keep` | Kafka consumer group ID |
@@ -76,7 +77,6 @@ The `topics-backup` subcommand supports the following flags and environment vari
 | `-s3-region` | `AWS_REGION` | `eu-west-1` | S3 region |
 | `-log-level` | `LOG_LEVEL` | `INFO` | The log level to use |
 | `-log-format` | `LOG_FORMAT` | `text` | The log format to use (text, json) |
-| `-kgo-log-level` | `KGO_LOG_LEVEL` | `INFO` | The log level for the franz-go library |
 | `-metrics-port` | `METRICS_PORT` | `8081` | The port to use for the metrics server |
 | `-enable-pprof` | `ENABLE_PPROF` | `false` | Enable pprof server for profiling |
 | `-pprof-port` | `PPROF_PORT` | `6060` | The port to use for the pprof server |
@@ -134,6 +134,7 @@ The `plan-restore` subcommand supports the following flags and environment varia
 | `-kafka-mtls-ca-cert-path` | `KAFKA_MTLS_CA_CERT_PATH` | `/certs/ca.crt` | The path of the file containing the CA cert |
 | `-kafka-mtls-client-cert-path` | `KAFKA_MTLS_CLIENT_CERT_PATH` | `/certs/tls.crt` | The path of the file containing the client cert |
 | `-kafka-mtls-client-key-path` | `KAFKA_MTLS_CLIENT_KEY_PATH` | `/certs/tls.key` | The path of the file containing the client private key |
+| `-kgo-log-level` | `KGO_LOG_LEVEL` | `INFO` | The log level for the franz-go library |
 | `-restore-topics-regex` | `RESTORE_TOPICS_REGEX` | `.*` | List of regex to match topics to restore (comma separated). The topics will be restored in the order specified in this list. |
 | `-exclude-topics-regex` | `EXCLUDE_TOPICS_REGEX` | | List of regex to exclude topics from restore (comma separated) |
 | `-plan-topic` | `PLAN_TOPIC` | `pubsub.plan-topic-restore` | Kafka topic to send the restore plan to |
@@ -143,7 +144,6 @@ The `plan-restore` subcommand supports the following flags and environment varia
 | `-s3-region` | `AWS_REGION` | `eu-west-1` | S3 region |
 | `-log-level` | `LOG_LEVEL` | `INFO` | The log level to use |
 | `-log-format` | `LOG_FORMAT` | `text` | The log format to use (text, json) |
-| `-kgo-log-level` | `KGO_LOG_LEVEL` | `INFO` | The log level for the franz-go library |
 | `-metrics-port` | `METRICS_PORT` | `8081` | The port to use for the metrics server |
 | `-enable-pprof` | `ENABLE_PPROF` | `false` | Enable pprof server for profiling |
 | `-pprof-port` | `PPROF_PORT` | `6060` | The port to use for the pprof server |
@@ -200,6 +200,7 @@ The `topics-restore` subcommand supports the following flags and environment var
 | `-kafka-mtls-ca-cert-path` | `KAFKA_MTLS_CA_CERT_PATH` | `/certs/ca.crt` | The path of the file containing the CA cert |
 | `-kafka-mtls-client-cert-path` | `KAFKA_MTLS_CLIENT_CERT_PATH` | `/certs/tls.crt` | The path of the file containing the client cert |
 | `-kafka-mtls-client-key-path` | `KAFKA_MTLS_CLIENT_KEY_PATH` | `/certs/tls.key` | The path of the file containing the client private key |
+| `-kgo-log-level` | `KGO_LOG_LEVEL` | `INFO` | The log level for the franz-go library |
 | `-plan-topic`           | `KAFKA_PLAN_TOPIC`           | `pubsub.plan-topic-restore` | Kafka topic to consume the plan from |
 | `-restore-topic-prefix` | `KAFKA_RESTORE_TOPIC_PREFIX` | `pubsub.restore-test.` | Prefix to add to the restored topics |
 | `-group-id`             | `KAFKA_GROUP_ID`             | `pubsub.msk-data-keep-restore` | Kafka consumer group ID |
@@ -208,7 +209,6 @@ The `topics-restore` subcommand supports the following flags and environment var
 | `-s3-region`            | `AWS_REGION`                 | `eu-west-1` | S3 region |
 | `-log-level` | `LOG_LEVEL` | `INFO` | The log level to use |
 | `-log-format` | `LOG_FORMAT` | `text` | The log format to use (text, json) |
-| `-kgo-log-level` | `KGO_LOG_LEVEL` | `INFO` | The log level for the franz-go library |
 | `-metrics-port` | `METRICS_PORT` | `8081` | The port to use for the metrics server |
 | `-enable-pprof` | `ENABLE_PPROF` | `false` | Enable pprof server for profiling |
 | `-pprof-port` | `PPROF_PORT` | `6060` | The port to use for the pprof server |
@@ -261,6 +261,7 @@ The `consumer-groups-backup` subcommand supports the following flags and environ
 | `-kafka-mtls-ca-cert-path` | `KAFKA_MTLS_CA_CERT_PATH` | `/certs/ca.crt` | The path of the file containing the CA cert |
 | `-kafka-mtls-client-cert-path` | `KAFKA_MTLS_CLIENT_CERT_PATH` | `/certs/tls.crt` | The path of the file containing the client cert |
 | `-kafka-mtls-client-key-path` | `KAFKA_MTLS_CLIENT_KEY_PATH` | `/certs/tls.key` | The path of the file containing the client private key |
+| `-kgo-log-level` | `KGO_LOG_LEVEL` | `INFO` | The log level for the franz-go library |
 | `-s3-bucket` | `S3_BUCKET` | | S3 bucket name where to store the backups |
 | `-s3-location` | `S3_LOCATION` | | The S3 location (full path key) to use for the backup file |
 | `-run-interval` | `RUN_INTERVAL` | `1m` | Interval between backups (duration, e.g. `30s`, `5m`) |
@@ -268,7 +269,6 @@ The `consumer-groups-backup` subcommand supports the following flags and environ
 | `-s3-region` | `AWS_REGION` | `eu-west-1` | S3 region |
 | `-log-level` | `LOG_LEVEL` | `INFO` | The log level to use |
 | `-log-format` | `LOG_FORMAT` | `text` | The log format to use (text, json) |
-| `-kgo-log-level` | `KGO_LOG_LEVEL` | `INFO` | The log level for the franz-go library |
 | `-metrics-port` | `METRICS_PORT` | `8081` | The port to use for the metrics server |
 | `-enable-pprof` | `ENABLE_PPROF` | `false` | Enable pprof server for profiling |
 | `-pprof-port` | `PPROF_PORT` | `6060` | The port to use for the pprof server |
@@ -310,6 +310,7 @@ The `consumer-groups-restore` subcommand supports the following flags and enviro
 | `-kafka-mtls-ca-cert-path` | `KAFKA_MTLS_CA_CERT_PATH` | `/certs/ca.crt` | The path of the file containing the CA cert |
 | `-kafka-mtls-client-cert-path` | `KAFKA_MTLS_CLIENT_CERT_PATH` | `/certs/tls.crt` | The path of the file containing the client cert |
 | `-kafka-mtls-client-key-path` | `KAFKA_MTLS_CLIENT_KEY_PATH` | `/certs/tls.key` | The path of the file containing the client private key |
+| `-kgo-log-level` | `KGO_LOG_LEVEL` | `INFO` | The log level for the franz-go library |
 | `-s3-bucket` | `S3_BUCKET` | | S3 bucket name where the consumer groups backup is stored |
 | `-s3-location` | `S3_LOCATION` | | The S3 location (full path key) of the consumer groups backup file |
 | `-restore-groups-prefix` | `RESTORE_GROUPS_PREFIX` | | Prefix to add to the restored consumer group names |
@@ -321,7 +322,6 @@ The `consumer-groups-restore` subcommand supports the following flags and enviro
 | `-s3-region` | `AWS_REGION` | `eu-west-1` | S3 region |
 | `-log-level` | `LOG_LEVEL` | `INFO` | The log level to use |
 | `-log-format` | `LOG_FORMAT` | `text` | The log format to use (text, json) |
-| `-kgo-log-level` | `KGO_LOG_LEVEL` | `INFO` | The log level for the franz-go library |
 | `-metrics-port` | `METRICS_PORT` | `8081` | The port to use for the metrics server |
 | `-enable-pprof` | `ENABLE_PPROF` | `false` | Enable pprof server for profiling |
 | `-pprof-port` | `PPROF_PORT` | `6060` | The port to use for the pprof server |
