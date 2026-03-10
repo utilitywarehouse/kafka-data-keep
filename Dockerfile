@@ -5,20 +5,12 @@ RUN --mount=type=cache,target=/var/cache/apk \
 
 ARG GIT_SHA
 
-# Setup private repository access. Using Git helpers. See https://git-scm.com/docs/gitcredentials#_custom_helpers
-ARG GITHUB_USER
-RUN git config --global \
-    'credential.https://github.com/utilitywarehouse.helper' \
-    '!f() { [ "$1" = "get" ] && echo -e "username=$GITHUB_USER\npassword=$(cat /run/secrets/github_token)"; }; f'
-
 WORKDIR /build
 
-ENV GOPRIVATE=github.com/utilitywarehouse/*
 ENV CGO_ENABLED=0
 
 # Download & cache dependencies
 RUN --mount=type=cache,target=/go/pkg/mod \
-    --mount=type=secret,id=github_token \
     --mount=type=bind,source=go.sum,target=go.sum \
     --mount=type=bind,source=go.mod,target=go.mod\
     go mod download
