@@ -22,17 +22,6 @@ jobs:
       id-token: write # allows the workflow to request an OIDC token for vault auth
       contents: read
     steps:
-      - name: Fetch Github Tokens
-        id: fetch-github-tokens
-        uses: hashicorp/vault-action@v3
-        with:
-          url: ${{ vars.VAULT_URL }}
-          method: jwt
-          path: github-jwt
-          exportEnv: false
-          role: github_uw_ro
-          secrets: |
-            /github/token/uw_ro token | GITHUB_UW_RO_TOKEN ;
       - name: Checkout
         uses: actions/checkout@v6
       - name: Set up QEMU
@@ -65,15 +54,6 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          secrets: |
-            github_token=${{ steps.fetch-github-tokens.outputs.GITHUB_UW_RO_TOKEN }}
           build-args: |
             GITHUB_USER="-"
             GIT_SHA=${{github.sha}}
-
-      - name: Revoke token
-        if: always() # always runs at the end regardless of the previous steps result
-        run: |
-          curl -sSL -H "Authorization: Bearer ${GITHUB_UW_RO_TOKEN}" -X DELETE https://api.github.com/installation/token
-        env:
-          GITHUB_UW_RO_TOKEN: ${{ steps.fetch-github-tokens.outputs.GITHUB_UW_RO_TOKEN }}
