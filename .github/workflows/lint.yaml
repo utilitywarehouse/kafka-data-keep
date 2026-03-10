@@ -42,3 +42,5 @@ jobs:
           git add . && git diff --staged --exit-code
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
+      - name: govulncheck
+        uses: golang/govulncheck-action@v1

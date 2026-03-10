@@ -1,6 +1,16 @@
 LINTER_EXE := golangci-lint
 LINTER := $(GOPATH)/bin/$(LINTER_EXE)
 
+GOVULNCHECK_EXE := govulncheck
+GOVULNCHECK := $(GOPATH)/bin/$(GOVULNCHECK_EXE)
+
+$(GOVULNCHECK):
+	go install golang.org/x/vuln/cmd/govulncheck@latest
+
+.PHONY: vulncheck
+vulncheck: $(GOVULNCHECK)
+	$(GOVULNCHECK) ./...
+
 $(LINTER):
 	curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b $(GOPATH)/bin
 
@@ -26,4 +36,4 @@ test:
 	go test -v --race -cover ./...
 
 .PHONY: all
-all: clean $(LINTER) lint test build
+all: clean $(LINTER) lint test vulncheck build
