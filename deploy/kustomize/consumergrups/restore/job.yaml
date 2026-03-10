@@ -61,7 +61,7 @@ spec:
             - name: LOG_FORMAT
               value: text
             - name: KGO_LOG_LEVEL
-              value: INFO
+              value: WARN
             - name: METRICS_PORT
               value: "8081"
             - name: ENABLE_PPROF
