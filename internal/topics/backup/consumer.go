@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/twmb/franz-go/pkg/kgo"
-	kafkaint "github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 )
 
 const maxPollRecords = 10000 // this affects how many records are processed per poll, not how many are fetched from Kafka
@@ -13,7 +13,7 @@ func runConsumer(ctx context.Context, client *kgo.Client, pwManager *partitionsW
 	for {
 		fetches := client.PollRecords(ctx, maxPollRecords)
 
-		stopProcessing, err := kafkaint.HandleFetches(ctx, &fetches)
+		stopProcessing, err := kafka.HandleFetches(ctx, &fetches)
 		if stopProcessing || err != nil {
 			return err
 		}

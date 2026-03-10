@@ -14,12 +14,12 @@ import (
 	"github.com/utilitywarehouse/kafka-data-keep/internal"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec/avro"
-	kafkaint "github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 )
 
 // AppConfig holds the configuration for the consumer groups restore command.
 type AppConfig struct {
-	KafkaConfig kafkaint.Config
+	KafkaConfig kafka.Config
 	internal.OpsConfig
 	S3Bucket            string
 	S3Region            string
@@ -63,7 +63,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	}
 	defer client.Close()
 
-	latestReader, err := kafkaint.NewLatestReader(cfg.KafkaConfig)
+	latestReader, err := kafka.NewLatestReader(cfg.KafkaConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create latest reader: %w", err)
 	}
@@ -164,7 +164,7 @@ func initS3Client(ctx context.Context, cfg AppConfig) (*s3.Client, error) {
 }
 
 func initKafkaClient(ctx context.Context, cfg AppConfig) (*kgo.Client, error) {
-	opts, err := kafkaint.BaseOpts(cfg.KafkaConfig)
+	opts, err := kafka.BaseOpts(cfg.KafkaConfig)
 	if err != nil {
 		return nil, err
 	}

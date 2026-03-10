@@ -9,7 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/twmb/franz-go/pkg/kgo"
-	kafkaint "github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/codec/avro"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/planrestore"
 )
@@ -22,7 +22,7 @@ type kafkaS3Restorer struct {
 	// map containing the original offset of the last restored message per partition
 	lastProcessedOffsetByPartition map[string]int64
 
-	latestReader *kafkaint.LatestReader
+	latestReader *kafka.LatestReader
 }
 
 func (r *kafkaS3Restorer) Run(ctx context.Context) error {
@@ -40,7 +40,7 @@ func (r *kafkaS3Restorer) Run(ctx context.Context) error {
 	for {
 		// use a low max poll, as it takes ~1s to process one record, and we should give it a chance to process rebalances.
 		f := c.PollRecords(ctx, 10)
-		stopProcessing, err := kafkaint.HandleFetches(ctx, &f)
+		stopProcessing, err := kafka.HandleFetches(ctx, &f)
 		if stopProcessing || err != nil {
 			return err
 		}
