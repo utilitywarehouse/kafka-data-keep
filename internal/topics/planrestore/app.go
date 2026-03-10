@@ -2,7 +2,6 @@ package planrestore
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"log/slog"
 
@@ -54,9 +53,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	}
 	defer kafkaClient.Close()
 
-	seedBrokers := kafkaClient.OptValue(kgo.SeedBrokers).([]string)    //nolint:errcheck // this would fail only if the franz-go lib changes, and we'll catch that in integration tests
-	tlsConfig := kafkaClient.OptValue(kgo.DialTLSConfig).(*tls.Config) //nolint:errcheck // this would fail only if the franz-go lib changes, and we'll catch that in integration tests
-	latestReader, err := kafkaint.NewLatestReader(seedBrokers, tlsConfig)
+	latestReader, err := kafkaint.NewLatestReader(cfg.KafkaConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create latest reader: %w", err)
 	}

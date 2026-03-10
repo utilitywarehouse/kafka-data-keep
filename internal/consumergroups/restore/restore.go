@@ -3,7 +3,6 @@ package restore
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -35,36 +34,14 @@ type Restorer struct {
 }
 
 // NewRestorer creates a new Restorer.
-func NewRestorer(client *kgo.Client, restoreGroupsPrefix, restoreTopicsPrefix string) (*Restorer, error) {
-	// read the connection config from the initialised client
-	seedBrokers := client.OptValue(kgo.SeedBrokers).([]string)    //nolint:errcheck // this would fail only if the franz-go lib changes, and we'll catch that in integration tests
-	tlsConfig := client.OptValue(kgo.DialTLSConfig).(*tls.Config) //nolint:errcheck // this would fail only if the franz-go lib changes, and we'll catch that in integration tests
-
-	consumeClient, err := kgo.NewClient(
-		kgo.SeedBrokers(seedBrokers...),
-		kgo.DialTLSConfig(tlsConfig),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("creating consume client: %w", err)
-	}
-	latestReader, err := kafkaint.NewLatestReader(seedBrokers, tlsConfig)
-	if err != nil {
-		return nil, fmt.Errorf("creating latest reader: %w", err)
-	}
-
+func NewRestorer(client *kgo.Client, latestReader *kafkaint.LatestReader, restoreGroupsPrefix, restoreTopicsPrefix string) (*Restorer, error) {
 	return &Restorer{
 		kadmClient:          kadm.NewClient(client),
 		restoreGroupsPrefix: restoreGroupsPrefix,
 		restoreTopicsPrefix: restoreTopicsPrefix,
-		consumeClient:       consumeClient,
+		consumeClient:       client,
 		latestReader:        latestReader,
 	}, nil
-}
-
-// Close shuts down the Restorer's shared consume client and latest reader.
-func (r *Restorer) Close() {
-	r.consumeClient.Close()
-	r.latestReader.Close()
 }
 
 // Restore orchestrates the full consumer group offset restoration.

@@ -2,7 +2,6 @@ package kafka
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -19,10 +18,15 @@ type LatestReader struct {
 }
 
 // NewLatestReader creates a new LatestReader.
-func NewLatestReader(seedBrokers []string, tls *tls.Config) (*LatestReader, error) {
-	client, err := kgo.NewClient(kgo.SeedBrokers(seedBrokers...), kgo.DialTLSConfig(tls))
+func NewLatestReader(kafkaConfig Config) (*LatestReader, error) {
+	opts, err := BaseOpts(kafkaConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create kafka client: %w", err)
+		return nil, fmt.Errorf("failed to create latest reader client options: %w", err)
+	}
+
+	client, err := kgo.NewClient(opts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create latest reader client: %w", err)
 	}
 	return &LatestReader{client: client}, nil
 }
