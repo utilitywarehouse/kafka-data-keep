@@ -8,22 +8,20 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec/avro"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
+	ints3 "github.com/utilitywarehouse/kafka-data-keep/internal/s3"
 )
 
 // AppConfig holds the configuration for the consumer groups restore command.
 type AppConfig struct {
 	KafkaConfig kafka.Config
 	internal.OpsConfig
-	S3Bucket            string
-	S3Region            string
-	S3Endpoint          string
+	S3                  ints3.Config
 	S3Location          string
 	RestoreGroupsPrefix string
 	RestoreTopicsPrefix string
@@ -34,7 +32,7 @@ type AppConfig struct {
 
 // Run executes the consumer groups restore process.
 func Run(ctx context.Context, cfg AppConfig) error {
-	if cfg.S3Bucket == "" {
+	if cfg.S3.Bucket == "" {
 		return fmt.Errorf("s3-bucket must be provided")
 	}
 	if cfg.S3Location == "" {
@@ -77,13 +75,13 @@ func Run(ctx context.Context, cfg AppConfig) error {
 }
 
 func downloadAndDecode(ctx context.Context, cfg AppConfig, includeRegexes, excludeRegexes []*regexp.Regexp) ([]codec.ConsumerGroupOffset, error) {
-	s3Client, err := initS3Client(ctx, cfg)
+	s3Client, err := ints3.NewClient(ctx, cfg.S3.Region, cfg.S3.Endpoint)
 	if err != nil {
 		return nil, err
 	}
 
 	getObj, err := s3Client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(cfg.S3Bucket),
+		Bucket: aws.String(cfg.S3.Bucket),
 		Key:    aws.String(cfg.S3Location),
 	})
 	if err != nil {
@@ -143,24 +141,6 @@ func isEmpty(cgo *codec.ConsumerGroupOffset) bool {
 		}
 	}
 	return true
-}
-
-func initS3Client(ctx context.Context, cfg AppConfig) (*s3.Client, error) {
-	awsCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(cfg.S3Region))
-	if err != nil {
-		return nil, fmt.Errorf("failed loading aws config: %w", err)
-	}
-
-	var s3ClientOpts []func(*s3.Options)
-	if cfg.S3Endpoint != "" {
-		s3ClientOpts = append(s3ClientOpts, func(o *s3.Options) {
-			o.BaseEndpoint = aws.String(cfg.S3Endpoint)
-			o.UsePathStyle = true
-		})
-	}
-
-	s3Client := s3.NewFromConfig(awsCfg, s3ClientOpts...)
-	return s3Client, nil
 }
 
 func initKafkaClient(ctx context.Context, cfg AppConfig) (*kgo.Client, error) {

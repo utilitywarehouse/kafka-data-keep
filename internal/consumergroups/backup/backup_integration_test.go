@@ -16,6 +16,7 @@ import (
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec/avro"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
+	ints3 "github.com/utilitywarehouse/kafka-data-keep/internal/s3"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/testutil"
 )
 
@@ -85,9 +86,11 @@ func TestBackupIntegration(t *testing.T) {
 		KafkaConfig: kafka.Config{
 			Brokers: kafkaBrokers,
 		},
-		S3Bucket:    bucketName,
-		S3Region:    testutil.MinioRegion,
-		S3Endpoint:  s3Endpoint,
+		S3: ints3.Config{
+			Bucket:   bucketName,
+			Region:   testutil.MinioRegion,
+			Endpoint: s3Endpoint,
+		},
 		S3Location:  s3Location,
 		RunInterval: runInterval,
 	}

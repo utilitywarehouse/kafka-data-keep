@@ -175,7 +175,7 @@ const sourceOffsetHeader = "restore.source-offset"
 func (r *kafkaS3Restorer) recordsInFile(ctx context.Context, key string, lastProcessedOffset int64) ([]*kgo.Record, error) {
 	//nolint:contextcheck // use background context as otherwise, if the context is cancelled, it fails when decoding the file with a misleading error about the file format. The operation is quick and will finish within sigterm time
 	getResp, err := r.s3Client.GetObject(context.Background(), &s3.GetObjectInput{
-		Bucket: aws.String(r.cfg.S3Bucket),
+		Bucket: aws.String(r.cfg.S3.Bucket),
 		Key:    aws.String(key),
 	})
 	if err != nil {

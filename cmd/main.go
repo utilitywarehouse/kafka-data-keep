@@ -15,6 +15,7 @@ import (
 	consumergroupsbackup "github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/backup"
 	consumergroupsrestore "github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/restore"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
+	ints3 "github.com/utilitywarehouse/kafka-data-keep/internal/s3"
 	topicsbackup "github.com/utilitywarehouse/kafka-data-keep/internal/topics/backup"
 	topicsplanrestore "github.com/utilitywarehouse/kafka-data-keep/internal/topics/planrestore"
 	topicsrestore "github.com/utilitywarehouse/kafka-data-keep/internal/topics/restore"
@@ -90,12 +91,7 @@ func loadTopicsBackupAppConfig(args []string) (topicsbackup.AppConfig, error) {
 	)
 
 	// Storage
-	fs.StringVar(
-		&cfg.S3Bucket,
-		"s3-bucket",
-		getEnv("S3_BUCKET", ""),
-		"S3 bucket name where to store the backups",
-	)
+	bindS3Config(fs, &cfg.S3)
 	fs.StringVar(
 		&cfg.S3Prefix,
 		"s3-prefix",
@@ -120,18 +116,6 @@ func loadTopicsBackupAppConfig(args []string) (topicsbackup.AppConfig, error) {
 		"working-dir",
 		getEnv("WORKING_DIR", "kafka-backup-data"),
 		"Working directory for local files",
-	)
-	fs.StringVar(
-		&cfg.S3Endpoint,
-		"s3-endpoint",
-		getEnv("AWS_ENDPOINT_URL", ""),
-		"S3 endpoint URL (for LocalStack or custom S3-compatible storage)",
-	)
-	fs.StringVar(
-		&cfg.S3Region,
-		"s3-region",
-		getEnv("AWS_REGION", "eu-west-1"),
-		"S3 region ",
 	)
 
 	if err := fs.Parse(args); err != nil {
@@ -205,24 +189,7 @@ func loadTopicsPlanRestoreAppConfig(args []string) (topicsplanrestore.AppConfig,
 		"Kafka topic to send the restore plan to",
 	)
 
-	fs.StringVar(
-		&cfg.S3Bucket,
-		"s3-bucket",
-		getEnv("S3_BUCKET", ""),
-		"S3 bucket name where the backup files are stored",
-	)
-	fs.StringVar(
-		&cfg.S3Endpoint,
-		"s3-endpoint",
-		getEnv("AWS_ENDPOINT_URL", ""),
-		"S3 endpoint URL (for LocalStack or custom S3-compatible storage)",
-	)
-	fs.StringVar(
-		&cfg.S3Region,
-		"s3-region",
-		getEnv("AWS_REGION", "eu-west-1"),
-		"S3 region ",
-	)
+	bindS3Config(fs, &cfg.S3)
 	fs.StringVar(
 		&cfg.S3Prefix,
 		"s3-prefix",
@@ -284,24 +251,7 @@ func loadTopicsRestoreAppConfig(args []string) (topicsrestore.AppConfig, error) 
 	)
 
 	// Storage
-	fs.StringVar(
-		&cfg.S3Bucket,
-		"s3-bucket",
-		getEnv("S3_BUCKET", ""),
-		"S3 bucket name where the backups are stored",
-	)
-	fs.StringVar(
-		&cfg.S3Endpoint,
-		"s3-endpoint",
-		getEnv("AWS_ENDPOINT_URL", ""),
-		"S3 endpoint URL (for LocalStack or custom S3-compatible storage)",
-	)
-	fs.StringVar(
-		&cfg.S3Region,
-		"s3-region",
-		getEnv("AWS_REGION", "eu-west-1"),
-		"S3 region ",
-	)
+	bindS3Config(fs, &cfg.S3)
 
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
@@ -375,12 +325,7 @@ func loadConsumerGroupsBackupAppConfig(args []string) (consumergroupsbackup.AppC
 	bindKafkaConfig(fs, &cfg.KafkaConfig)
 	bindOpsConfig(fs, &cfg.OpsConfig)
 
-	fs.StringVar(
-		&cfg.S3Bucket,
-		"s3-bucket",
-		getEnv("S3_BUCKET", ""),
-		"S3 bucket name where to store the backups",
-	)
+	bindS3Config(fs, &cfg.S3)
 	fs.StringVar(
 		&cfg.S3Location,
 		"s3-location",
@@ -393,19 +338,6 @@ func loadConsumerGroupsBackupAppConfig(args []string) (consumergroupsbackup.AppC
 		"run-interval",
 		getEnvDuration("RUN_INTERVAL", 1*time.Minute),
 		"Interval between backups",
-	)
-
-	fs.StringVar(
-		&cfg.S3Endpoint,
-		"s3-endpoint",
-		getEnv("AWS_ENDPOINT_URL", ""),
-		"S3 endpoint URL (for LocalStack or custom S3-compatible storage)",
-	)
-	fs.StringVar(
-		&cfg.S3Region,
-		"s3-region",
-		getEnv("AWS_REGION", "eu-west-1"),
-		"S3 region ",
 	)
 
 	if err := fs.Parse(args); err != nil {
@@ -440,12 +372,7 @@ func loadConsumerGroupsRestoreAppConfig(args []string) (consumergroupsrestore.Ap
 	bindKafkaConfig(fs, &cfg.KafkaConfig)
 	bindOpsConfig(fs, &cfg.OpsConfig)
 
-	fs.StringVar(
-		&cfg.S3Bucket,
-		"s3-bucket",
-		getEnv("S3_BUCKET", ""),
-		"S3 bucket name where the consumer groups backup is stored",
-	)
+	bindS3Config(fs, &cfg.S3)
 	fs.StringVar(
 		&cfg.S3Location,
 		"s3-location",
@@ -483,19 +410,6 @@ func loadConsumerGroupsRestoreAppConfig(args []string) (consumergroupsrestore.Ap
 		"loop-interval",
 		getEnvDuration("LOOP_INTERVAL", 1*time.Minute),
 		"Duration between consumer group restore iterations",
-	)
-
-	fs.StringVar(
-		&cfg.S3Endpoint,
-		"s3-endpoint",
-		getEnv("AWS_ENDPOINT_URL", ""),
-		"S3 endpoint URL (for LocalStack or custom S3-compatible storage)",
-	)
-	fs.StringVar(
-		&cfg.S3Region,
-		"s3-region",
-		getEnv("AWS_REGION", "eu-west-1"),
-		"S3 region ",
 	)
 
 	if err := fs.Parse(args); err != nil {
@@ -581,5 +495,27 @@ func bindOpsConfig(fs *flag.FlagSet, cfg *internal.OpsConfig) {
 		"pprof-port",
 		getEnv("PPROF_PORT", "6060"),
 		"The port to use for the pprof server",
+	)
+}
+
+// BindS3Config binds the common S3 configuration flags to the given Config.
+func bindS3Config(fs *flag.FlagSet, cfg *ints3.Config) {
+	fs.StringVar(
+		&cfg.Bucket,
+		"s3-bucket",
+		getEnv("S3_BUCKET", ""),
+		"S3 bucket name where to store or read the backups",
+	)
+	fs.StringVar(
+		&cfg.Endpoint,
+		"s3-endpoint",
+		getEnv("AWS_ENDPOINT_URL", ""),
+		"S3 endpoint URL (for LocalStack or custom S3-compatible storage)",
+	)
+	fs.StringVar(
+		&cfg.Region,
+		"s3-region",
+		getEnv("AWS_REGION", "eu-west-1"),
+		"S3 region",
 	)
 }
