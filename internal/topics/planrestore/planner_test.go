@@ -75,7 +75,7 @@ func TestPlanner_filterTopics(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			p := &planner{
 				cfg: AppConfig{
-					Config: kafka.Config{
+					KafkaConfig: kafka.Config{
 						Brokers: "localhost:9092",
 					},
 					RestoreTopicsRegex: tt.topicsRegex,

@@ -82,7 +82,7 @@ func TestBackupIntegration(t *testing.T) {
 	runInterval := 500 * time.Millisecond
 
 	cfg := AppConfig{
-		Config: kafka.Config{
+		KafkaConfig: kafka.Config{
 			Brokers: kafkaBrokers,
 		},
 		S3Bucket:    bucketName,

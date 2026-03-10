@@ -66,10 +66,8 @@ func mainWrap() error {
 func loadTopicsBackupAppConfig(args []string) (topicsbackup.AppConfig, error) {
 	var cfg topicsbackup.AppConfig
 	fs := flag.NewFlagSet("topics-backup", flag.ExitOnError)
-	bindKafkaConfig(fs, &cfg.Config)
-	bindLogConfig(fs, &cfg.OpsConfig)
-	bindMetricsConfig(fs, &cfg.OpsConfig)
-	bindPProfConfig(fs, &cfg.OpsConfig)
+	bindKafkaConfig(fs, &cfg.KafkaConfig)
+	bindOpsConfig(fs, &cfg.OpsConfig)
 
 	// Kafka Consumer
 	fs.StringVar(
@@ -139,6 +137,7 @@ func loadTopicsBackupAppConfig(args []string) (topicsbackup.AppConfig, error) {
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
 	}
+	cfg.KafkaConfig.LogFormat = cfg.LogFormat
 	cfg.EnableFlushOnSignal = true
 	return cfg, nil
 }
@@ -183,10 +182,8 @@ func loadTopicsPlanRestoreAppConfig(args []string) (topicsplanrestore.AppConfig,
 	var cfg topicsplanrestore.AppConfig
 	fs := flag.NewFlagSet("topics-plan-restore", flag.ExitOnError)
 
-	bindKafkaConfig(fs, &cfg.Config)
-	bindLogConfig(fs, &cfg.OpsConfig)
-	bindMetricsConfig(fs, &cfg.OpsConfig)
-	bindPProfConfig(fs, &cfg.OpsConfig)
+	bindKafkaConfig(fs, &cfg.KafkaConfig)
+	bindOpsConfig(fs, &cfg.OpsConfig)
 
 	fs.StringVar(
 		&cfg.RestoreTopicsRegex,
@@ -236,6 +233,7 @@ func loadTopicsPlanRestoreAppConfig(args []string) (topicsplanrestore.AppConfig,
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
 	}
+	cfg.KafkaConfig.LogFormat = cfg.LogFormat
 
 	return cfg, nil
 }
@@ -262,10 +260,8 @@ func loadTopicsRestoreAppConfig(args []string) (topicsrestore.AppConfig, error) 
 	var cfg topicsrestore.AppConfig
 	fs := flag.NewFlagSet("topics-restore", flag.ExitOnError)
 
-	bindKafkaConfig(fs, &cfg.Config)
-	bindLogConfig(fs, &cfg.OpsConfig)
-	bindMetricsConfig(fs, &cfg.OpsConfig)
-	bindPProfConfig(fs, &cfg.OpsConfig)
+	bindKafkaConfig(fs, &cfg.KafkaConfig)
+	bindOpsConfig(fs, &cfg.OpsConfig)
 
 	// Kafka Consumer
 	fs.StringVar(
@@ -310,6 +306,7 @@ func loadTopicsRestoreAppConfig(args []string) (topicsrestore.AppConfig, error) 
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
 	}
+	cfg.KafkaConfig.LogFormat = cfg.LogFormat
 	return cfg, nil
 }
 
@@ -375,10 +372,8 @@ func loadConsumerGroupsBackupAppConfig(args []string) (consumergroupsbackup.AppC
 	var cfg consumergroupsbackup.AppConfig
 	fs := flag.NewFlagSet("consumer-groups-backup", flag.ExitOnError)
 
-	bindKafkaConfig(fs, &cfg.Config)
-	bindLogConfig(fs, &cfg.OpsConfig)
-	bindMetricsConfig(fs, &cfg.OpsConfig)
-	bindPProfConfig(fs, &cfg.OpsConfig)
+	bindKafkaConfig(fs, &cfg.KafkaConfig)
+	bindOpsConfig(fs, &cfg.OpsConfig)
 
 	fs.StringVar(
 		&cfg.S3Bucket,
@@ -416,6 +411,7 @@ func loadConsumerGroupsBackupAppConfig(args []string) (consumergroupsbackup.AppC
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
 	}
+	cfg.KafkaConfig.LogFormat = cfg.LogFormat
 	return cfg, nil
 }
 
@@ -441,10 +437,8 @@ func loadConsumerGroupsRestoreAppConfig(args []string) (consumergroupsrestore.Ap
 	var cfg consumergroupsrestore.AppConfig
 	fs := flag.NewFlagSet("consumer-groups-restore", flag.ExitOnError)
 
-	bindKafkaConfig(fs, &cfg.Config)
-	bindLogConfig(fs, &cfg.OpsConfig)
-	bindMetricsConfig(fs, &cfg.OpsConfig)
-	bindPProfConfig(fs, &cfg.OpsConfig)
+	bindKafkaConfig(fs, &cfg.KafkaConfig)
+	bindOpsConfig(fs, &cfg.OpsConfig)
 
 	fs.StringVar(
 		&cfg.S3Bucket,
@@ -507,6 +501,7 @@ func loadConsumerGroupsRestoreAppConfig(args []string) (consumergroupsrestore.Ap
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
 	}
+	cfg.KafkaConfig.LogFormat = cfg.LogFormat
 	return cfg, nil
 }
 
@@ -547,9 +542,15 @@ func bindKafkaConfig(fs *flag.FlagSet, cfg *kafka.Config) {
 		getEnv("KAFKA_MTLS_CLIENT_KEY_PATH", "/certs/tls.key"),
 		"The path of the file containing the client private key",
 	)
+	fs.StringVar(
+		&cfg.LogLevel,
+		"kgo-log-level",
+		getEnv("KGO_LOG_LEVEL", "INFO"),
+		"The log level for the franz-go library",
+	)
 }
 
-func bindLogConfig(fs *flag.FlagSet, cfg *internal.OpsConfig) {
+func bindOpsConfig(fs *flag.FlagSet, cfg *internal.OpsConfig) {
 	fs.StringVar(
 		&cfg.LogLevel,
 		"log-level",
@@ -557,29 +558,18 @@ func bindLogConfig(fs *flag.FlagSet, cfg *internal.OpsConfig) {
 		"The log level to use",
 	)
 	fs.StringVar(
-		&cfg.KGOLogLevel,
-		"kgo-log-level",
-		getEnv("KGO_LOG_LEVEL", "INFO"),
-		"The log level for the franz-go library",
-	)
-	fs.StringVar(
 		&cfg.LogFormat,
 		"log-format",
 		getEnv("LOG_FORMAT", "text"),
 		"The log format to use (text, json)",
 	)
-}
-
-func bindMetricsConfig(fs *flag.FlagSet, cfg *internal.OpsConfig) {
 	fs.StringVar(
 		&cfg.MetricsPort,
 		"metrics-port",
 		getEnv("METRICS_PORT", "8081"),
 		"The port to use for the metrics server",
 	)
-}
 
-func bindPProfConfig(fs *flag.FlagSet, cfg *internal.OpsConfig) {
 	fs.BoolVar(
 		&cfg.EnablePProf,
 		"enable-pprof",

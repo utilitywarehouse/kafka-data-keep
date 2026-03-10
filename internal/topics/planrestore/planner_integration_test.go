@@ -60,7 +60,7 @@ func TestPlanRestoreIntegration(t *testing.T) {
 
 	// 3. Run planner
 	cfg := AppConfig{
-		Config: kafkaint.Config{
+		KafkaConfig: kafkaint.Config{
 			Brokers: kafkaBrokers,
 		},
 		PlanTopic:          planTopic,
