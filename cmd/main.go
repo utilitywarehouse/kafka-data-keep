@@ -67,9 +67,7 @@ func loadTopicsBackupAppConfig(args []string) (topicsbackup.AppConfig, error) {
 	var cfg topicsbackup.AppConfig
 	fs := flag.NewFlagSet("topics-backup", flag.ExitOnError)
 	bindKafkaConfig(fs, &cfg.KafkaConfig)
-	bindLogConfig(fs, &cfg.OpsConfig)
-	bindMetricsConfig(fs, &cfg.OpsConfig)
-	bindPProfConfig(fs, &cfg.OpsConfig)
+	bindOpsConfig(fs, &cfg.OpsConfig)
 
 	// Kafka Consumer
 	fs.StringVar(
@@ -185,9 +183,7 @@ func loadTopicsPlanRestoreAppConfig(args []string) (topicsplanrestore.AppConfig,
 	fs := flag.NewFlagSet("topics-plan-restore", flag.ExitOnError)
 
 	bindKafkaConfig(fs, &cfg.KafkaConfig)
-	bindLogConfig(fs, &cfg.OpsConfig)
-	bindMetricsConfig(fs, &cfg.OpsConfig)
-	bindPProfConfig(fs, &cfg.OpsConfig)
+	bindOpsConfig(fs, &cfg.OpsConfig)
 
 	fs.StringVar(
 		&cfg.RestoreTopicsRegex,
@@ -265,9 +261,7 @@ func loadTopicsRestoreAppConfig(args []string) (topicsrestore.AppConfig, error) 
 	fs := flag.NewFlagSet("topics-restore", flag.ExitOnError)
 
 	bindKafkaConfig(fs, &cfg.KafkaConfig)
-	bindLogConfig(fs, &cfg.OpsConfig)
-	bindMetricsConfig(fs, &cfg.OpsConfig)
-	bindPProfConfig(fs, &cfg.OpsConfig)
+	bindOpsConfig(fs, &cfg.OpsConfig)
 
 	// Kafka Consumer
 	fs.StringVar(
@@ -379,9 +373,7 @@ func loadConsumerGroupsBackupAppConfig(args []string) (consumergroupsbackup.AppC
 	fs := flag.NewFlagSet("consumer-groups-backup", flag.ExitOnError)
 
 	bindKafkaConfig(fs, &cfg.KafkaConfig)
-	bindLogConfig(fs, &cfg.OpsConfig)
-	bindMetricsConfig(fs, &cfg.OpsConfig)
-	bindPProfConfig(fs, &cfg.OpsConfig)
+	bindOpsConfig(fs, &cfg.OpsConfig)
 
 	fs.StringVar(
 		&cfg.S3Bucket,
@@ -446,9 +438,7 @@ func loadConsumerGroupsRestoreAppConfig(args []string) (consumergroupsrestore.Ap
 	fs := flag.NewFlagSet("consumer-groups-restore", flag.ExitOnError)
 
 	bindKafkaConfig(fs, &cfg.KafkaConfig)
-	bindLogConfig(fs, &cfg.OpsConfig)
-	bindMetricsConfig(fs, &cfg.OpsConfig)
-	bindPProfConfig(fs, &cfg.OpsConfig)
+	bindOpsConfig(fs, &cfg.OpsConfig)
 
 	fs.StringVar(
 		&cfg.S3Bucket,
@@ -560,7 +550,7 @@ func bindKafkaConfig(fs *flag.FlagSet, cfg *kafka.Config) {
 	)
 }
 
-func bindLogConfig(fs *flag.FlagSet, cfg *internal.OpsConfig) {
+func bindOpsConfig(fs *flag.FlagSet, cfg *internal.OpsConfig) {
 	fs.StringVar(
 		&cfg.LogLevel,
 		"log-level",
@@ -573,18 +563,13 @@ func bindLogConfig(fs *flag.FlagSet, cfg *internal.OpsConfig) {
 		getEnv("LOG_FORMAT", "text"),
 		"The log format to use (text, json)",
 	)
-}
-
-func bindMetricsConfig(fs *flag.FlagSet, cfg *internal.OpsConfig) {
 	fs.StringVar(
 		&cfg.MetricsPort,
 		"metrics-port",
 		getEnv("METRICS_PORT", "8081"),
 		"The port to use for the metrics server",
 	)
-}
 
-func bindPProfConfig(fs *flag.FlagSet, cfg *internal.OpsConfig) {
 	fs.BoolVar(
 		&cfg.EnablePProf,
 		"enable-pprof",
