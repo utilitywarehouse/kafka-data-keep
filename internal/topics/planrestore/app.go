@@ -15,7 +15,7 @@ import (
 )
 
 type AppConfig struct {
-	kafkaint.Config
+	KafkaConfig kafkaint.Config
 	internal.OpsConfig
 	RestoreTopicsRegex string
 	ExcludeTopicsRegex string
@@ -74,7 +74,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 }
 
 func initKafkaClient(ctx context.Context, cfg AppConfig) (*kgo.Client, error) {
-	opts, err := kafkaint.BaseOpts(cfg.Config)
+	opts, err := kafkaint.BaseOpts(cfg.KafkaConfig)
 	if err != nil {
 		return nil, err
 	}

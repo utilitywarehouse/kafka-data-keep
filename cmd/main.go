@@ -66,7 +66,7 @@ func mainWrap() error {
 func loadTopicsBackupAppConfig(args []string) (topicsbackup.AppConfig, error) {
 	var cfg topicsbackup.AppConfig
 	fs := flag.NewFlagSet("topics-backup", flag.ExitOnError)
-	bindKafkaConfig(fs, &cfg.Config)
+	bindKafkaConfig(fs, &cfg.KafkaConfig)
 	bindLogConfig(fs, &cfg.OpsConfig)
 	bindMetricsConfig(fs, &cfg.OpsConfig)
 	bindPProfConfig(fs, &cfg.OpsConfig)
@@ -139,7 +139,7 @@ func loadTopicsBackupAppConfig(args []string) (topicsbackup.AppConfig, error) {
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
 	}
-	cfg.Config.LogFormat = cfg.OpsConfig.LogFormat
+	cfg.KafkaConfig.LogFormat = cfg.LogFormat
 	cfg.EnableFlushOnSignal = true
 	return cfg, nil
 }
@@ -184,7 +184,7 @@ func loadTopicsPlanRestoreAppConfig(args []string) (topicsplanrestore.AppConfig,
 	var cfg topicsplanrestore.AppConfig
 	fs := flag.NewFlagSet("topics-plan-restore", flag.ExitOnError)
 
-	bindKafkaConfig(fs, &cfg.Config)
+	bindKafkaConfig(fs, &cfg.KafkaConfig)
 	bindLogConfig(fs, &cfg.OpsConfig)
 	bindMetricsConfig(fs, &cfg.OpsConfig)
 	bindPProfConfig(fs, &cfg.OpsConfig)
@@ -237,7 +237,7 @@ func loadTopicsPlanRestoreAppConfig(args []string) (topicsplanrestore.AppConfig,
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
 	}
-	cfg.Config.LogFormat = cfg.OpsConfig.LogFormat
+	cfg.KafkaConfig.LogFormat = cfg.LogFormat
 
 	return cfg, nil
 }
@@ -264,7 +264,7 @@ func loadTopicsRestoreAppConfig(args []string) (topicsrestore.AppConfig, error) 
 	var cfg topicsrestore.AppConfig
 	fs := flag.NewFlagSet("topics-restore", flag.ExitOnError)
 
-	bindKafkaConfig(fs, &cfg.Config)
+	bindKafkaConfig(fs, &cfg.KafkaConfig)
 	bindLogConfig(fs, &cfg.OpsConfig)
 	bindMetricsConfig(fs, &cfg.OpsConfig)
 	bindPProfConfig(fs, &cfg.OpsConfig)
@@ -312,6 +312,7 @@ func loadTopicsRestoreAppConfig(args []string) (topicsrestore.AppConfig, error) 
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
 	}
+	cfg.KafkaConfig.LogFormat = cfg.LogFormat
 	return cfg, nil
 }
 
@@ -377,7 +378,7 @@ func loadConsumerGroupsBackupAppConfig(args []string) (consumergroupsbackup.AppC
 	var cfg consumergroupsbackup.AppConfig
 	fs := flag.NewFlagSet("consumer-groups-backup", flag.ExitOnError)
 
-	bindKafkaConfig(fs, &cfg.Config)
+	bindKafkaConfig(fs, &cfg.KafkaConfig)
 	bindLogConfig(fs, &cfg.OpsConfig)
 	bindMetricsConfig(fs, &cfg.OpsConfig)
 	bindPProfConfig(fs, &cfg.OpsConfig)
@@ -418,6 +419,7 @@ func loadConsumerGroupsBackupAppConfig(args []string) (consumergroupsbackup.AppC
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
 	}
+	cfg.KafkaConfig.LogFormat = cfg.LogFormat
 	return cfg, nil
 }
 
@@ -443,7 +445,7 @@ func loadConsumerGroupsRestoreAppConfig(args []string) (consumergroupsrestore.Ap
 	var cfg consumergroupsrestore.AppConfig
 	fs := flag.NewFlagSet("consumer-groups-restore", flag.ExitOnError)
 
-	bindKafkaConfig(fs, &cfg.Config)
+	bindKafkaConfig(fs, &cfg.KafkaConfig)
 	bindLogConfig(fs, &cfg.OpsConfig)
 	bindMetricsConfig(fs, &cfg.OpsConfig)
 	bindPProfConfig(fs, &cfg.OpsConfig)
@@ -509,6 +511,7 @@ func loadConsumerGroupsRestoreAppConfig(args []string) (consumergroupsrestore.Ap
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
 	}
+	cfg.KafkaConfig.LogFormat = cfg.LogFormat
 	return cfg, nil
 }
 

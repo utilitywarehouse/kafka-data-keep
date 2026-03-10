@@ -89,7 +89,7 @@ func TestRestore(t *testing.T) {
 	// 8. Run Restore
 	restoreGroup := newRandomName("e2e-restore")
 	restoreCfg := restore.AppConfig{
-		Config: kafkaint.Config{
+		KafkaConfig: kafkaint.Config{
 			Brokers: kafkaBrokers,
 		},
 		PlanTopic:          planTopic,
@@ -261,7 +261,7 @@ func runPlanRestore(ctx context.Context, t *testing.T, kadmClient *kadm.Client, 
 
 	// Run Plan Restore
 	planCfg := planrestore.AppConfig{
-		Config: kafkaint.Config{
+		KafkaConfig: kafkaint.Config{
 			Brokers: kafkaBrokers,
 		},
 		PlanTopic:          planTopic,
@@ -309,7 +309,7 @@ func feedTopicAndRunBackup(t *testing.T, kadmClient *kadm.Client, kafkaBrokers s
 	workingDir := t.TempDir()
 
 	backupCfg := backup.AppConfig{
-		Config: kafkaint.Config{
+		KafkaConfig: kafkaint.Config{
 			Brokers: kafkaBrokers,
 		},
 		TopicsRegex:            srcTopic,
