@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
-	kafkaint "github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/testutil"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/codec/avro"
 	"go.opentelemetry.io/otel"
@@ -85,7 +85,7 @@ func TestBackupIntegration(t *testing.T) {
 		groupID := newRandomName("test-backup-group")
 		s3Prefix := "multiple-batches/"
 		cfg := AppConfig{
-			KafkaConfig: kafkaint.Config{
+			KafkaConfig: kafka.Config{
 				Brokers: kafkaBrokers,
 			},
 			TopicsRegex:            "multiple-.*",
@@ -163,7 +163,7 @@ func TestBackupIntegration(t *testing.T) {
 		groupID := newRandomName("test-backup-group")
 		s3Prefix := "keep-local-on-stop/"
 		cfg := AppConfig{
-			KafkaConfig: kafkaint.Config{
+			KafkaConfig: kafka.Config{
 				Brokers: kafkaBrokers,
 			},
 			TopicsRegex:            topic,
@@ -217,7 +217,7 @@ func TestBackupIntegration(t *testing.T) {
 		groupID := newRandomName("test-overwrite-restart")
 		s3Prefix := "overwrite-restart/"
 		cfg := AppConfig{
-			KafkaConfig: kafkaint.Config{
+			KafkaConfig: kafka.Config{
 				Brokers: kafkaBrokers,
 			},
 			TopicsRegex:            topic,
@@ -287,7 +287,7 @@ func TestBackupIntegration(t *testing.T) {
 		groupID := newRandomName("delete-old-local-on-offset-advance")
 		s3Prefix := "delete-old-local-on-offset-advance/"
 		cfg := AppConfig{
-			KafkaConfig: kafkaint.Config{
+			KafkaConfig: kafka.Config{
 				Brokers: kafkaBrokers,
 			},
 			TopicsRegex:            topic,
@@ -368,7 +368,7 @@ func TestBackupIntegration(t *testing.T) {
 		groupID := newRandomName("delete-leftover-paritition-folders")
 		s3Prefix := "delete-leftover-paritition-folders/"
 		cfg := AppConfig{
-			KafkaConfig: kafkaint.Config{
+			KafkaConfig: kafka.Config{
 				Brokers: kafkaBrokers,
 			},
 			TopicsRegex:            topic1,
@@ -443,7 +443,7 @@ func TestBackupIntegration(t *testing.T) {
 		groupID := newRandomName("test-backup-group")
 		s3Prefix := "pause-resume/"
 		cfg := AppConfig{
-			KafkaConfig: kafkaint.Config{
+			KafkaConfig: kafka.Config{
 				Brokers: kafkaBrokers,
 			},
 			TopicsRegex:            "pause-resume-.*",
@@ -510,7 +510,7 @@ func TestBackupIntegration(t *testing.T) {
 		groupID := newRandomName("unexpected-leftover-file")
 		s3Prefix := "unexpected-leftover-file/"
 		cfg := AppConfig{
-			KafkaConfig: kafkaint.Config{
+			KafkaConfig: kafka.Config{
 				Brokers: kafkaBrokers,
 			},
 			TopicsRegex:            topic,
@@ -578,7 +578,7 @@ func TestBackupIntegration(t *testing.T) {
 		groupID := newRandomName("test-flush-signal-group")
 		s3Prefix := "flush-on-signal/"
 		cfg := AppConfig{
-			KafkaConfig: kafkaint.Config{
+			KafkaConfig: kafka.Config{
 				Brokers: kafkaBrokers,
 			},
 			TopicsRegex:            topic,

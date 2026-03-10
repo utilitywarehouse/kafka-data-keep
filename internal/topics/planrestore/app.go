@@ -10,11 +10,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal"
-	kafkaint "github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 )
 
 type AppConfig struct {
-	KafkaConfig kafkaint.Config
+	KafkaConfig kafka.Config
 	internal.OpsConfig
 	RestoreTopicsRegex string
 	ExcludeTopicsRegex string
@@ -53,7 +53,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	}
 	defer kafkaClient.Close()
 
-	latestReader, err := kafkaint.NewLatestReader(cfg.KafkaConfig)
+	latestReader, err := kafka.NewLatestReader(cfg.KafkaConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create latest reader: %w", err)
 	}
@@ -71,7 +71,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 }
 
 func initKafkaClient(ctx context.Context, cfg AppConfig) (*kgo.Client, error) {
-	opts, err := kafkaint.BaseOpts(cfg.KafkaConfig)
+	opts, err := kafka.BaseOpts(cfg.KafkaConfig)
 	if err != nil {
 		return nil, err
 	}

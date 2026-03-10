@@ -11,7 +11,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec"
-	kafkaint "github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
+	"github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 	topicsrestore "github.com/utilitywarehouse/kafka-data-keep/internal/topics/restore"
 )
 
@@ -30,11 +30,11 @@ type Restorer struct {
 	restoreTopicsPrefix string
 	consumeClient       *kgo.Client
 	consumeMu           sync.Mutex
-	latestReader        *kafkaint.LatestReader
+	latestReader        *kafka.LatestReader
 }
 
 // NewRestorer creates a new Restorer.
-func NewRestorer(client *kgo.Client, latestReader *kafkaint.LatestReader, restoreGroupsPrefix, restoreTopicsPrefix string) (*Restorer, error) {
+func NewRestorer(client *kgo.Client, latestReader *kafka.LatestReader, restoreGroupsPrefix, restoreTopicsPrefix string) (*Restorer, error) {
 	return &Restorer{
 		kadmClient:          kadm.NewClient(client),
 		restoreGroupsPrefix: restoreGroupsPrefix,
