@@ -85,9 +85,13 @@ spec:
               value: "false"
             - name: PPROF_PORT
               value: "6060"
+            - name: ENABLE_FLUSH_SERVER
+              value: "true"
+            - name: FLUSH_SERVER_PORT
+              value: "8082"
           ports:
             - containerPort: 8081
-              name: ops
+              name: metrics
           volumeMounts:
             - mountPath: /backup-workdir
               name: workdir

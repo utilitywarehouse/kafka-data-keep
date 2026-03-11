@@ -118,6 +118,19 @@ func loadTopicsBackupAppConfig(args []string) (topicsbackup.AppConfig, error) {
 		"Working directory for local files",
 	)
 
+	fs.BoolVar(
+		&cfg.EnableFlushServer,
+		"enable-flush-server",
+		getEnvBool("ENABLE_FLUSH_SERVER", false),
+		"Enable HTTP server for flushing partition writers",
+	)
+	fs.StringVar(
+		&cfg.FlushServerPort,
+		"flush-server-port",
+		getEnv("FLUSH_SERVER_PORT", "8082"),
+		"The port to use for the flush HTTP server",
+	)
+
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
 	}

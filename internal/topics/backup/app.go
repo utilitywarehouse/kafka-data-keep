@@ -15,6 +15,7 @@ import (
 	ints3 "github.com/utilitywarehouse/kafka-data-keep/internal/s3"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/codec/avro"
 	"golang.org/x/sync/errgroup"
+	"net/http"
 )
 
 type AppConfig struct {
@@ -29,6 +30,8 @@ type AppConfig struct {
 	S3                     ints3.Config
 	S3Prefix               string
 	EnableFlushOnSignal    bool
+	EnableFlushServer      bool
+	FlushServerPort        string
 }
 
 func Run(ctx context.Context, cfg AppConfig) error {
@@ -41,8 +44,6 @@ func Run(ctx context.Context, cfg AppConfig) error {
 		return fmt.Errorf("failed to create s3 client: %w", err)
 	}
 	uploader := ints3.NewUploader(s3Client, cfg.S3.Bucket)
-
-	// Create working dir for local files
 
 	// Create working dir for local files
 	if err := os.MkdirAll(cfg.WorkingDir, 0o750); err != nil {
@@ -89,6 +90,30 @@ func Run(ctx context.Context, cfg AppConfig) error {
 		eg.Go(func() error {
 			return runFlushOnSignal(ctx, mgr)
 		})
+	}
+
+	if cfg.EnableFlushServer {
+		m := http.NewServeMux()
+		m.HandleFunc("/__/flush", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			slog.InfoContext(r.Context(), "Received HTTP flush request, flushing all partition writers")
+			if err := mgr.FlushAll(r.Context()); err != nil {
+				slog.ErrorContext(r.Context(), "Failed to flush partition writers via HTTP", "error", err)
+				http.Error(w, "Failed to flush", http.StatusInternalServerError)
+				return
+			}
+			slog.InfoContext(r.Context(), "Successfully flushed all partition writers via HTTP")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("Flushed\n"))
+		})
+
+		// running only on localhost, so it cannot be abused remotely
+		addr := fmt.Sprintf("127.0.0.1:%s", cfg.FlushServerPort)
+		closeFlushServer := internal.RunHTTPServer(ctx, addr, m, "flush server")
+		defer closeFlushServer()
 	}
 
 	err = eg.Wait()
