@@ -707,7 +707,7 @@ func TestBackupIntegration(t *testing.T) {
 		resp, err := http.Post(fmt.Sprintf("http://127.0.0.1:%s/__/flush", flushPort), "application/json", nil)
 		require.NoError(t, err)
 		require.Equal(t, http.StatusOK, resp.StatusCode)
-		resp.Body.Close()
+		require.NoError(t, resp.Body.Close())
 
 		var filesFound map[string]int
 		require.Eventually(t, func() bool {

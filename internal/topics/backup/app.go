@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -15,7 +16,6 @@ import (
 	ints3 "github.com/utilitywarehouse/kafka-data-keep/internal/s3"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/codec/avro"
 	"golang.org/x/sync/errgroup"
-	"net/http"
 )
 
 type AppConfig struct {
