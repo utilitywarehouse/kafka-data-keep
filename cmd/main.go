@@ -107,8 +107,8 @@ func loadTopicsBackupAppConfig(args []string) (topicsbackup.AppConfig, error) {
 	fs.DurationVar(
 		&cfg.PartitionIdleThreshold,
 		"partition-idle-threshold",
-		getEnvDuration("PARTITION_IDLE_THRESHOLD", 1*time.Minute),
-		"The threshold after which a partition will be considered idle for not consuming any new records. Should be a duration",
+		getEnvDuration("PARTITION_IDLE_THRESHOLD", 5*time.Second),
+		"The threshold after which a partition will be considered idle for not consuming any new records. The local files for idle partitions are closed and are resumed on the next incoming record. Must be a duration.",
 	)
 
 	fs.StringVar(
