@@ -93,13 +93,15 @@ The `topics-backup` subcommand supports the following flags and environment vari
 | `-min-file-size` | `MIN_FILE_SIZE` | `5242880` (5MB)     | The minimum file size in bytes for each partition backup file |
 | `-partition-idle-threshold` | `PARTITION_IDLE_THRESHOLD` | `5s`                | The threshold after which a partition will be considered idle for not consuming any new records (duration, e.g. `30s`, `5m`) |
 | `-working-dir` | `WORKING_DIR` | `kafka-backup-data` | Working directory for local files |
-| `-s3-endpoint` | `AWS_ENDPOINT_URL` |                     | S3 endpoint URL (for LocalStack or custom S3-compatible storage) |
-| `-s3-region` | `AWS_REGION` | `eu-west-1`         | S3 region |
-| `-log-level` | `LOG_LEVEL` | `INFO`              | The log level to use |
-| `-log-format` | `LOG_FORMAT` | `text`              | The log format to use (text, json) |
-| `-metrics-port` | `METRICS_PORT` | `8081`              | The port to use for the metrics server |
-| `-enable-pprof` | `ENABLE_PPROF` | `false`             | Enable pprof server for profiling |
-| `-pprof-port` | `PPROF_PORT` | `6060`              | The port to use for the pprof server |
+| `-s3-endpoint` | `AWS_ENDPOINT_URL` | | S3 endpoint URL (for LocalStack or custom S3-compatible storage) |
+| `-s3-region` | `AWS_REGION` | `eu-west-1` | S3 region |
+| `-log-level` | `LOG_LEVEL` | `INFO` | The log level to use |
+| `-log-format` | `LOG_FORMAT` | `text` | The log format to use (text, json) |
+| `-metrics-port` | `METRICS_PORT` | `8081` | The port to use for the metrics server |
+| `-enable-pprof` | `ENABLE_PPROF` | `false` | Enable pprof server for profiling |
+| `-pprof-port` | `PPROF_PORT` | `6060` | The port to use for the pprof server |
+| `-enable-flush-server` | `ENABLE_FLUSH_SERVER` | `false` | Enable HTTP server for flushing partition writers |
+| `-flush-server-port` | `FLUSH_SERVER_PORT` | `8082` | The port to use for the flush HTTP server |
 
 ## Graceful Shutdown
 
@@ -110,12 +112,21 @@ Process termination **does not** trigger an automatic flush to S3. This is a del
 1.  **Maintain Restore Performance**: Respecting `MinFileSize` prevents the creation of small file fragments in S3, which would otherwise degrade restore throughput.
 2.  **Minimize Shutdown Latency**: Ensures near-instantaneous process exit by avoiding potentially slow, multi-partition I/O operations during shutdown.
 
-### Manual Flush (SIGUSR1)
-To force an immediate persistence of all pending buffers without stopping the service (e.g., before node maintenance or scaling), send a `SIGUSR1` signal:
+### Manual Flush (SIGUSR1 and HTTP)
+To force an immediate persistence of all pending buffers without stopping the service (e.g., before node maintenance or scaling), you can trigger a manual flush in two ways:
+
+**Via Signal:**
 ```bash
 kill -SIGUSR1 <pid>
 ```
-The application will immediately flush all active partition writers to S3.
+
+**Via HTTP:**
+If configured with `-enable-flush-server` or `ENABLE_FLUSH_SERVER=true` (default: false), send a POST request to the `/__/flush` endpoint on the configured flush server port (`8082` by default). The server binds to `127.0.0.1`:
+```bash
+curl -X POST http://127.0.0.1:8082/__/flush
+```
+
+Both methods will immediately flush all active partition writers to S3.
 
 
 ### Usage Example
