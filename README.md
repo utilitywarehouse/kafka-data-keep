@@ -19,7 +19,7 @@ The application functions as a Kafka consumer that backs up data to S3. It uses 
 - **Duplicate Header Keys**: If a Kafka record contains multiple headers with the same key, only the last header value is kept. All previous values for that key are dropped during backup.
 
 
-## File Naming and Directory Structure
+## Persistence
 
 The application organizes files locally and in S3 using a structured hierarchy and a deterministic naming convention.
 
@@ -57,36 +57,51 @@ my-topic-0-0000000000000012345.avro
 
 The 19-digit zero-padding ensures that files are sorted chronologically when listed alphabetically, which is essential for having the messages sorted on restore.
 
+Since Kafka offsets are only committed after a successful S3 upload, this file naming convention makes the backup process idempotent in most scenarios. 
+However, overlapping files can occasionally be generated, such as when a partition's starting offset advances due to log retention policies. 
+The restore process handles these edge cases by automatically detecting and skipping duplicate records. For more details, see [Deduplication](#deduplication).
+
+### Data Durability
+Any records not yet uploaded to S3 are stored durably in the configured `WorkingDir`.
+- **Resilience**: Data is preserved and will be processed on the next application start, even if the Kafka cluster is unavailable.
+- **Planned Work**: Implementation of an emergency flush mechanism triggered by detected Kafka connectivity failures.
+
+### Idle Partitions
+To optimize memory usage, the application automatically closes local files associated with partitions that become idle (i.e., do not receive new data for a configurable duration).
+- **Threshold Control**: This behavior is governed by the `partition-idle-threshold` parameter.
+- **Memory Optimization**: Keeping this threshold to a low value significantly improves memory usage by limiting the number of concurrently open file descriptors and buffered writers. By default this is set to 5s.
+
+
 ## Configuration
 
 The `topics-backup` subcommand supports the following flags and environment variables. Flags take precedence over environment variables.
 
-| Flag | Environment Variable | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `-brokers` | `KAFKA_BROKERS` | `localhost:9092` | Kafka brokers (comma separated) |
-| `-brokersDNSSrv` | `KAFKA_BROKERS_DNS_SRV` | | DNS SRV record with the kafka seed brokers |
-| `-kafka-mtls-auth` | `KAFKA_MTLS_AUTH` | `false` | Kafka cluster uses mTLS authentication |
-| `-kafka-mtls-ca-cert-path` | `KAFKA_MTLS_CA_CERT_PATH` | `/certs/ca.crt` | The path of the file containing the CA cert |
-| `-kafka-mtls-client-cert-path` | `KAFKA_MTLS_CLIENT_CERT_PATH` | `/certs/tls.crt` | The path of the file containing the client cert |
-| `-kafka-mtls-client-key-path` | `KAFKA_MTLS_CLIENT_KEY_PATH` | `/certs/tls.key` | The path of the file containing the client private key |
-| `-kgo-log-level` | `KGO_LOG_LEVEL` | `INFO` | The log level for the franz-go library |
-| `-topics-regex` | `KAFKA_TOPICS_REGEX` | `.*` | List of kafka topics regex to consume (comma separated) |
-| `-exclude-topics-regex` | `KAFKA_EXCLUDE_TOPICS_REGEX` | | List of kafka topics regex to exclude from consuming (comma separated) |
-| `-group-id` | `KAFKA_GROUP_ID` | `kafka-data-keep` | Kafka consumer group ID |
-| `-s3-bucket` | `S3_BUCKET` | | S3 bucket name where to store the backups |
-| `-s3-prefix` | `S3_PREFIX` | | The prefix to use for the backup files in S3 |
-| `-min-file-size` | `MIN_FILE_SIZE` | `5242880` (5MB) | The minimum file size in bytes for each partition backup file |
-| `-partition-idle-threshold` | `PARTITION_IDLE_THRESHOLD` | `1m` | The threshold after which a partition will be considered idle for not consuming any new records (duration, e.g. `30s`, `5m`) |
+| Flag | Environment Variable | Default             | Description |
+| :--- | :--- |:--------------------| :--- |
+| `-brokers` | `KAFKA_BROKERS` | `localhost:9092`    | Kafka brokers (comma separated) |
+| `-brokersDNSSrv` | `KAFKA_BROKERS_DNS_SRV` |                     | DNS SRV record with the kafka seed brokers |
+| `-kafka-mtls-auth` | `KAFKA_MTLS_AUTH` | `false`             | Kafka cluster uses mTLS authentication |
+| `-kafka-mtls-ca-cert-path` | `KAFKA_MTLS_CA_CERT_PATH` | `/certs/ca.crt`     | The path of the file containing the CA cert |
+| `-kafka-mtls-client-cert-path` | `KAFKA_MTLS_CLIENT_CERT_PATH` | `/certs/tls.crt`    | The path of the file containing the client cert |
+| `-kafka-mtls-client-key-path` | `KAFKA_MTLS_CLIENT_KEY_PATH` | `/certs/tls.key`    | The path of the file containing the client private key |
+| `-kgo-log-level` | `KGO_LOG_LEVEL` | `INFO`              | The log level for the franz-go library |
+| `-topics-regex` | `KAFKA_TOPICS_REGEX` | `.*`                | List of kafka topics regex to consume (comma separated) |
+| `-exclude-topics-regex` | `KAFKA_EXCLUDE_TOPICS_REGEX` |                     | List of kafka topics regex to exclude from consuming (comma separated) |
+| `-group-id` | `KAFKA_GROUP_ID` | `kafka-data-keep`   | Kafka consumer group ID |
+| `-s3-bucket` | `S3_BUCKET` |                     | S3 bucket name where to store the backups |
+| `-s3-prefix` | `S3_PREFIX` |                     | The prefix to use for the backup files in S3 |
+| `-min-file-size` | `MIN_FILE_SIZE` | `5242880` (5MB)     | The minimum file size in bytes for each partition backup file |
+| `-partition-idle-threshold` | `PARTITION_IDLE_THRESHOLD` | `5s`                | The threshold after which a partition will be considered idle for not consuming any new records (duration, e.g. `30s`, `5m`) |
 | `-working-dir` | `WORKING_DIR` | `kafka-backup-data` | Working directory for local files |
-| `-s3-endpoint` | `AWS_ENDPOINT_URL` | | S3 endpoint URL (for LocalStack or custom S3-compatible storage) |
-| `-s3-region` | `AWS_REGION` | `eu-west-1` | S3 region |
-| `-log-level` | `LOG_LEVEL` | `INFO` | The log level to use |
-| `-log-format` | `LOG_FORMAT` | `text` | The log format to use (text, json) |
-| `-metrics-port` | `METRICS_PORT` | `8081` | The port to use for the metrics server |
-| `-enable-pprof` | `ENABLE_PPROF` | `false` | Enable pprof server for profiling |
-| `-pprof-port` | `PPROF_PORT` | `6060` | The port to use for the pprof server |
+| `-s3-endpoint` | `AWS_ENDPOINT_URL` |                     | S3 endpoint URL (for LocalStack or custom S3-compatible storage) |
+| `-s3-region` | `AWS_REGION` | `eu-west-1`         | S3 region |
+| `-log-level` | `LOG_LEVEL` | `INFO`              | The log level to use |
+| `-log-format` | `LOG_FORMAT` | `text`              | The log format to use (text, json) |
+| `-metrics-port` | `METRICS_PORT` | `8081`              | The port to use for the metrics server |
+| `-enable-pprof` | `ENABLE_PPROF` | `false`             | Enable pprof server for profiling |
+| `-pprof-port` | `PPROF_PORT` | `6060`              | The port to use for the pprof server |
 
-## Graceful Shutdown and Persistence
+## Graceful Shutdown
 
 To ensure optimal performance and operational reliability, the application implements the following signal handling and buffering strategy:
 
@@ -102,10 +117,6 @@ kill -SIGUSR1 <pid>
 ```
 The application will immediately flush all active partition writers to S3.
 
-### Data Durability
-Any records not yet uploaded to S3 are stored durably in the configured `WorkingDir`.
-- **Resilience**: Data is preserved and will be processed on the next application start, even if the Kafka cluster is unavailable.
-- **Planned Work**: Implementation of an emergency flush mechanism triggered by detected Kafka connectivity failures.
 
 ### Usage Example
 
@@ -115,7 +126,7 @@ Any records not yet uploaded to S3 are stored durably in the configured `Working
   -topics-regex "my-topic.*" \
   -s3-bucket "my-backup-bucket" \
   -s3-region "us-east-1" \
-  -partition-idle-threshold "5m"
+  -partition-idle-threshold "5s"
 ```
 
 # Topics Plan Restore
