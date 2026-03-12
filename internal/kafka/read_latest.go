@@ -125,7 +125,7 @@ func excludePartition(onlyPartitions []int32, partition int32) bool {
 	return len(onlyPartitions) > 0 && !slices.Contains(onlyPartitions, partition)
 }
 
-const maxConsumeRetries = 10
+const maxConsumeRetries = 20
 
 func consumeLatest(ctx context.Context, client *kgo.Client, expectedCount int) (map[int32]*kgo.Record, error) {
 	if expectedCount == 0 {
@@ -134,10 +134,6 @@ func consumeLatest(ctx context.Context, client *kgo.Client, expectedCount int) (
 
 	results := make(map[int32]*kgo.Record, expectedCount)
 	for range maxConsumeRetries {
-		if len(results) >= expectedCount {
-			return results, nil
-		}
-
 		fetches := client.PollRecords(ctx, 1000)
 		stopProcessing, err := HandleFetches(ctx, &fetches)
 		if err != nil {
@@ -148,11 +144,14 @@ func consumeLatest(ctx context.Context, client *kgo.Client, expectedCount int) (
 		}
 
 		fetches.EachRecord(func(r *kgo.Record) {
-			// We only need one record per partition (the tip)
 			if _, exists := results[r.Partition]; !exists {
 				results[r.Partition] = r
 			}
 		})
+
+		if len(results) >= expectedCount {
+			return results, nil
+		}
 	}
-	return nil, fmt.Errorf("consume latest didn't receive records for all expected partitions within the retry limit. Expected %d and got got %d", expectedCount, len(results))
+	return nil, fmt.Errorf("consume latest didn't receive records for all expected partitions within the retry limit. Expected %d and got %d", expectedCount, len(results))
 }
