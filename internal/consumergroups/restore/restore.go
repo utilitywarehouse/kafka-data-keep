@@ -314,7 +314,7 @@ func (r *Restorer) findRestoredOffset(ctx context.Context, entry groupOffset, st
 // searchAheadMax is used for the maximum number of records to fetch beyond the expected offset.
 // Those records will be searched if the source offset is not on the expected record, but on the following ones.
 // Using a moderate number to not load the memory too much, but to still make use of the Kafka fetch if needed.
-const searchAheadMax = 500
+const searchAheadMax = 1000
 
 // searchOffset reads records starting at startOffset and walks forward until the
 // restore.source-offset header matches groupOffset.
@@ -371,6 +371,15 @@ func (r *Restorer) searchOffset(ctx context.Context, entry groupOffset, startOff
 			"restored_record_source_offset", firstRecSrcOffset,
 			"search_next_offset", searchNextOffset)
 
+		return r.searchOffset(ctx, entry, searchNextOffset, depth-1)
+	}
+
+	// need to look further because in the restored data, the searched offset might not exist as the offsets may have been backed up due to start offset advancing on the partition when the retention period kicks in
+	if entry.Offset-firstRecSrcOffset > searchAheadMax {
+		searchNextOffset := startOffset + (entry.Offset - firstRecSrcOffset) - 1
+		slog.WarnContext(ctx, "Unexpected situation: the searched group offset is after the expected restored offset. Searching closer to the new deduced offset",
+			"group_entry", entry, "restored_record_offset", firstRec.Offset,
+			"restored_record_source_offset", firstRecSrcOffset, "search_next_offset", searchNextOffset)
 		return r.searchOffset(ctx, entry, searchNextOffset, depth-1)
 	}
 
