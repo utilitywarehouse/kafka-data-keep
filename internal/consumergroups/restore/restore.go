@@ -357,6 +357,14 @@ func (r *Restorer) searchOffset(ctx context.Context, entry groupOffset, startOff
 
 	if entry.Offset < firstRecSrcOffset {
 		searchNextOffset := startOffset - (firstRecSrcOffset - entry.Offset)
+		if searchNextOffset < 0 {
+			slog.WarnContext(ctx, "Unexpected situation: the searched group offset is not in the restored data. It may have gotten deleted due to the retention policy on the backed up data. Setting the group at the start of partition",
+				"group_entry", entry,
+				"restored_record_offset", firstRec.Offset,
+				"restored_record_source_offset", firstRecSrcOffset,
+				"deduced_invalid_group_offset", searchNextOffset)
+			return 0, nil
+		}
 		slog.WarnContext(ctx, "Unexpected situation: the searched group offset is before the expected restored offset. Searching previous records",
 			"group_entry", entry,
 			"restored_record_offset", firstRec.Offset,
