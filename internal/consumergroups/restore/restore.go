@@ -314,7 +314,7 @@ func (r *Restorer) findRestoredOffset(ctx context.Context, entry groupOffset, st
 // searchAheadMax is used for the maximum number of records to fetch beyond the expected offset.
 // Those records will be searched if the source offset is not on the expected record, but on the following ones.
 // Using a moderate number to not load the memory too much, but to still make use of the Kafka fetch if needed.
-const searchAheadMax = 500
+const searchAheadMax = 1000
 
 // searchOffset reads records starting at startOffset and walks forward until the
 // restore.source-offset header matches groupOffset.
@@ -322,6 +322,15 @@ const searchAheadMax = 500
 func (r *Restorer) searchOffset(ctx context.Context, entry groupOffset, startOffset int64, depth int) (int64, error) {
 	if depth <= 0 {
 		return -1, fmt.Errorf("recursion depth limit reached while searching for offset for entry %v", entry)
+	}
+	// A negative startOffset (e.g. computed delta overshoots partition start)
+	// would be interpreted by franz-go as "consume from the end", causing
+	// PollRecords to block indefinitely waiting for new records that never
+	// arrive during a restore. Clamp to 0 so we scan from the beginning.
+	if startOffset < 0 {
+		slog.WarnContext(ctx, "Clamping negative startOffset to 0 in searchOffset",
+			"group_entry", entry, "startOffset", startOffset)
+		startOffset = 0
 	}
 	topic := r.restoredTopic(entry.Topic)
 	r.consumeClient.AddConsumePartitions(map[string]map[int32]kgo.Offset{
@@ -357,6 +366,14 @@ func (r *Restorer) searchOffset(ctx context.Context, entry groupOffset, startOff
 
 	if entry.Offset < firstRecSrcOffset {
 		searchNextOffset := startOffset - (firstRecSrcOffset - entry.Offset)
+		if searchNextOffset < 0 {
+			slog.WarnContext(ctx, "Unexpected situation: the searched group offset is not in the restored data. It may have gotten deleted due to the retention policy on the backed up data. Setting the group at the start of partition",
+				"group_entry", entry,
+				"restored_record_offset", firstRec.Offset,
+				"restored_record_source_offset", firstRecSrcOffset,
+				"deduced_invalid_group_offset", searchNextOffset)
+			return 0, nil
+		}
 		slog.WarnContext(ctx, "Unexpected situation: the searched group offset is before the expected restored offset. Searching previous records",
 			"group_entry", entry,
 			"restored_record_offset", firstRec.Offset,
@@ -366,9 +383,18 @@ func (r *Restorer) searchOffset(ctx context.Context, entry groupOffset, startOff
 		return r.searchOffset(ctx, entry, searchNextOffset, depth-1)
 	}
 
+	// need to look further because in the restored data, the searched offset might not exist as the offsets may have been backed up due to start offset advancing on the partition when the retention period kicks in
+	if entry.Offset-firstRecSrcOffset > searchAheadMax {
+		searchNextOffset := startOffset + (entry.Offset - firstRecSrcOffset) - 1
+		slog.WarnContext(ctx, "Unexpected situation: the searched group offset is after the expected restored offset. Searching closer to the new deduced offset",
+			"group_entry", entry, "restored_record_offset", firstRec.Offset,
+			"restored_record_source_offset", firstRecSrcOffset, "search_next_offset", searchNextOffset)
+		return r.searchOffset(ctx, entry, searchNextOffset, depth-1)
+	}
+
 	slog.WarnContext(ctx, "Unexpected situation: the searched group offset is after the expected restored offset. Searching next fetched records",
 		"group_entry", entry, "restored_record_offset", firstRec.Offset,
-		"restored_record_source_offset", firstRecSrcOffset)
+		"restored_record_source_offset", firstRecSrcOffset, "next_fetched_records_no", len(recs))
 
 	for i, rec := range recs {
 		if i == 0 { // we already checked the first record earlier, so skipping it

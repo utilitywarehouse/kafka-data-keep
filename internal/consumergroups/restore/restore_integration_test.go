@@ -461,6 +461,73 @@ func TestConsumerGroupRestore(t *testing.T) {
 		verifyRestoredGroupOffset(t, kadmClient, groupID, backupOffset, plan)
 	})
 
+	t.Run("target offset missing from the restored data", func(t *testing.T) {
+		t.Parallel()
+
+		//	test with a restore topic prefix
+		restoreTopicPrefix := "restore."
+		topic := randomName("test-offset-missing")
+		restoreTopicName := restoreTopicPrefix + topic
+
+		// Create a single topic
+		_, err := kadmClient.CreateTopic(ctx, 1, 1, nil, restoreTopicName)
+		require.NoError(t, err)
+
+		backupOffset := int64(50)
+		// write a single record so that the diff between its offset and the source offset will negative,
+		// This will cause that on restore, the offset of the consumer group (50) will be first looked up at 50 - (200-0) = -150, which wouldn't exist, so the group should be set at the start of the partition
+		lastRec := &kgo.Record{Topic: restoreTopicName, Partition: 0, Offset: 200}
+		topicsrestore.SetOriginalOffsetHeader(lastRec)
+		results := producerClient.ProduceSync(ctx, lastRec)
+		require.NoError(t, results.FirstErr())
+
+		// create the consumer group with offsets, so that it's already restored
+		groupID := randomName("test-offset-before")
+
+		backupGroups := []codec.ConsumerGroupOffset{
+			{
+				GroupID: groupID,
+				Topics: []codec.TopicOffset{
+					{
+						Topic: topic,
+						Partitions: []codec.PartitionOffset{
+							{Partition: 0, Offset: backupOffset},
+						},
+					},
+				},
+			},
+		}
+
+		// Encode groups to Avro and upload to S3
+		s3Location := writeBackupToS3(t, s3Client, cgRestoreBucketName, backupGroups)
+
+		restoreCfg := restore.AppConfig{
+			KafkaConfig: kafka.Config{
+				Brokers: kafkaBrokers,
+			},
+			S3: ints3.Config{
+				Bucket:   cgRestoreBucketName,
+				Region:   testutil.MinioRegion,
+				Endpoint: s3Endpoint,
+			},
+			S3Location:          s3Location,
+			RestoreGroupsPrefix: "",
+			RestoreTopicsPrefix: restoreTopicPrefix,
+			IncludeRegexes:      ".*",
+			LoopInterval:        50 * time.Millisecond,
+		}
+
+		// restore should finish right away, as the messages are already written
+		restoreCtx, cancelFunc := context.WithTimeout(ctx, 10*time.Second)
+		defer cancelFunc()
+		err = restore.Run(restoreCtx, restoreCfg)
+		require.NoError(t, err)
+
+		// force the computed expected offset to be 0
+		expectedPlan := partitionPlan{topic: restoreTopicName, partition: 0, baseSourceOffset: 0}
+		verifyRestoredGroupOffset(t, kadmClient, groupID, 0, expectedPlan)
+	})
+
 	t.Run("target offset wasn't backed up", func(t *testing.T) {
 		t.Parallel()
 

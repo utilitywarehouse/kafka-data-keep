@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"time"
 
+	avro "github.com/hamba/avro/v2"
 	"github.com/hamba/avro/v2/ocf"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/codec"
@@ -79,7 +81,8 @@ func (e *recordEncoder) Close() error {
 type RecordDecoderFactory struct{}
 
 func (f *RecordDecoderFactory) New(r io.Reader) (codec.RecordDecoder, error) {
-	decoder, err := ocf.NewDecoder(r)
+	cfg := avro.Config{MaxByteSliceSize: math.MaxInt32}.Freeze()
+	decoder, err := ocf.NewDecoder(r, ocf.WithDecoderConfig(cfg))
 	if err != nil {
 		return nil, fmt.Errorf("failed creating ocf decoder: %w", err)
 	}
