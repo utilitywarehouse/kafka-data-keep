@@ -394,7 +394,7 @@ func (r *Restorer) searchOffset(ctx context.Context, entry groupOffset, startOff
 
 	slog.WarnContext(ctx, "Unexpected situation: the searched group offset is after the expected restored offset. Searching next fetched records",
 		"group_entry", entry, "restored_record_offset", firstRec.Offset,
-		"restored_record_source_offset", firstRecSrcOffset)
+		"restored_record_source_offset", firstRecSrcOffset, "next_fetched_records_no", len(recs))
 
 	for i, rec := range recs {
 		if i == 0 { // we already checked the first record earlier, so skipping it
