@@ -9,6 +9,7 @@ import (
 
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"time"
 )
 
 // LatestReader caches a kgo.Client to read the latest records from topics.
@@ -152,6 +153,8 @@ func consumeLatest(ctx context.Context, client *kgo.Client, expectedCount int) (
 		if len(results) >= expectedCount {
 			return results, nil
 		}
+		// sleep before retrying another poll
+		time.Sleep(50 * time.Millisecond)
 	}
 	return nil, fmt.Errorf("consume latest didn't receive records for all expected partitions within the retry limit. Expected %d and got %d", expectedCount, len(results))
 }
