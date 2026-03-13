@@ -323,6 +323,15 @@ func (r *Restorer) searchOffset(ctx context.Context, entry groupOffset, startOff
 	if depth <= 0 {
 		return -1, fmt.Errorf("recursion depth limit reached while searching for offset for entry %v", entry)
 	}
+	// A negative startOffset (e.g. computed delta overshoots partition start)
+	// would be interpreted by franz-go as "consume from the end", causing
+	// PollRecords to block indefinitely waiting for new records that never
+	// arrive during a restore. Clamp to 0 so we scan from the beginning.
+	if startOffset < 0 {
+		slog.WarnContext(ctx, "Clamping negative startOffset to 0 in searchOffset",
+			"group_entry", entry, "startOffset", startOffset)
+		startOffset = 0
+	}
 	topic := r.restoredTopic(entry.Topic)
 	r.consumeClient.AddConsumePartitions(map[string]map[int32]kgo.Offset{
 		topic: {entry.Partition: kgo.NewOffset().At(startOffset)},
