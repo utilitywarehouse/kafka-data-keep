@@ -148,6 +148,8 @@ func initKafkaClient(ctx context.Context, cfg AppConfig) (*kgo.Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	// allow the client to fetch at least 500KB for searching records
+	opts = append(opts, kgo.FetchMinBytes(500*1024))
 	client, err := kgo.NewClient(opts...)
 	if err != nil {
 		return client, err
