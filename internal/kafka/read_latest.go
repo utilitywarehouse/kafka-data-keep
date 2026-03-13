@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"time"
 )
 
 // LatestReader caches a kgo.Client to read the latest records from topics.
