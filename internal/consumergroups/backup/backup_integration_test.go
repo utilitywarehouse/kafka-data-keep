@@ -88,7 +88,7 @@ func TestBackupIntegration(t *testing.T) {
 	_, err = kadmClient.CommitOffsets(ctx, groupID, offsets)
 	require.NoError(t, err)
 
-	// delete the records from partition 0 of emtpy topic, to make it really empty
+	// delete the records from partition 0 of empty topic, to make it really empty
 	delMap := make(kadm.Offsets)
 	delMap.Add(kadm.Offset{Topic: emptyTopic, Partition: 0, At: 20})
 	_, err = kadmClient.DeleteRecords(ctx, delMap)
@@ -159,7 +159,7 @@ func TestBackupIntegration(t *testing.T) {
 		})
 	}
 
-	// the emtpy topic should not be backed up
+	// the empty topic should not be backed up
 	expectedOffsets := &codec.ConsumerGroupOffset{
 		GroupID: groupID,
 		Topics: []codec.TopicOffset{
