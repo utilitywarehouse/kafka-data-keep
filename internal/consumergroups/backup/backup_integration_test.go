@@ -55,10 +55,13 @@ func TestBackupIntegration(t *testing.T) {
 
 	topic1 := "test-topic-1"
 	topic2 := "test-topic-2"
+	emptyTopic := "test-topic-empty"
 	partitions := int32(2)
 	_, err = kadmClient.CreateTopic(ctx, partitions, 1, nil, topic1)
 	require.NoError(t, err)
 	_, err = kadmClient.CreateTopic(ctx, partitions, 1, nil, topic2)
+	require.NoError(t, err)
+	_, err = kadmClient.CreateTopic(ctx, partitions, 1, nil, emptyTopic)
 	require.NoError(t, err)
 
 	writeRecords(t, adminClient, topic1, 0, 10)
@@ -66,18 +69,30 @@ func TestBackupIntegration(t *testing.T) {
 	writeRecords(t, adminClient, topic2, 0, 40)
 	writeRecords(t, adminClient, topic2, 1, 50)
 
+	// leave the second partition empty
+	writeRecords(t, adminClient, emptyTopic, 0, 20)
+
 	groupID := "test-group-" + uuid.NewString()
 
-	// set the group to the end of the topic
+	// set the group to the middle of the topics
 	offsets := make(kadm.Offsets)
 	offsets.Add(kadm.Offset{Topic: topic1, Partition: 0, At: 5, LeaderEpoch: -1})
 	offsets.Add(kadm.Offset{Topic: topic1, Partition: 1, At: 20, LeaderEpoch: -1})
 	offsets.Add(kadm.Offset{Topic: topic2, Partition: 0, At: 30, LeaderEpoch: -1})
 	offsets.Add(kadm.Offset{Topic: topic2, Partition: 1, At: 40, LeaderEpoch: -1})
 
+	// set the group in the empty one to the end of the partitions
+	offsets.Add(kadm.Offset{Topic: emptyTopic, Partition: 0, At: 15, LeaderEpoch: -1})
+	offsets.Add(kadm.Offset{Topic: emptyTopic, Partition: 1, At: 0, LeaderEpoch: -1})
+
 	_, err = kadmClient.CommitOffsets(ctx, groupID, offsets)
 	require.NoError(t, err)
 
+	// delete the records from partition 0 of emtpy topic, to make it really empty
+	delMap := make(kadm.Offsets)
+	delMap.Add(kadm.Offset{Topic: emptyTopic, Partition: 0, At: 20})
+	_, err = kadmClient.DeleteRecords(ctx, delMap)
+	require.NoError(t, err)
 	// 3. Run Backup
 	s3Location := "backups/consumer-groups.avro"
 	runInterval := 500 * time.Millisecond
@@ -144,6 +159,7 @@ func TestBackupIntegration(t *testing.T) {
 		})
 	}
 
+	// the emtpy topic should not be backed up
 	expectedOffsets := &codec.ConsumerGroupOffset{
 		GroupID: groupID,
 		Topics: []codec.TopicOffset{

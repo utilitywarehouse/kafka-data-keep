@@ -64,6 +64,11 @@ func (w *GroupWriter) Backup(ctx context.Context) error {
 }
 
 func (w *GroupWriter) writeGroupsToFile(ctx context.Context, f *os.File, groupIDs kadm.ListedGroups) error {
+	emptyPartitions, err := w.emptyPartitions(ctx)
+	if err != nil {
+		return err
+	}
+
 	encoder, err := w.encFactory.New(f)
 	if err != nil {
 		return fmt.Errorf("failed to create encoder: %w", err)
@@ -75,7 +80,7 @@ func (w *GroupWriter) writeGroupsToFile(ctx context.Context, f *os.File, groupID
 			return fmt.Errorf("failed to fetch offsets for group %s: %w", groupID, err)
 		}
 
-		cgOffset := toAvro(groupID, kOffset)
+		cgOffset := toAvro(ctx, groupID, kOffset, emptyPartitions)
 
 		if err := encoder.Encode(cgOffset); err != nil {
 			return fmt.Errorf("failed to encode group offset: %w", err)
@@ -96,7 +101,7 @@ func (w *GroupWriter) writeGroupsToFile(ctx context.Context, f *os.File, groupID
 	return nil
 }
 
-func toAvro(groupID string, kOffset kadm.OffsetResponses) *codec.ConsumerGroupOffset {
+func toAvro(ctx context.Context, groupID string, kOffset kadm.OffsetResponses, emptyPartitions map[string]bool) *codec.ConsumerGroupOffset {
 	cgOffset := &codec.ConsumerGroupOffset{
 		GroupID: groupID,
 		Topics:  make([]codec.TopicOffset, 0, len(kOffset)),
@@ -111,7 +116,12 @@ func toAvro(groupID string, kOffset kadm.OffsetResponses) *codec.ConsumerGroupOf
 
 		for partition, offset := range partitions {
 			if offset.At < 0 {
-				continue // No valid offset?
+				continue // No valid offset
+			}
+			if emptyPartitions[topicPartitionKey(topic, partition)] {
+				slog.InfoContext(ctx, "Skipping empty partition",
+					"group", groupID, "topic", topic, "partition", partition)
+				continue
 			}
 
 			po := codec.PartitionOffset{
@@ -132,7 +142,39 @@ func toAvro(groupID string, kOffset kadm.OffsetResponses) *codec.ConsumerGroupOf
 			}
 			to.Partitions = append(to.Partitions, po)
 		}
-		cgOffset.Topics = append(cgOffset.Topics, to)
+		if len(to.Partitions) > 0 {
+			cgOffset.Topics = append(cgOffset.Topics, to)
+		}
 	}
 	return cgOffset
+}
+
+// emptyPartitions returns a set of topic-partitions where start offset equals
+// end offset, meaning the partition contains no records. Keys are formatted as
+// "topic/partition" via topicPartitionKey.
+func (w *GroupWriter) emptyPartitions(ctx context.Context) (map[string]bool, error) {
+	startOffsets, err := w.client.ListStartOffsets(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list start offsets: %w", err)
+	}
+	endOffsets, err := w.client.ListEndOffsets(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list end offsets: %w", err)
+	}
+
+	empty := make(map[string]bool)
+	endOffsets.Each(func(eo kadm.ListedOffset) {
+		so, ok := startOffsets.Lookup(eo.Topic, eo.Partition)
+		if !ok {
+			return
+		}
+		if so.Offset == eo.Offset {
+			empty[topicPartitionKey(eo.Topic, eo.Partition)] = true
+		}
+	})
+	return empty, nil
+}
+
+func topicPartitionKey(topic string, partition int32) string {
+	return fmt.Sprintf("%s/%d", topic, partition)
 }
