@@ -116,14 +116,17 @@ func TestConsumerGroupRestore(t *testing.T) {
 		// ── Step 2: Pick backup offsets within each partition's planned range
 		group1ID := randomName("test-multiple-1")
 		group2ID := randomName("test-multiple-2")
+		groupAtTipID := randomName("test-group-at-tip")
 		// this group is backed up, but will be ignored
 		ignoreGroupID := "ignore-group-2"
 
 		group1Offsets := make(map[string]int64, len(plans))
 		group2Offsets := make(map[string]int64, len(plans))
+		groupAtTipIDffsets := make(map[string]int64, len(plans))
 		for key, plan := range plans {
 			group1Offsets[key] = pickBackupOffset(plan)
 			group2Offsets[key] = pickBackupOffset(plan)
+			groupAtTipIDffsets[key] = int64(plan.msgCount + plan.baseSourceOffset)
 		}
 
 		backupGroups := []codec.ConsumerGroupOffset{
@@ -161,6 +164,25 @@ func TestConsumerGroupRestore(t *testing.T) {
 						Partitions: []codec.PartitionOffset{
 							{Partition: 0, Offset: group2Offsets[partKey(topic2, 0)]},
 							{Partition: 1, Offset: group2Offsets[partKey(topic2, 1)]},
+						},
+					},
+				},
+			},
+			{
+				GroupID: groupAtTipID,
+				Topics: []codec.TopicOffset{
+					{
+						Topic: topic1,
+						Partitions: []codec.PartitionOffset{
+							{Partition: 0, Offset: groupAtTipIDffsets[partKey(topic1, 0)]},
+							{Partition: 1, Offset: groupAtTipIDffsets[partKey(topic1, 1)]},
+						},
+					},
+					{
+						Topic: topic2,
+						Partitions: []codec.PartitionOffset{
+							{Partition: 0, Offset: groupAtTipIDffsets[partKey(topic2, 0)]},
+							{Partition: 1, Offset: groupAtTipIDffsets[partKey(topic2, 1)]},
 						},
 					},
 				},
@@ -241,10 +263,12 @@ func TestConsumerGroupRestore(t *testing.T) {
 		// (backupOffset - baseSourceOffset)
 		restoredGroup1 := cgRestoreGroupsPrefix + group1ID
 		restoredGroup2 := cgRestoreGroupsPrefix + group2ID
+		restoredGroupAtTip := cgRestoreGroupsPrefix + groupAtTipID
 
 		for _, p := range plans {
 			verifyRestoredGroupOffset(t, kadmClient, restoredGroup1, group1Offsets[partKey(p.topic, p.partition)], p)
 			verifyRestoredGroupOffset(t, kadmClient, restoredGroup2, group2Offsets[partKey(p.topic, p.partition)], p)
+			verifyRestoredGroupOffset(t, kadmClient, restoredGroupAtTip, groupAtTipIDffsets[partKey(p.topic, p.partition)], p)
 		}
 
 		// check that the ignore group was ignored
