@@ -122,11 +122,11 @@ func TestConsumerGroupRestore(t *testing.T) {
 
 		group1Offsets := make(map[string]int64, len(plans))
 		group2Offsets := make(map[string]int64, len(plans))
-		groupAtTipIDffsets := make(map[string]int64, len(plans))
+		groupAtTipOffsets := make(map[string]int64, len(plans))
 		for key, plan := range plans {
 			group1Offsets[key] = pickBackupOffset(plan)
 			group2Offsets[key] = pickBackupOffset(plan)
-			groupAtTipIDffsets[key] = int64(plan.msgCount + plan.baseSourceOffset)
+			groupAtTipOffsets[key] = int64(plan.msgCount + plan.baseSourceOffset)
 		}
 
 		backupGroups := []codec.ConsumerGroupOffset{
@@ -174,15 +174,15 @@ func TestConsumerGroupRestore(t *testing.T) {
 					{
 						Topic: topic1,
 						Partitions: []codec.PartitionOffset{
-							{Partition: 0, Offset: groupAtTipIDffsets[partKey(topic1, 0)]},
-							{Partition: 1, Offset: groupAtTipIDffsets[partKey(topic1, 1)]},
+							{Partition: 0, Offset: groupAtTipOffsets[partKey(topic1, 0)]},
+							{Partition: 1, Offset: groupAtTipOffsets[partKey(topic1, 1)]},
 						},
 					},
 					{
 						Topic: topic2,
 						Partitions: []codec.PartitionOffset{
-							{Partition: 0, Offset: groupAtTipIDffsets[partKey(topic2, 0)]},
-							{Partition: 1, Offset: groupAtTipIDffsets[partKey(topic2, 1)]},
+							{Partition: 0, Offset: groupAtTipOffsets[partKey(topic2, 0)]},
+							{Partition: 1, Offset: groupAtTipOffsets[partKey(topic2, 1)]},
 						},
 					},
 				},
@@ -268,7 +268,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 		for _, p := range plans {
 			verifyRestoredGroupOffset(t, kadmClient, restoredGroup1, group1Offsets[partKey(p.topic, p.partition)], p)
 			verifyRestoredGroupOffset(t, kadmClient, restoredGroup2, group2Offsets[partKey(p.topic, p.partition)], p)
-			verifyRestoredGroupOffset(t, kadmClient, restoredGroupAtTip, groupAtTipIDffsets[partKey(p.topic, p.partition)], p)
+			verifyRestoredGroupOffset(t, kadmClient, restoredGroupAtTip, groupAtTipOffsets[partKey(p.topic, p.partition)], p)
 		}
 
 		// check that the ignore group was ignored
