@@ -37,11 +37,13 @@ func init() {
 }
 
 const (
-	srcTopic           = "e2e-source-topic"
-	srcTopicPartitions = 15
-	s3Prefix           = "backup-data"
-	planTopic          = "e2e-plan-topic"
-	bucketName         = "e2e-bucket"
+	srcTopic            = "e2e-source-topic"
+	srcTopicPartitions  = 15
+	s3Prefix            = "backup-data"
+	planTopic           = "e2e-plan-topic"
+	bucketName          = "e2e-bucket"
+	excludeRestoreTopic = "excluded-topic-at-restore"
+	restoredPrefix      = "restored-"
 )
 
 func TestRestore(t *testing.T) {
@@ -83,8 +85,12 @@ func TestRestore(t *testing.T) {
 	runPlanRestore(ctx, t, kadmClient, kafkaBrokers, s3Endpoint)
 
 	// Create the restore Topic (15 partitions) with the "restored" prefix
-	restoredTopic := "restored-" + srcTopic
+	restoredTopic := restoredPrefix + srcTopic
 	_, err = kadmClient.CreateTopic(ctx, int32(srcTopicPartitions), 1, nil, restoredTopic)
+	require.NoError(t, err)
+
+	restoredExcludedTopic := restoredPrefix + excludeRestoreTopic
+	_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, restoredExcludedTopic)
 	require.NoError(t, err)
 
 	// 8. Run Restore
@@ -93,9 +99,10 @@ func TestRestore(t *testing.T) {
 		KafkaConfig: kafka.Config{
 			Brokers: kafkaBrokers,
 		},
-		PlanTopic:          planTopic,
-		RestoreTopicPrefix: "restored-",
-		ConsumerGroup:      restoreGroup,
+		PlanTopic:            planTopic,
+		RestoreTopicPrefix:   restoredPrefix,
+		ConsumerGroup:        restoreGroup,
+		ExcludeTopicsRegexes: excludeRestoreTopic,
 		S3: ints3.Config{
 			Bucket:   bucketName,
 			Endpoint: s3Endpoint,
@@ -134,6 +141,12 @@ func TestRestore(t *testing.T) {
 	stopApp(t, resumeRestoreCancel, resumeRestoreErrCh)
 
 	validateRestoredRecords(t, restoredTopic, kafkaBrokers, totalRecsPerPartition, deletedRecsPerPartition)
+
+	// check topic was excluded on restore
+	restoredRecs, err := testutil.ReadAll(t, restoredExcludedTopic, kafkaBrokers)
+	require.NoError(t, err)
+	require.Empty(t, restoredRecs, "excluded restored topic should be empty")
+
 	t.Log("finished test successfully")
 }
 
@@ -274,7 +287,7 @@ func runPlanRestore(ctx context.Context, t *testing.T, kadmClient *kadm.Client, 
 			Region:   testutil.MinioRegion,
 		},
 		S3Prefix:           s3Prefix,
-		RestoreTopicsRegex: srcTopic, // Restore our source topic
+		RestoreTopicsRegex: srcTopic + "," + excludeRestoreTopic, // Restore our source topic
 	}
 
 	require.NoError(t, planrestore.Run(ctx, planCfg))
@@ -309,6 +322,10 @@ func feedTopicAndRunBackup(t *testing.T, kadmClient *kadm.Client, kafkaBrokers s
 	_, err = kadmClient.DeleteRecords(ctx, delOffsets)
 	require.NoError(t, err)
 
+	// write to the excluded topic from restore
+	_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, excludeRestoreTopic)
+	require.NoError(t, err)
+
 	// Start Backup
 	backupGroup := newRandomName("e2e-backup")
 	workingDir := t.TempDir()
@@ -317,7 +334,7 @@ func feedTopicAndRunBackup(t *testing.T, kadmClient *kadm.Client, kafkaBrokers s
 		KafkaConfig: kafka.Config{
 			Brokers: kafkaBrokers,
 		},
-		TopicsRegex:            srcTopic,
+		TopicsRegex:            srcTopic + "," + excludeRestoreTopic,
 		GroupID:                backupGroup,
 		MinFileSize:            1, // minimum file size to force flush and commit after every batch read from kafka
 		PartitionIdleThreshold: 50 * time.Millisecond,
@@ -341,7 +358,10 @@ func feedTopicAndRunBackup(t *testing.T, kadmClient *kadm.Client, kafkaBrokers s
 	testutil.WaitConsumerStart(t, kadmClient, backupGroup)
 
 	totalRecsPerPartition := writeSequencedRecords(t, producerClient, srcTopic, srcTopicPartitions, 10)
+	writeSequencedRecords(t, producerClient, excludeRestoreTopic, 1, 1)
+
 	testutil.WaitConsumeAll(t, kadmClient, srcTopic, backupGroup)
+	testutil.WaitConsumeAll(t, kadmClient, excludeRestoreTopic, backupGroup)
 
 	stopApp(t, backupCancel, backupErrCh)
 	return totalRecsPerPartition, deleteRecordsPerPartition
