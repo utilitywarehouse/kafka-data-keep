@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strconv"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/utilitywarehouse/kafka-data-keep/internal"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/codec/avro"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/planrestore"
@@ -22,7 +24,8 @@ type kafkaS3Restorer struct {
 	// map containing the original offset of the last restored message per partition
 	lastProcessedOffsetByPartition map[string]int64
 
-	latestReader *kafka.LatestReader
+	latestReader         *kafka.LatestReader
+	excludeTopicsRegexes []*regexp.Regexp
 }
 
 func (r *kafkaS3Restorer) Run(ctx context.Context) error {
@@ -68,6 +71,11 @@ func (r *kafkaS3Restorer) restoreFile(ctx context.Context, key string) error {
 	topic, partition, err := planrestore.TopicPartitionFromFileName(key)
 	if err != nil {
 		return fmt.Errorf("failed to extract topic from file name: %w", err)
+	}
+
+	if internal.MatchesAny(topic, r.excludeTopicsRegexes) {
+		slog.InfoContext(ctx, "Skipping excluded topic", "topic", topic, "file", key)
+		return nil
 	}
 
 	lastProcessedOffset, err := r.getLastProcessedOffset(ctx, topic, partition)

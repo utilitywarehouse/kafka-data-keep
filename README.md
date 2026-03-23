@@ -230,6 +230,7 @@ The `topics-restore` subcommand supports the following flags and environment var
 | `-kgo-log-level` | `KGO_LOG_LEVEL` | `INFO` | The log level for the franz-go library |
 | `-plan-topic`           | `KAFKA_PLAN_TOPIC`           | `pubsub.plan-topic-restore` | Kafka topic to consume the plan from |
 | `-restore-topic-prefix` | `KAFKA_RESTORE_TOPIC_PREFIX` | `pubsub.restore-test.` | Prefix to add to the restored topics |
+| `-exclude-topics-regexes` | `EXCLUDE_TOPICS_REGEXES` | | List of regular expressions to exclude topics from restore (comma separated) |
 | `-group-id`             | `KAFKA_GROUP_ID`             | `pubsub.msk-data-keep-restore` | Kafka consumer group ID |
 | `-s3-bucket`            | `S3_BUCKET`                  | | S3 bucket name where the backups are stored |
 | `-s3-endpoint`          | `AWS_ENDPOINT_URL`           | | S3 endpoint URL (for LocalStack or custom S3-compatible storage) |

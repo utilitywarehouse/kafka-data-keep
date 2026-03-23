@@ -49,6 +49,8 @@ spec:
               value: pubsub.kafka-topics-restore
             - name: KAFKA_RESTORE_TOPIC_PREFIX
               value: ""
+            - name: EXCLUDE_TOPICS_REGEXES
+              value: ""
             - name: S3_BUCKET
               value: TBD
             - name: AWS_REGION
