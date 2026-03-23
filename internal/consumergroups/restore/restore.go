@@ -56,15 +56,16 @@ func (r *Restorer) Restore(ctx context.Context, offsets []codec.ConsumerGroupOff
 	slog.InfoContext(ctx, "Filtered already restored groups", "remaining", len(remaining))
 
 	grouped := groupByTopic(remaining)
+	slog.InfoContext(ctx, "Grouped by topics", "total", len(grouped))
 
 	grouped = filterExcludedTopics(ctx, grouped, excludeTopicsRegexes)
-	slog.InfoContext(ctx, "Filtered excluded topics", "topics", len(grouped))
+	slog.InfoContext(ctx, "Filtered excluded topics", "remaining", len(grouped))
 
 	grouped, err = r.filterNonExistingTopics(ctx, grouped)
 	if err != nil {
 		return fmt.Errorf("filtering non existing topics: %w", err)
 	}
-	slog.InfoContext(ctx, "Filtered non existing topics", "topics", len(grouped))
+	slog.InfoContext(ctx, "Filtered non existing topics", "remaining", len(grouped))
 
 	return r.runLoop(ctx, loopInterval, grouped)
 }
