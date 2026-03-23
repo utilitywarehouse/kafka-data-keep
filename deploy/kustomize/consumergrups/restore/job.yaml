@@ -50,9 +50,11 @@ spec:
               value: ""
             - name: RESTORE_TOPICS_PREFIX
               value: ""
-            - name: INCLUDE_REGEXES
+            - name: INCLUDE_GROUPS_REGEXES
               value: ".*"
-            - name: EXCLUDE_REGEXES
+            - name: EXCLUDE_GROUPS_REGEXES
+              value: ""
+            - name: EXCLUDE_TOPICS_REGEXES
               value: ""
             - name: LOOP_INTERVAL
               value: 1m

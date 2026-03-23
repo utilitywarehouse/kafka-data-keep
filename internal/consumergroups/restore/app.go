@@ -21,13 +21,14 @@ import (
 type AppConfig struct {
 	KafkaConfig kafka.Config
 	internal.OpsConfig
-	S3                  ints3.Config
-	S3Location          string
-	RestoreGroupsPrefix string
-	RestoreTopicsPrefix string
-	IncludeRegexes      string
-	ExcludeRegexes      string
-	LoopInterval        time.Duration
+	S3                   ints3.Config
+	S3Location           string
+	RestoreGroupsPrefix  string
+	RestoreTopicsPrefix  string
+	IncludeGroupsRegexes string
+	ExcludeGroupsRegexes string
+	ExcludeTopicsRegexes string
+	LoopInterval         time.Duration
 }
 
 // Run executes the consumer groups restore process.
@@ -39,17 +40,22 @@ func Run(ctx context.Context, cfg AppConfig) error {
 		return fmt.Errorf("s3-location must be provided")
 	}
 
-	includeRegexes, err := internal.CompileRegexes(cfg.IncludeRegexes)
+	includeGroupRegexes, err := internal.CompileRegexes(cfg.IncludeGroupsRegexes)
 	if err != nil {
-		return fmt.Errorf("compiling include regexes: %w", err)
+		return fmt.Errorf("compiling include group regexes: %w", err)
 	}
 
-	excludeRegexes, err := internal.CompileRegexes(cfg.ExcludeRegexes)
+	excludeGroupRegexes, err := internal.CompileRegexes(cfg.ExcludeGroupsRegexes)
 	if err != nil {
-		return fmt.Errorf("compiling exclude regexes: %w", err)
+		return fmt.Errorf("compiling exclude group regexes: %w", err)
 	}
 
-	offsets, err := downloadAndDecode(ctx, cfg, includeRegexes, excludeRegexes)
+	excludeTopicsRegexes, err := internal.CompileRegexes(cfg.ExcludeTopicsRegexes)
+	if err != nil {
+		return fmt.Errorf("compiling exclude topics regexes: %w", err)
+	}
+
+	offsets, err := downloadAndDecode(ctx, cfg, includeGroupRegexes, excludeGroupRegexes)
 	if err != nil {
 		return err
 	}
@@ -71,7 +77,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	if err != nil {
 		return fmt.Errorf("creating restorer: %w", err)
 	}
-	return restorer.Restore(ctx, offsets, cfg.LoopInterval)
+	return restorer.Restore(ctx, offsets, cfg.LoopInterval, excludeTopicsRegexes)
 }
 
 func downloadAndDecode(ctx context.Context, cfg AppConfig, includeRegexes, excludeRegexes []*regexp.Regexp) ([]codec.ConsumerGroupOffset, error) {

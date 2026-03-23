@@ -409,16 +409,22 @@ func loadConsumerGroupsRestoreAppConfig(args []string) (consumergroupsrestore.Ap
 		"Prefix used on the restored topic names",
 	)
 	fs.StringVar(
-		&cfg.IncludeRegexes,
-		"include-regexes",
-		getEnv("INCLUDE_REGEXES", ".*"),
+		&cfg.IncludeGroupsRegexes,
+		"include-groups-regexes",
+		getEnv("INCLUDE_GROUPS_REGEXES", ".*"),
 		"List of regular expressions to match consumer groups to restore (comma separated)",
 	)
 	fs.StringVar(
-		&cfg.ExcludeRegexes,
-		"exclude-regexes",
-		getEnv("EXCLUDE_REGEXES", ""),
+		&cfg.ExcludeGroupsRegexes,
+		"exclude-groups-regexes",
+		getEnv("EXCLUDE_GROUPS_REGEXES", ""),
 		"List of regular expressions to exclude consumer groups from restore (comma separated)",
+	)
+	fs.StringVar(
+		&cfg.ExcludeTopicsRegexes,
+		"exclude-topics-regexes",
+		getEnv("EXCLUDE_TOPICS_REGEXES", ""),
+		"List of regular expressions to exclude topics from restore (comma separated)",
 	)
 
 	fs.DurationVar(
