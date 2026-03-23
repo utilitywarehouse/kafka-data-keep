@@ -257,6 +257,12 @@ func loadTopicsRestoreAppConfig(args []string) (topicsrestore.AppConfig, error) 
 		"Prefix to add to the restored topics",
 	)
 	fs.StringVar(
+		&cfg.ExcludeTopicsRegexes,
+		"exclude-topics-regexes",
+		getEnv("EXCLUDE_TOPICS_REGEXES", ""),
+		"List of regular expressions to exclude topics from restore (comma separated)",
+	)
+	fs.StringVar(
 		&cfg.ConsumerGroup,
 		"group-id",
 		getEnv("KAFKA_GROUP_ID", "pubsub.msk-data-keep-restore"),

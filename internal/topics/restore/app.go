@@ -15,15 +15,21 @@ import (
 type AppConfig struct {
 	KafkaConfig kafka.Config
 	internal.OpsConfig
-	PlanTopic          string
-	RestoreTopicPrefix string
-	ConsumerGroup      string
-	S3                 ints3.Config
+	PlanTopic            string
+	RestoreTopicPrefix   string
+	ConsumerGroup        string
+	ExcludeTopicsRegexes string
+	S3                   ints3.Config
 }
 
 func Run(ctx context.Context, cfg AppConfig) error {
 	if cfg.S3.Bucket == "" {
 		return fmt.Errorf("bucket must be provided")
+	}
+
+	excludeTopicsRegexes, err := internal.CompileRegexes(cfg.ExcludeTopicsRegexes)
+	if err != nil {
+		return fmt.Errorf("failed compiling exclude topics regexes: %w", err)
 	}
 
 	s3Client, err := ints3.NewClient(ctx, cfg.S3.Region, cfg.S3.Endpoint)
@@ -46,10 +52,11 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	defer latestReader.Close()
 
 	restorer := kafkaS3Restorer{
-		s3Client:     s3Client,
-		cfg:          cfg,
-		latestReader: latestReader,
-		kafkaClient:  kafkaClient,
+		s3Client:             s3Client,
+		cfg:                  cfg,
+		latestReader:         latestReader,
+		kafkaClient:          kafkaClient,
+		excludeTopicsRegexes: excludeTopicsRegexes,
 	}
 	return restorer.Run(ctx)
 }
