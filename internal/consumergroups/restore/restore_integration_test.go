@@ -98,11 +98,14 @@ func TestConsumerGroupRestore(t *testing.T) {
 
 		topic1 := randomName("test-multiple-1")
 		topic2 := randomName("test-multiple-2")
+		excludedTopic := randomName("test-exclude-topic")
 
 		// Create two topics with two partitions each.
 		_, err := kadmClient.CreateTopic(ctx, 2, 1, nil, topic1)
 		require.NoError(t, err)
 		_, err = kadmClient.CreateTopic(ctx, 2, 1, nil, topic2)
+		require.NoError(t, err)
+		_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, excludedTopic)
 		require.NoError(t, err)
 
 		// ── Step 1: Pre-plan writes so we know the source-offset ranges up front
@@ -208,6 +211,18 @@ func TestConsumerGroupRestore(t *testing.T) {
 					},
 				},
 			},
+			// offsets on the excluded topic
+			{
+				GroupID: group1ID,
+				Topics: []codec.TopicOffset{
+					{
+						Topic: excludedTopic,
+						Partitions: []codec.PartitionOffset{
+							{Partition: 0, Offset: 10},
+						},
+					},
+				},
+			},
 		}
 
 		// Encode groups to Avro and upload to S3
@@ -225,12 +240,13 @@ func TestConsumerGroupRestore(t *testing.T) {
 				Region:   testutil.MinioRegion,
 				Endpoint: s3Endpoint,
 			},
-			S3Location:          s3Location,
-			RestoreGroupsPrefix: cgRestoreGroupsPrefix,
-			RestoreTopicsPrefix: "", // topics are not prefixed
-			IncludeRegexes:      ".*",
-			ExcludeRegexes:      ignoreGroupID, // exclude everything not included
-			LoopInterval:        50 * time.Millisecond,
+			S3Location:           s3Location,
+			RestoreGroupsPrefix:  cgRestoreGroupsPrefix,
+			RestoreTopicsPrefix:  "", // topics are not prefixed
+			IncludeGroupsRegexes: ".*",
+			ExcludeGroupsRegexes: ignoreGroupID, // exclude everything not included
+			ExcludeTopicsRegexes: "test-exclude.*",
+			LoopInterval:         50 * time.Millisecond,
 		}
 
 		restoreCtx, restoreCancel := context.WithTimeout(ctx, 60*time.Second)
@@ -275,6 +291,11 @@ func TestConsumerGroupRestore(t *testing.T) {
 		fetched, err := kadmClient.FetchOffsets(ctx, ignoreGroupID)
 		require.NoError(t, err)
 		require.Empty(t, fetched, "The group that was expected to be ignored was included")
+
+		// check that the excluded topic has no offsets
+		g1Fetch, err := kadmClient.FetchOffsets(ctx, restoredGroup1)
+		require.NoError(t, err)
+		require.Empty(t, g1Fetch[excludedTopic], "The group should have no offsets on the excluded topic")
 
 		t.Log("TestConsumerGroupRestore finished successfully")
 	})
@@ -333,11 +354,11 @@ func TestConsumerGroupRestore(t *testing.T) {
 				Region:   testutil.MinioRegion,
 				Endpoint: s3Endpoint,
 			},
-			S3Location:          s3Location,
-			RestoreGroupsPrefix: cgRestoreGroupsPrefix,
-			RestoreTopicsPrefix: cgRestoreTopicPrefix,
-			IncludeRegexes:      ".*",
-			LoopInterval:        50 * time.Millisecond,
+			S3Location:           s3Location,
+			RestoreGroupsPrefix:  cgRestoreGroupsPrefix,
+			RestoreTopicsPrefix:  cgRestoreTopicPrefix,
+			IncludeGroupsRegexes: ".*",
+			LoopInterval:         50 * time.Millisecond,
 		}
 
 		// restore should finish right away, as the group should be skipped as it has offsets
@@ -400,11 +421,11 @@ func TestConsumerGroupRestore(t *testing.T) {
 				Region:   testutil.MinioRegion,
 				Endpoint: s3Endpoint,
 			},
-			S3Location:          s3Location,
-			RestoreGroupsPrefix: "",
-			RestoreTopicsPrefix: "", // topics are not prefixed
-			IncludeRegexes:      ".*",
-			LoopInterval:        50 * time.Millisecond,
+			S3Location:           s3Location,
+			RestoreGroupsPrefix:  "",
+			RestoreTopicsPrefix:  "", // topics are not prefixed
+			IncludeGroupsRegexes: ".*",
+			LoopInterval:         50 * time.Millisecond,
 		}
 
 		// restore should finish right away, as the messages are already written
@@ -469,11 +490,11 @@ func TestConsumerGroupRestore(t *testing.T) {
 				Region:   testutil.MinioRegion,
 				Endpoint: s3Endpoint,
 			},
-			S3Location:          s3Location,
-			RestoreGroupsPrefix: "",
-			RestoreTopicsPrefix: restoreTopicPrefix,
-			IncludeRegexes:      ".*",
-			LoopInterval:        50 * time.Millisecond,
+			S3Location:           s3Location,
+			RestoreGroupsPrefix:  "",
+			RestoreTopicsPrefix:  restoreTopicPrefix,
+			IncludeGroupsRegexes: ".*",
+			LoopInterval:         50 * time.Millisecond,
 		}
 
 		// restore should finish right away, as the messages are already written
@@ -534,11 +555,11 @@ func TestConsumerGroupRestore(t *testing.T) {
 				Region:   testutil.MinioRegion,
 				Endpoint: s3Endpoint,
 			},
-			S3Location:          s3Location,
-			RestoreGroupsPrefix: "",
-			RestoreTopicsPrefix: restoreTopicPrefix,
-			IncludeRegexes:      ".*",
-			LoopInterval:        50 * time.Millisecond,
+			S3Location:           s3Location,
+			RestoreGroupsPrefix:  "",
+			RestoreTopicsPrefix:  restoreTopicPrefix,
+			IncludeGroupsRegexes: ".*",
+			LoopInterval:         50 * time.Millisecond,
 		}
 
 		// restore should finish right away, as the messages are already written
@@ -603,11 +624,11 @@ func TestConsumerGroupRestore(t *testing.T) {
 				Region:   testutil.MinioRegion,
 				Endpoint: s3Endpoint,
 			},
-			S3Location:          s3Location,
-			RestoreGroupsPrefix: "",
-			RestoreTopicsPrefix: "", // topics are not prefixed
-			IncludeRegexes:      ".*",
-			LoopInterval:        50 * time.Millisecond,
+			S3Location:           s3Location,
+			RestoreGroupsPrefix:  "",
+			RestoreTopicsPrefix:  "", // topics are not prefixed
+			IncludeGroupsRegexes: ".*",
+			LoopInterval:         50 * time.Millisecond,
 		}
 
 		// restore should finish right away, as the messages are already written

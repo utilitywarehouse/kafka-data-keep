@@ -5,11 +5,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"sync"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/utilitywarehouse/kafka-data-keep/internal"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 	topicsrestore "github.com/utilitywarehouse/kafka-data-keep/internal/topics/restore"
@@ -46,7 +48,7 @@ func NewRestorer(client *kgo.Client, latestReader *kafka.LatestReader, restoreGr
 }
 
 // Restore orchestrates the full consumer group offset restoration.
-func (r *Restorer) Restore(ctx context.Context, offsets []codec.ConsumerGroupOffset, loopInterval time.Duration) error {
+func (r *Restorer) Restore(ctx context.Context, offsets []codec.ConsumerGroupOffset, loopInterval time.Duration, excludeTopicsRegexes []*regexp.Regexp) error {
 	remaining, err := r.filterAlreadyRestored(ctx, offsets)
 	if err != nil {
 		return fmt.Errorf("checking already restored groups: %w", err)
@@ -54,6 +56,9 @@ func (r *Restorer) Restore(ctx context.Context, offsets []codec.ConsumerGroupOff
 	slog.InfoContext(ctx, "Filtered already restored groups", "remaining", len(remaining))
 
 	grouped := groupByTopic(remaining)
+
+	grouped = filterExcludedTopics(ctx, grouped, excludeTopicsRegexes)
+	slog.InfoContext(ctx, "Filtered excluded topics", "topics", len(grouped))
 
 	grouped, err = r.filterNonExistingTopics(ctx, grouped)
 	if err != nil {
@@ -149,6 +154,22 @@ func groupByTopic(offsets []codec.ConsumerGroupOffset) map[string][]groupOffset 
 		}
 	}
 	return grouped
+}
+
+// filterExcludedTopics removes topics that match any of the provided exclude regexes.
+func filterExcludedTopics(ctx context.Context, grouped map[string][]groupOffset, excludeRegexes []*regexp.Regexp) map[string][]groupOffset {
+	if len(excludeRegexes) == 0 {
+		return grouped
+	}
+	result := make(map[string][]groupOffset, len(grouped))
+	for topic, entries := range grouped {
+		if internal.MatchesAny(topic, excludeRegexes) {
+			slog.InfoContext(ctx, "Skipping excluded topic", "topic", topic)
+			continue
+		}
+		result[topic] = entries
+	}
+	return result
 }
 
 // filterNonExistingTopics keeps only topics that exist in the Kafka cluster (with restore prefix).
