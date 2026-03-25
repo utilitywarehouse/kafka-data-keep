@@ -312,7 +312,7 @@ func (r *Restorer) resolveEntry(ctx context.Context, entry groupOffset, latestRe
 
 	// Compute the new offset: lastProcessedOffset - (sourceOffset - record.Offset)
 	newOffset := entry.LastProcessedOffset - (sourceOffset - latestRecord.Offset)
-	foundOffset, err := r.translateLastProcessed(ctx, entry, newOffset)
+	foundOffset, err := r.translateLastProcessed(ctx, entry, newOffset, latestRecord.Offset)
 	if err != nil {
 		return false, fmt.Errorf("finding restored offset: %w", err)
 	}
@@ -328,18 +328,20 @@ func (r *Restorer) resolveEntry(ctx context.Context, entry groupOffset, latestRe
 	return true, nil
 }
 
+const maxRecursiveTries = 50
+
 // translateLastProcessed acquires the consume client mutex and delegates to searchLastProcessed.
-func (r *Restorer) translateLastProcessed(ctx context.Context, entry groupOffset, startOffset int64) (int64, error) {
+func (r *Restorer) translateLastProcessed(ctx context.Context, entry groupOffset, startOffset int64, upperBoundOffset int64) (int64, error) {
 	r.consumeMu.Lock()
 	defer r.consumeMu.Unlock()
 
-	return r.searchLastProcessed(ctx, entry, startOffset, 5)
+	return r.searchLastProcessed(ctx, entry, startOffset, upperBoundOffset, maxRecursiveTries)
 }
 
 // searchAheadMax is used for the maximum number of records to fetch beyond the expected offset.
 // Those records will be searched if the source offset is not on the expected record, but on the following ones.
 // Using a moderate number to not load the memory too much, but to still make use of the Kafka fetch if needed.
-const searchAheadMax = 1000
+const searchAheadMax = 10000
 
 const (
 	offsetStartOfPartition int64 = -1 // no last-processed; next-to-read will be 0 after +1
@@ -349,7 +351,7 @@ const (
 // searchLastProcessed reads records starting at startOffset and walks forward until the
 // restore.source-offset header matches group last processed offset.
 // It must be called with consumeMu already held.
-func (r *Restorer) searchLastProcessed(ctx context.Context, entry groupOffset, startOffset int64, depth int) (int64, error) {
+func (r *Restorer) searchLastProcessed(ctx context.Context, entry groupOffset, startOffset int64, upperBoundOffset int64, depth int) (int64, error) {
 	if depth <= 0 {
 		return offsetNotFound, fmt.Errorf("recursion depth limit reached while searching for offset for entry %v", entry)
 	}
@@ -411,16 +413,19 @@ func (r *Restorer) searchLastProcessed(ctx context.Context, entry groupOffset, s
 			"restored_record_source_offset", firstRecSrcOffset,
 			"search_next_offset", searchNextOffset)
 
-		return r.searchLastProcessed(ctx, entry, searchNextOffset, depth-1)
+		return r.searchLastProcessed(ctx, entry, searchNextOffset, upperBoundOffset, depth-1)
 	}
 
 	// need to look further because in the restored data, the searched offset might not exist as the offsets may have been backed up due to start offset advancing on the partition when the retention period kicks in
 	if entry.LastProcessedOffset-firstRecSrcOffset > searchAheadMax {
 		searchNextOffset := startOffset + (entry.LastProcessedOffset - firstRecSrcOffset) - 1
+		if searchNextOffset >= upperBoundOffset {
+			searchNextOffset -= upperBoundOffset
+		}
 		slog.WarnContext(ctx, "Unexpected situation: the searched group offset is after the expected restored offset. Searching closer to the new deduced offset",
 			"group_entry", entry, "restored_record_offset", firstRec.Offset,
 			"restored_record_source_offset", firstRecSrcOffset, "search_next_offset", searchNextOffset)
-		return r.searchLastProcessed(ctx, entry, searchNextOffset, depth-1)
+		return r.searchLastProcessed(ctx, entry, searchNextOffset, upperBoundOffset, depth-1)
 	}
 
 	slog.WarnContext(ctx, "Unexpected situation: the searched group offset is after the expected restored offset. Searching next fetched records",
@@ -457,7 +462,7 @@ func (r *Restorer) searchLastProcessed(ctx context.Context, entry groupOffset, s
 	}
 
 	// do another fetch and look for the offset in the next batch of fetched records until we find it
-	return r.searchLastProcessed(ctx, entry, recs[len(recs)-1].Offset+1, depth-1)
+	return r.searchLastProcessed(ctx, entry, recs[len(recs)-1].Offset+1, upperBoundOffset, depth-1)
 }
 
 // commitOffset commits a single offset for a consumer group.
