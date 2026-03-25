@@ -420,7 +420,7 @@ func (r *Restorer) searchLastProcessed(ctx context.Context, entry groupOffset, s
 	if entry.LastProcessedOffset-firstRecSrcOffset > searchAheadMax {
 		searchNextOffset := startOffset + (entry.LastProcessedOffset - firstRecSrcOffset) - 1
 		if searchNextOffset >= upperBoundOffset {
-			searchNextOffset -= upperBoundOffset
+			searchNextOffset = startOffset + (upperBoundOffset-startOffset)/2
 		}
 		slog.WarnContext(ctx, "Unexpected situation: the searched group offset is after the expected restored offset. Searching closer to the new deduced offset",
 			"group_entry", entry, "restored_record_offset", firstRec.Offset,
