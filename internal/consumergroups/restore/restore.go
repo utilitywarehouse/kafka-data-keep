@@ -453,7 +453,7 @@ func (r *Restorer) scanForwardLastProcessed(ctx context.Context, topic string, e
 		// Poll the next batch directly — the consumer continues from where it left off.
 		fetches := r.consumeClient.PollRecords(ctx, scanForwardMax)
 		if err := fetches.Err0(); err != nil {
-			return offsetNotFound, fmt.Errorf("fetching from kafka: %w", err)
+			return offsetNotFound, fmt.Errorf("polling from kafka: %w", err)
 		}
 		recs = fetches.Records()
 		if len(recs) == 0 {
