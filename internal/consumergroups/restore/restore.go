@@ -373,7 +373,7 @@ func (r *Restorer) searchLastProcessed(ctx context.Context, entry groupOffset, s
 		}
 
 		if srcOffset == entry.LastProcessedOffset {
-			slog.DebugContext(ctx, "Found last processed offset on at the expected offset",
+			slog.DebugContext(ctx, "Found last processed source offset on the expected record",
 				"group_entry", entry, "offset", rec.Offset)
 			return rec.Offset, nil
 		}
