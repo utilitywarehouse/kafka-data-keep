@@ -194,7 +194,7 @@ func (r *Restorer) filterNonExistingTopics(ctx context.Context, grouped map[stri
 
 	result := make(map[string][]groupOffset)
 	for topic, entries := range grouped {
-		restoredTopic := r.restoreTopicsPrefix + topic
+		restoredTopic := r.restoredTopic(topic)
 		if existingTopics[restoredTopic] {
 			result[topic] = entries
 		} else {
