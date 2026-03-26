@@ -132,7 +132,7 @@ func consumeLatest(ctx context.Context, client *kgo.Client, topic string, tipOff
 	}()
 
 	results := make(map[int32]*kgo.Record, len(tipOffsets))
-	for i := range maxConsumeRetries {
+	for range maxConsumeRetries {
 		fetches := client.PollRecords(ctx, 1000)
 		stopProcessing, err := HandleFetches(ctx, &fetches)
 		if err != nil {
@@ -151,11 +151,6 @@ func consumeLatest(ctx context.Context, client *kgo.Client, topic string, tipOff
 		if len(results) >= len(tipOffsets) {
 			return results, nil
 		}
-		if i > (maxConsumeRetries / 2) {
-			slog.DebugContext(ctx, "received last entries for partitions", "topic", topic, "partitions", getPartitions(results), "retry", i+1)
-		}
-		// sleep before retrying another poll
-		//time.Sleep(50 * time.Millisecond)
 	}
 	slog.DebugContext(ctx, "consume latest didn't receive records for all expected partitions", "topic", topic, "partitions", getPartitions(results), "tipOffsets", tipOffsets)
 
