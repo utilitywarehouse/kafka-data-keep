@@ -3,11 +3,12 @@ package kafka
 import (
 	"context"
 	"fmt"
-	"github.com/twmb/franz-go/pkg/kadm"
-	"github.com/twmb/franz-go/pkg/kgo"
 	"log/slog"
 	"slices"
 	"sync"
+
+	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 // LatestReader caches a kgo.Client to read the latest records from topics.
