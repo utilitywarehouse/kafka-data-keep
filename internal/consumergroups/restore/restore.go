@@ -418,7 +418,7 @@ func (r *Restorer) fetchRecordAt(ctx context.Context, topic string, partition in
 
 	fetches := r.consumeClient.PollRecords(ctx, 1)
 	if err := fetches.Err0(); err != nil {
-		return nil, fmt.Errorf("fetching from kafka: %w", err)
+		return nil, fmt.Errorf("fetching record at offset from kafka: %w", err)
 	}
 
 	recs := fetches.Records()
