@@ -57,17 +57,7 @@ func (r *LatestReader) Read(ctx context.Context, topic string, onlyPartitions ..
 		return nil, nil
 	}
 
-	r.client.AddConsumePartitions(map[string]map[int32]kgo.Offset{
-		topic: tipOffsets,
-	})
-
-	// Ensure we clean up the consume state from the client
-	defer func() {
-		r.client.RemoveConsumePartitions(map[string][]int32{topic: partitionsFromMap(tipOffsets)})
-		r.client.PurgeTopicsFromClient(topic)
-	}()
-
-	return consumeLatest(ctx, r.client, len(tipOffsets))
+	return consumeLatest(ctx, r.client, topic, tipOffsets)
 }
 
 func partitionsFromMap(m map[int32]kgo.Offset) []int32 {
@@ -128,12 +118,22 @@ func excludePartition(onlyPartitions []int32, partition int32) bool {
 
 const maxConsumeRetries = 20
 
-func consumeLatest(ctx context.Context, client *kgo.Client, expectedCount int) (map[int32]*kgo.Record, error) {
-	if expectedCount == 0 {
+func consumeLatest(ctx context.Context, client *kgo.Client, topic string, tipOffsets map[int32]kgo.Offset) (map[int32]*kgo.Record, error) {
+	if len(tipOffsets) == 0 {
 		return nil, nil
 	}
 
-	results := make(map[int32]*kgo.Record, expectedCount)
+	client.AddConsumePartitions(map[string]map[int32]kgo.Offset{
+		topic: tipOffsets,
+	})
+
+	// Ensure we clean up the consume state from the client
+	defer func() {
+		client.RemoveConsumePartitions(map[string][]int32{topic: partitionsFromMap(tipOffsets)})
+		client.PurgeTopicsFromClient(topic)
+	}()
+
+	results := make(map[int32]*kgo.Record, len(tipOffsets))
 	for range maxConsumeRetries {
 		fetches := client.PollRecords(ctx, 1000)
 		stopProcessing, err := HandleFetches(ctx, &fetches)
@@ -150,11 +150,18 @@ func consumeLatest(ctx context.Context, client *kgo.Client, expectedCount int) (
 			}
 		})
 
-		if len(results) >= expectedCount {
+		if len(results) >= len(tipOffsets) {
 			return results, nil
 		}
 		// sleep before retrying another poll
 		time.Sleep(50 * time.Millisecond)
 	}
-	return nil, fmt.Errorf("consume latest didn't receive records for all expected partitions within the retry limit. Expected %d and got %d", expectedCount, len(results))
+	receivedPartitions := make([]int32, 0, len(results))
+	for p := range results {
+		receivedPartitions = append(receivedPartitions, p)
+	}
+	slices.Sort(receivedPartitions)
+	slog.DebugContext(ctx, "consume latest partitions details", "partitions", receivedPartitions, "tipOffsets", tipOffsets)
+
+	return nil, fmt.Errorf("consume latest didn't receive records for all expected partitions within the retry limit. Expected %d and got %d", len(tipOffsets), len(results))
 }
