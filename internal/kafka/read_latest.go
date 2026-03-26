@@ -3,13 +3,11 @@ package kafka
 import (
 	"context"
 	"fmt"
+	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"log/slog"
 	"slices"
 	"sync"
-	"time"
-
-	"github.com/twmb/franz-go/pkg/kadm"
-	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 // LatestReader caches a kgo.Client to read the latest records from topics.
@@ -116,7 +114,7 @@ func excludePartition(onlyPartitions []int32, partition int32) bool {
 	return len(onlyPartitions) > 0 && !slices.Contains(onlyPartitions, partition)
 }
 
-const maxConsumeRetries = 20
+const maxConsumeRetries = 2000
 
 func consumeLatest(ctx context.Context, client *kgo.Client, topic string, tipOffsets map[int32]kgo.Offset) (map[int32]*kgo.Record, error) {
 	if len(tipOffsets) == 0 {
@@ -153,9 +151,11 @@ func consumeLatest(ctx context.Context, client *kgo.Client, topic string, tipOff
 		if len(results) >= len(tipOffsets) {
 			return results, nil
 		}
-		slog.DebugContext(ctx, "received entries for partitions", "partitions", getPartitions(results), "retry", i+1)
+		if i > (maxConsumeRetries / 2) {
+			slog.DebugContext(ctx, "received last entries for partitions", "topic", topic, "partitions", getPartitions(results), "retry", i+1)
+		}
 		// sleep before retrying another poll
-		time.Sleep(200 * time.Millisecond)
+		//time.Sleep(50 * time.Millisecond)
 	}
 	slog.DebugContext(ctx, "consume latest didn't receive records for all expected partitions", "topic", topic, "partitions", getPartitions(results), "tipOffsets", tipOffsets)
 
