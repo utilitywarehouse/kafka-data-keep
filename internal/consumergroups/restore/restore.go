@@ -328,12 +328,15 @@ func (r *Restorer) resolveEntry(ctx context.Context, entry groupOffset, latestRe
 	return true, nil
 }
 
+// maxBackwardsIterations specifies how many times to look backwards relative to the expected offset
+const maxBackwardsIterations = 4
+
 // translateLastProcessed acquires the consume client mutex and delegates to searchLastProcessed.
 func (r *Restorer) translateLastProcessed(ctx context.Context, entry groupOffset, startOffset int64, upperBoundOffset int64) (int64, error) {
 	r.consumeMu.Lock()
 	defer r.consumeMu.Unlock()
 
-	return r.searchLastProcessed(ctx, entry, startOffset, upperBoundOffset)
+	return r.searchLastProcessed(ctx, entry, startOffset, upperBoundOffset, maxBackwardsIterations)
 }
 
 const (
@@ -341,66 +344,58 @@ const (
 	offsetNotFound         int64 = -2 // value returned together with an error when the last processed offset could not be found
 )
 
-// maxBackwardsIterations specifies how many times to look backwards relative to the expected offset
-const maxBackwardsIterations = 4
-
 // searchLastProcessed reads records starting at startOffset and walks forward until the
 // restore.source-offset header matches group last processed offset.
 // It must be called with consumeMu already held.
-func (r *Restorer) searchLastProcessed(ctx context.Context, entry groupOffset, startOffset int64, upperBoundOffset int64) (int64, error) {
+func (r *Restorer) searchLastProcessed(ctx context.Context, entry groupOffset, startOffset int64, upperBoundOffset int64, backwardsIteration int) (int64, error) {
 	topic := r.restoredTopic(entry.Topic)
 
-	for iteration := range maxBackwardsIterations {
-		// A negative startOffset (e.g. computed delta overshoots partition start)
-		// would be interpreted by franz-go as "consume from the end", causing
-		// PollRecords to block indefinitely waiting for new records that never
-		// arrive during a restore. Clamp to 0 so we scan from the beginning.
-		if startOffset < 0 {
-			slog.WarnContext(ctx, "Clamping negative startOffset to 0 in searchLastProcessed",
-				"group_entry", entry, "startOffset", startOffset, "iteration", iteration)
-			startOffset = 0
-		}
-
-		// we expect to have the expected consumer group offset on the record at the start offset
-		rec, srcOffset, err := r.fetchRecordAt(ctx, topic, entry.Partition, startOffset)
-		if err != nil {
-			return offsetNotFound, err
-		}
-
-		if srcOffset == entry.LastProcessedOffset {
-			slog.DebugContext(ctx, "Found last processed source offset on the expected record",
-				"group_entry", entry, "offset", rec.Offset)
-			return rec.Offset, nil
-		}
-
-		if entry.LastProcessedOffset < srcOffset {
-			searchNextOffset := startOffset - (srcOffset - entry.LastProcessedOffset)
-			//  if we're at the start of the topic and the next offset to search is negative, just return the start of the partition
-			if searchNextOffset < 0 && startOffset == 0 {
-				slog.WarnContext(ctx, "Unexpected situation: the searched group offset is not in the restored data. It may have gotten deleted due to the retention policy on the backed up data. Setting the group at the start of partition",
-					"group_entry", entry, "offset", rec.Offset,
-					"source_offset", srcOffset, "deduced_invalid_group_offset", searchNextOffset)
-				// returning -1 because there is no last processed, so the next record to be processed will be at offset 0
-				return offsetStartOfPartition, nil
-			}
-			startOffset = searchNextOffset
-			// if we're on the last try, just look at the start of the partition, see if it even exists
-			if iteration == maxBackwardsIterations-2 {
-				startOffset = 0
-			}
-			slog.WarnContext(ctx, "Unexpected situation: the searched group offset is before the expected restored offset. Searching previous records",
-				"group_entry", entry, "offset", rec.Offset, "source_offset", srcOffset, "search_next_offset", startOffset)
-			continue
-		}
-
-		// partitions on compacted topics may contain highly irregular offsets restores, so it is safest to just look for it until it's found
-		slog.WarnContext(ctx, "Unexpected situation: the searched group offset is after the expected restored offset. Scanning forward until found",
-			"group_entry", entry, "offset", rec.Offset, "source_offset", srcOffset)
-
-		return r.scanForwardLastProcessed(ctx, topic, entry, rec.Offset, upperBoundOffset)
+	if backwardsIteration <= 0 {
+		// do a search from 0 that will check if the group offset even exists in the partition, and will do a search forward afterwards
+		return r.searchLastProcessed(ctx, entry, 0, upperBoundOffset, 1)
+	}
+	// A negative startOffset (e.g. computed delta overshoots partition start)
+	// would be interpreted by franz-go as "consume from the end", causing
+	// PollRecords to block indefinitely waiting for new records that never
+	// arrive during a restore. Clamp to 0 so we scan from the beginning.
+	if startOffset < 0 {
+		slog.WarnContext(ctx, "Clamping negative startOffset to 0 in searchLastProcessed",
+			"group_entry", entry, "startOffset", startOffset)
+		startOffset = 0
 	}
 
-	return offsetNotFound, fmt.Errorf("search iteration limit reached while searching for offset for entry %v", entry)
+	// we expect to have the expected consumer group offset on the record at the start offset
+	rec, srcOffset, err := r.fetchRecordAt(ctx, topic, entry.Partition, startOffset)
+	if err != nil {
+		return offsetNotFound, err
+	}
+
+	if srcOffset == entry.LastProcessedOffset {
+		slog.DebugContext(ctx, "Found last processed source offset on the expected record",
+			"group_entry", entry, "offset", rec.Offset)
+		return rec.Offset, nil
+	}
+
+	if entry.LastProcessedOffset < srcOffset {
+		searchNextOffset := startOffset - (srcOffset - entry.LastProcessedOffset)
+		//  if we're at the start of the topic and the next offset to search is negative, just return the start of the partition
+		if searchNextOffset < 0 && startOffset == 0 {
+			slog.WarnContext(ctx, "Unexpected situation: the searched group offset is not in the restored data. It may have gotten deleted due to the retention policy on the backed up data. Setting the group at the start of partition",
+				"group_entry", entry, "offset", rec.Offset,
+				"source_offset", srcOffset, "deduced_invalid_group_offset", searchNextOffset)
+			// returning -1 because there is no last processed, so the next record to be processed will be at offset 0
+			return offsetStartOfPartition, nil
+		}
+		slog.WarnContext(ctx, "Unexpected situation: the searched group offset is before the expected restored offset. Searching previous records",
+			"group_entry", entry, "offset", rec.Offset, "source_offset", srcOffset, "search_next_offset", searchNextOffset)
+		return r.searchLastProcessed(ctx, entry, searchNextOffset, upperBoundOffset, backwardsIteration-1)
+	}
+
+	// partitions on compacted topics may contain highly irregular offsets restores, so it is safest to just look for it until it's found
+	slog.WarnContext(ctx, "Unexpected situation: the searched group offset is after the expected restored offset. Scanning forward until found",
+		"group_entry", entry, "offset", rec.Offset, "source_offset", srcOffset)
+
+	return r.scanForwardLastProcessed(ctx, topic, entry, rec.Offset, upperBoundOffset)
 }
 
 // fetchRecordAt adds a consume partition, polls records, and always cleans up
