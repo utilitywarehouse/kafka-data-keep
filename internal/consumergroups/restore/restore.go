@@ -37,14 +37,14 @@ type Restorer struct {
 }
 
 // NewRestorer creates a new Restorer.
-func NewRestorer(client *kgo.Client, latestReader *kafka.LatestReader, restoreGroupsPrefix, restoreTopicsPrefix string) (*Restorer, error) {
+func NewRestorer(client *kgo.Client, latestReader *kafka.LatestReader, restoreGroupsPrefix, restoreTopicsPrefix string) *Restorer {
 	return &Restorer{
 		kadmClient:          kadm.NewClient(client),
 		restoreGroupsPrefix: restoreGroupsPrefix,
 		restoreTopicsPrefix: restoreTopicsPrefix,
 		consumeClient:       client,
 		latestReader:        latestReader,
-	}, nil
+	}
 }
 
 // Restore orchestrates the full consumer group offset restoration.

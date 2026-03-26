@@ -73,10 +73,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	}
 	defer latestReader.Close()
 
-	restorer, err := NewRestorer(client, latestReader, cfg.RestoreGroupsPrefix, cfg.RestoreTopicsPrefix)
-	if err != nil {
-		return fmt.Errorf("creating restorer: %w", err)
-	}
+	restorer := NewRestorer(client, latestReader, cfg.RestoreGroupsPrefix, cfg.RestoreTopicsPrefix)
 	return restorer.Restore(ctx, offsets, cfg.LoopInterval, excludeTopicsRegexes)
 }
 
