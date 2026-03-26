@@ -44,6 +44,11 @@ func mainWrap() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	go func() {
+		<-ctx.Done()
+		slog.Warn("Process received interruption signal (SIGTERM/SIGINT) from Kubernetes", "error", ctx.Err())
+	}()
+
 	if len(os.Args) < 2 {
 		return fmt.Errorf("expected subcommand")
 	}
