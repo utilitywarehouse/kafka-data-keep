@@ -328,141 +328,160 @@ func (r *Restorer) resolveEntry(ctx context.Context, entry groupOffset, latestRe
 	return true, nil
 }
 
-const maxRecursiveTries = 50
-
 // translateLastProcessed acquires the consume client mutex and delegates to searchLastProcessed.
 func (r *Restorer) translateLastProcessed(ctx context.Context, entry groupOffset, startOffset int64, upperBoundOffset int64) (int64, error) {
 	r.consumeMu.Lock()
 	defer r.consumeMu.Unlock()
 
-	return r.searchLastProcessed(ctx, entry, startOffset, upperBoundOffset, maxRecursiveTries)
+	return r.searchLastProcessed(ctx, entry, startOffset, upperBoundOffset)
 }
-
-// searchAheadMax is used for the maximum number of records to fetch beyond the expected offset.
-// Those records will be searched if the source offset is not on the expected record, but on the following ones.
-// Using a moderate number to not load the memory too much, but to still make use of the Kafka fetch if needed.
-const searchAheadMax = 10000
 
 const (
 	offsetStartOfPartition int64 = -1 // no last-processed; next-to-read will be 0 after +1
 	offsetNotFound         int64 = -2 // value returned together with an error when the last processed offset could not be found
 )
 
+// maxBackwardsIterations specifies how many times to look backwards relative to the expected offset
+const maxBackwardsIterations = 10
+
 // searchLastProcessed reads records starting at startOffset and walks forward until the
 // restore.source-offset header matches group last processed offset.
 // It must be called with consumeMu already held.
-func (r *Restorer) searchLastProcessed(ctx context.Context, entry groupOffset, startOffset int64, upperBoundOffset int64, depth int) (int64, error) {
-	if depth <= 0 {
-		return offsetNotFound, fmt.Errorf("recursion depth limit reached while searching for offset for entry %v", entry)
-	}
-	// A negative startOffset (e.g. computed delta overshoots partition start)
-	// would be interpreted by franz-go as "consume from the end", causing
-	// PollRecords to block indefinitely waiting for new records that never
-	// arrive during a restore. Clamp to 0 so we scan from the beginning.
-	if startOffset < 0 {
-		slog.WarnContext(ctx, "Clamping negative startOffset to 0 in searchLastProcessed",
-			"group_entry", entry, "startOffset", startOffset)
-		startOffset = 0
-	}
+func (r *Restorer) searchLastProcessed(ctx context.Context, entry groupOffset, startOffset int64, upperBoundOffset int64) (int64, error) {
 	topic := r.restoredTopic(entry.Topic)
+
+	for iteration := range maxBackwardsIterations {
+		// A negative startOffset (e.g. computed delta overshoots partition start)
+		// would be interpreted by franz-go as "consume from the end", causing
+		// PollRecords to block indefinitely waiting for new records that never
+		// arrive during a restore. Clamp to 0 so we scan from the beginning.
+		if startOffset < 0 {
+			slog.WarnContext(ctx, "Clamping negative startOffset to 0 in searchLastProcessed",
+				"group_entry", entry, "startOffset", startOffset, "iteration", iteration)
+			startOffset = 0
+		}
+
+		// we expect to have the expected consumer group offset on the record at the start offset
+		rec, err := r.fetchRecordAt(ctx, topic, entry.Partition, startOffset)
+		if err != nil {
+			return offsetNotFound, err
+		}
+
+		srcOffset, err := topicsrestore.GetSourceOffsetFromHeader(rec)
+		if err != nil {
+			return offsetNotFound, fmt.Errorf("reading first record source offset: %w", err)
+		}
+
+		if srcOffset == entry.LastProcessedOffset {
+			slog.DebugContext(ctx, "Found group offset on the restored record as expected",
+				"group_entry", entry, "offset", rec.Offset)
+			return rec.Offset, nil
+		}
+
+		if entry.LastProcessedOffset < srcOffset {
+			searchNextOffset := startOffset - (srcOffset - entry.LastProcessedOffset)
+			//  if we're at the start of the topic and the next offset to search is negative, just return the start of the partition
+			if searchNextOffset < 0 && startOffset == 0 {
+				slog.WarnContext(ctx, "Unexpected situation: the searched group offset is not in the restored data. It may have gotten deleted due to the retention policy on the backed up data. Setting the group at the start of partition",
+					"group_entry", entry, "offset", rec.Offset,
+					"source_offset", srcOffset, "deduced_invalid_group_offset", searchNextOffset)
+				// returning -1 because there is no last processed, so the next record to be processed will be at offset 0
+				return offsetStartOfPartition, nil
+			}
+			slog.WarnContext(ctx, "Unexpected situation: the searched group offset is before the expected restored offset. Searching previous records",
+				"group_entry", entry, "offset", rec.Offset, "source_offset", srcOffset, "search_next_offset", searchNextOffset)
+
+			startOffset = searchNextOffset
+			continue
+		}
+
+		// partitions on compacted topics may contain highly irregular offsets restores, so it is safest to just look for it until it's found
+		slog.WarnContext(ctx, "Unexpected situation: the searched group offset is after the expected restored offset. Scanning forward until found",
+			"group_entry", entry, "offset", rec.Offset, "source_offset", srcOffset)
+
+		return r.scanForwardLastProcessed(ctx, topic, entry, rec.Offset, upperBoundOffset)
+	}
+
+	return offsetNotFound, fmt.Errorf("search iteration limit reached while searching for offset for entry %v", entry)
+}
+
+// fetchRecordAt adds a consume partition, polls records, and always cleans up
+// the consume client via defer so it can be reused for the next iteration.
+func (r *Restorer) fetchRecordAt(ctx context.Context, topic string, partition int32, startOffset int64) (*kgo.Record, error) {
+	r.consumeClient.AddConsumePartitions(map[string]map[int32]kgo.Offset{
+		topic: {partition: kgo.NewOffset().At(startOffset)},
+	})
+	defer func() {
+		r.consumeClient.RemoveConsumePartitions(map[string][]int32{topic: {partition}})
+		r.consumeClient.PurgeTopicsFromClient(topic)
+	}()
+
+	fetches := r.consumeClient.PollRecords(ctx, 1)
+	if err := fetches.Err0(); err != nil {
+		return nil, fmt.Errorf("fetching from kafka: %w", err)
+	}
+
+	recs := fetches.Records()
+
+	if len(recs) == 0 {
+		return nil, fmt.Errorf("didn't read any records on poll")
+	}
+
+	return recs[0], nil
+}
+
+// scanForwardMax is used for the maximum number of records to fetch when searching through all offsets.
+// Those records will be searched if the source offset is not on the expected record, but on the following ones.
+// Using a moderate number to not load the memory too much.
+const scanForwardMax = 10000
+
+// scanForwardLastProcessed continuously polls for records until the last processed offset is found or surpassed, or it reaches the maxOffset.
+// It must be called with consumeMu already held.
+func (r *Restorer) scanForwardLastProcessed(ctx context.Context, topic string, entry groupOffset, startOffset int64, maxOffset int64) (int64, error) {
+	// Set up the consume partition once for any subsequent polls beyond the
+	// initial batch. The consumer will continue from after the last record.
 	r.consumeClient.AddConsumePartitions(map[string]map[int32]kgo.Offset{
 		topic: {entry.Partition: kgo.NewOffset().At(startOffset)},
 	})
+	defer func() {
+		r.consumeClient.RemoveConsumePartitions(map[string][]int32{topic: {entry.Partition}})
+		r.consumeClient.PurgeTopicsFromClient(topic)
+	}()
 
-	fetches := r.consumeClient.PollRecords(ctx, searchAheadMax)
-	if err := fetches.Err0(); err != nil {
-		return offsetNotFound, fmt.Errorf("fetching from kafka: %w", err)
-	}
-
-	// reset the consume client so we can reuse it
-	r.consumeClient.RemoveConsumePartitions(map[string][]int32{topic: {entry.Partition}})
-	r.consumeClient.PurgeTopicsFromClient(topic)
-
-	recs := fetches.Records()
-	if len(recs) == 0 {
-		return offsetNotFound, fmt.Errorf("didn't read any records on poll")
-	}
-
-	// we expect to have the expected consumer group offset on the record at the start offset
-	firstRec := recs[0]
-	firstRecSrcOffset, err := topicsrestore.GetSourceOffsetFromHeader(firstRec)
-	if err != nil {
-		return offsetNotFound, fmt.Errorf("reading first record source offset: %w", err)
-	}
-
-	if firstRecSrcOffset == entry.LastProcessedOffset {
-		slog.DebugContext(ctx, "Found group offset on the restored record as expected",
-			"group_entry", entry, "restored_record_offset", firstRec.Offset)
-		return firstRec.Offset, nil
-	}
-
-	if entry.LastProcessedOffset < firstRecSrcOffset {
-		searchNextOffset := startOffset - (firstRecSrcOffset - entry.LastProcessedOffset)
-		if searchNextOffset < 0 {
-			slog.WarnContext(ctx, "Unexpected situation: the searched group offset is not in the restored data. It may have gotten deleted due to the retention policy on the backed up data. Setting the group at the start of partition",
-				"group_entry", entry,
-				"restored_record_offset", firstRec.Offset,
-				"restored_record_source_offset", firstRecSrcOffset,
-				"deduced_invalid_group_offset", searchNextOffset)
-			// returning -1 because there is no last processed, so the next record to be processed will be at offset 0
-			return offsetStartOfPartition, nil
+	var recs []*kgo.Record
+	for {
+		// Poll the next batch directly — the consumer continues from where it left off.
+		fetches := r.consumeClient.PollRecords(ctx, scanForwardMax)
+		if err := fetches.Err0(); err != nil {
+			return offsetNotFound, fmt.Errorf("fetching from kafka: %w", err)
 		}
-		slog.WarnContext(ctx, "Unexpected situation: the searched group offset is before the expected restored offset. Searching previous records",
-			"group_entry", entry,
-			"restored_record_offset", firstRec.Offset,
-			"restored_record_source_offset", firstRecSrcOffset,
-			"search_next_offset", searchNextOffset)
-
-		return r.searchLastProcessed(ctx, entry, searchNextOffset, upperBoundOffset, depth-1)
-	}
-
-	// need to look further because in the restored data, the searched offset might not exist as the offsets may have been backed up due to start offset advancing on the partition when the retention period kicks in
-	if entry.LastProcessedOffset-firstRecSrcOffset > searchAheadMax {
-		searchNextOffset := startOffset + (entry.LastProcessedOffset - firstRecSrcOffset) - 1
-		if searchNextOffset >= upperBoundOffset {
-			searchNextOffset = startOffset + (upperBoundOffset-startOffset)/2
+		recs = fetches.Records()
+		if len(recs) == 0 {
+			return offsetNotFound, fmt.Errorf("no more records to scan while searching for offset for entry %v", entry)
 		}
-		slog.WarnContext(ctx, "Unexpected situation: the searched group offset is after the expected restored offset. Searching closer to the new deduced offset",
-			"group_entry", entry, "restored_record_offset", firstRec.Offset,
-			"restored_record_source_offset", firstRecSrcOffset, "search_next_offset", searchNextOffset)
-		return r.searchLastProcessed(ctx, entry, searchNextOffset, upperBoundOffset, depth-1)
-	}
 
-	slog.WarnContext(ctx, "Unexpected situation: the searched group offset is after the expected restored offset. Searching next fetched records",
-		"group_entry", entry, "restored_record_offset", firstRec.Offset,
-		"restored_record_source_offset", firstRecSrcOffset, "next_fetched_records_no", len(recs))
-
-	for i, rec := range recs {
-		if i == 0 { // we already checked the first record earlier, so skipping it
-			continue
-		}
-		srcOff, err := topicsrestore.GetSourceOffsetFromHeader(rec)
-		if err != nil {
-			return offsetNotFound, fmt.Errorf("reading source offset: %w", err)
-		}
-		if entry.LastProcessedOffset == srcOff {
-			slog.InfoContext(ctx, "Found group offset on the next fetched records",
-				"group_entry", entry, "restored_record_offset", rec.Offset)
-			return rec.Offset, nil
-		}
-		if entry.LastProcessedOffset < srcOff {
-			// we reached an impossible situation where the consumer group offset is not among the restored records. Doing our best and setting the offset to the previously restored offset.
-			previousRecord := recs[i-1]
-			prevSrcOff, err := topicsrestore.GetSourceOffsetFromHeader(previousRecord)
-			if err != nil {
-				return offsetNotFound, fmt.Errorf("reading previous source offset: %w", err)
+		for _, rec := range recs {
+			if rec.Offset > maxOffset {
+				return offsetNotFound, fmt.Errorf("could not find offset for entry: %+v and reached max offset %d", entry, maxOffset)
 			}
-
-			slog.WarnContext(ctx, "Unexpected situation: the searched group offset doesn't exist in the restored records. Setting the group to the previously restored offset",
-				"group_entry", entry, "previous_record_offset", previousRecord.Offset,
-				"previous_record_source_offset", prevSrcOff)
-			// subtracting 1, because the previous record was not processed, the last processed record is right before this one.
-			return previousRecord.Offset - 1, nil
+			srcOff, err := topicsrestore.GetSourceOffsetFromHeader(rec)
+			if err != nil {
+				return offsetNotFound, fmt.Errorf("reading source offset: %w", err)
+			}
+			if entry.LastProcessedOffset == srcOff {
+				slog.InfoContext(ctx, "Found last processed offset while scanning forward",
+					"group_entry", entry, "offset", rec.Offset)
+				return rec.Offset, nil
+			}
+			if entry.LastProcessedOffset < srcOff {
+				// the consumer group offset is not among the restored records; we'll set the group to the next one
+				slog.WarnContext(ctx, "Unexpected situation: the searched group offset doesn't exist in the restored records. Setting the group to the next record",
+					"group_entry", entry, "next_record_offset", rec.Offset, "next_record_source_offset", srcOff)
+				// subtracting 1, as this record wasn't processed yet
+				return rec.Offset - 1, nil
+			}
 		}
 	}
-
-	// do another fetch and look for the offset in the next batch of fetched records until we find it
-	return r.searchLastProcessed(ctx, entry, recs[len(recs)-1].Offset+1, upperBoundOffset, depth-1)
 }
 
 // commitOffset commits a single offset for a consumer group.
