@@ -369,11 +369,11 @@ func (r *Restorer) searchLastProcessed(ctx context.Context, entry groupOffset, s
 
 		srcOffset, err := topicsrestore.GetSourceOffsetFromHeader(rec)
 		if err != nil {
-			return offsetNotFound, fmt.Errorf("reading first record source offset: %w", err)
+			return offsetNotFound, fmt.Errorf("reading record source offset: %w", err)
 		}
 
 		if srcOffset == entry.LastProcessedOffset {
-			slog.DebugContext(ctx, "Found group offset on the restored record as expected",
+			slog.DebugContext(ctx, "Found last processed offset on at the expected offset",
 				"group_entry", entry, "offset", rec.Offset)
 			return rec.Offset, nil
 		}
