@@ -9,6 +9,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec"
@@ -73,11 +74,16 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	}
 	defer latestReader.Close()
 
-	restorer, err := NewRestorer(client, latestReader, cfg.RestoreGroupsPrefix, cfg.RestoreTopicsPrefix)
-	if err != nil {
-		return fmt.Errorf("creating restorer: %w", err)
+	restorer := &Restorer{
+		kadmClient:           kadm.NewClient(client),
+		restoreGroupsPrefix:  cfg.RestoreGroupsPrefix,
+		restoreTopicsPrefix:  cfg.RestoreTopicsPrefix,
+		consumeClient:        client,
+		latestReader:         latestReader,
+		loopInterval:         cfg.LoopInterval,
+		excludeTopicsRegexes: excludeTopicsRegexes,
 	}
-	return restorer.Restore(ctx, offsets, cfg.LoopInterval, excludeTopicsRegexes)
+	return restorer.Restore(ctx, offsets)
 }
 
 func downloadAndDecode(ctx context.Context, cfg AppConfig, includeRegexes, excludeRegexes []*regexp.Regexp) ([]codec.ConsumerGroupOffset, error) {

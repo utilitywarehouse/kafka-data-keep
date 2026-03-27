@@ -26,7 +26,11 @@ func CompileRegexes(regexStr string) ([]*regexp.Regexp, error) {
 	var regexes []*regexp.Regexp
 	if regexStr != "" {
 		for r := range strings.SplitSeq(regexStr, ",") {
-			re, err := regexp.Compile(strings.TrimSpace(r))
+			r := strings.TrimSpace(r)
+			if r == "" {
+				continue
+			}
+			re, err := regexp.Compile(r)
 			if err != nil {
 				return nil, fmt.Errorf("invalid regex '%s': %w", r, err)
 			}

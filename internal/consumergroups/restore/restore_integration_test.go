@@ -590,7 +590,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 		backupOffset := int64(115)
 		// write the last record so that the diff between its offset and the source offset will be greater than 10, the base source offset used.
 		// This will cause that on restore, the offset of the consumer group (115) will be first looked up at 115 - (120-100) = 95,
-		// and then the app will look further and not find the actual record with source offset 115, so it will settle for the previous one, meaning the last record in the batch, the one with source offset 109 at offset 99
+		// and then the app will look further and not find the actual record with source offset 115, so it will settle for next one to be processed, meaning the last record, the one with source offset 120 at offset 100
 		lastRec := &kgo.Record{Topic: topic, Partition: 0, Offset: 120}
 		topicsrestore.SetOriginalOffsetHeader(lastRec)
 		producerClient.ProduceSync(ctx, lastRec)
@@ -637,7 +637,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 		err = restore.Run(restoreCtx, restoreCfg)
 		require.NoError(t, err)
 
-		verifyRestoredGroupOffset(t, kadmClient, groupID, 109, plan)
+		verifyRestoredGroupOffset(t, kadmClient, groupID, 110, plan)
 	})
 }
 
