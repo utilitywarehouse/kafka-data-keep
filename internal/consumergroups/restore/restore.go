@@ -28,27 +28,31 @@ type groupOffset struct {
 
 // Restorer performs consumer group offset restoration.
 type Restorer struct {
-	kadmClient          *kadm.Client
-	restoreGroupsPrefix string
-	restoreTopicsPrefix string
-	consumeClient       *kgo.Client
-	consumeMu           sync.Mutex
-	latestReader        *kafka.LatestReader
+	kadmClient           *kadm.Client
+	restoreGroupsPrefix  string
+	restoreTopicsPrefix  string
+	consumeClient        *kgo.Client
+	consumeMu            sync.Mutex
+	latestReader         *kafka.LatestReader
+	loopInterval         time.Duration
+	excludeTopicsRegexes []*regexp.Regexp
 }
 
 // NewRestorer creates a new Restorer.
-func NewRestorer(client *kgo.Client, latestReader *kafka.LatestReader, restoreGroupsPrefix, restoreTopicsPrefix string) *Restorer {
+func NewRestorer(client *kgo.Client, latestReader *kafka.LatestReader, restoreGroupsPrefix, restoreTopicsPrefix string, loopInterval time.Duration, excludeTopicsRegexes []*regexp.Regexp) *Restorer {
 	return &Restorer{
-		kadmClient:          kadm.NewClient(client),
-		restoreGroupsPrefix: restoreGroupsPrefix,
-		restoreTopicsPrefix: restoreTopicsPrefix,
-		consumeClient:       client,
-		latestReader:        latestReader,
+		kadmClient:           kadm.NewClient(client),
+		restoreGroupsPrefix:  restoreGroupsPrefix,
+		restoreTopicsPrefix:  restoreTopicsPrefix,
+		consumeClient:        client,
+		latestReader:         latestReader,
+		loopInterval:         loopInterval,
+		excludeTopicsRegexes: excludeTopicsRegexes,
 	}
 }
 
 // Restore orchestrates the full consumer group offset restoration.
-func (r *Restorer) Restore(ctx context.Context, offsets []codec.ConsumerGroupOffset, loopInterval time.Duration, excludeTopicsRegexes []*regexp.Regexp) error {
+func (r *Restorer) Restore(ctx context.Context, offsets []codec.ConsumerGroupOffset) error {
 	remaining, err := r.filterAlreadyRestored(ctx, offsets)
 	if err != nil {
 		return fmt.Errorf("checking already restored groups: %w", err)
@@ -58,7 +62,7 @@ func (r *Restorer) Restore(ctx context.Context, offsets []codec.ConsumerGroupOff
 	grouped := groupByTopic(remaining)
 	slog.InfoContext(ctx, "Grouped by topics", "total", len(grouped))
 
-	grouped = filterExcludedTopics(ctx, grouped, excludeTopicsRegexes)
+	grouped = filterExcludedTopics(ctx, grouped, r.excludeTopicsRegexes)
 	slog.InfoContext(ctx, "Filtered excluded topics", "remaining", len(grouped))
 
 	grouped, err = r.filterNonExistingTopics(ctx, grouped)
@@ -67,7 +71,7 @@ func (r *Restorer) Restore(ctx context.Context, offsets []codec.ConsumerGroupOff
 	}
 	slog.InfoContext(ctx, "Filtered non existing topics", "remaining", len(grouped))
 
-	return r.runLoop(ctx, loopInterval, grouped)
+	return r.runLoop(ctx, r.loopInterval, grouped)
 }
 
 // filterAlreadyRestored removes partitions that already have offsets committed

@@ -73,8 +73,8 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	}
 	defer latestReader.Close()
 
-	restorer := NewRestorer(client, latestReader, cfg.RestoreGroupsPrefix, cfg.RestoreTopicsPrefix)
-	return restorer.Restore(ctx, offsets, cfg.LoopInterval, excludeTopicsRegexes)
+	restorer := NewRestorer(client, latestReader, cfg.RestoreGroupsPrefix, cfg.RestoreTopicsPrefix, cfg.LoopInterval, excludeTopicsRegexes)
+	return restorer.Restore(ctx, offsets)
 }
 
 func downloadAndDecode(ctx context.Context, cfg AppConfig, includeRegexes, excludeRegexes []*regexp.Regexp) ([]codec.ConsumerGroupOffset, error) {
