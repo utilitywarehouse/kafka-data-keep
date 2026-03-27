@@ -38,19 +38,6 @@ type Restorer struct {
 	excludeTopicsRegexes []*regexp.Regexp
 }
 
-// NewRestorer creates a new Restorer.
-func NewRestorer(client *kgo.Client, latestReader *kafka.LatestReader, restoreGroupsPrefix, restoreTopicsPrefix string, loopInterval time.Duration, excludeTopicsRegexes []*regexp.Regexp) *Restorer {
-	return &Restorer{
-		kadmClient:           kadm.NewClient(client),
-		restoreGroupsPrefix:  restoreGroupsPrefix,
-		restoreTopicsPrefix:  restoreTopicsPrefix,
-		consumeClient:        client,
-		latestReader:         latestReader,
-		loopInterval:         loopInterval,
-		excludeTopicsRegexes: excludeTopicsRegexes,
-	}
-}
-
 // Restore orchestrates the full consumer group offset restoration.
 func (r *Restorer) Restore(ctx context.Context, offsets []codec.ConsumerGroupOffset) error {
 	remaining, err := r.filterAlreadyRestored(ctx, offsets)
