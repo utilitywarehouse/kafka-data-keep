@@ -621,8 +621,8 @@ github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
 github.com/testcontainers/testcontainers-go v0.41.0 h1:mfpsD0D36YgkxGj2LrIyxuwQ9i2wCKAD+ESsYM1wais=
 github.com/testcontainers/testcontainers-go v0.41.0/go.mod h1:pdFrEIfaPl24zmBjerWTTYaY0M6UHsqA1YSvsoU40MI=
-github.com/testcontainers/testcontainers-go/modules/minio v0.40.0 h1:M+Ib1mIXq/hEcH8tyEvBnOZ7NJi03zY+P1gYO5GGp6o=
-github.com/testcontainers/testcontainers-go/modules/minio v0.40.0/go.mod h1:ON0MxxS/pME0SJOKLImw/D9R1L7apYsxIZrM/uEqORA=
+github.com/testcontainers/testcontainers-go/modules/minio v0.41.0 h1:EJZ/7grM9wtgO7rCAnpJIXWYxftAmv8MSeAbI4/1Ifg=
+github.com/testcontainers/testcontainers-go/modules/minio v0.41.0/go.mod h1:O/6BFKJ2B3wC1HqUhOCa0TjGY2BJCxjLo6W3Bbffn4I=
 github.com/testcontainers/testcontainers-go/modules/redpanda v0.41.0 h1:YEbx+louxePq04rKCqTe7Xph8WuiAlxp6nXXzeN0fRo=
 github.com/testcontainers/testcontainers-go/modules/redpanda v0.41.0/go.mod h1:u3Lgwe9NX+X2i+2Ok6zI2/+NBWvw2zsTR1gqvTpiFN8=
 github.com/tklauser/go-sysconf v0.3.16 h1:frioLaCQSsF5Cy1jgRBrzr6t502KIIwQ0MArYICU0nA=
