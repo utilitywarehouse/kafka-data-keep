@@ -12,7 +12,7 @@ require (
 	github.com/johanbrandhorst/certify v1.9.0
 	github.com/prometheus/client_golang v1.22.0
 	github.com/stretchr/testify v1.11.1
-	github.com/testcontainers/testcontainers-go/modules/minio v0.40.0
+	github.com/testcontainers/testcontainers-go/modules/minio v0.41.0
 	github.com/testcontainers/testcontainers-go/modules/redpanda v0.41.0
 	github.com/twmb/franz-go v1.20.7
 	github.com/twmb/franz-go/pkg/kadm v1.17.2
