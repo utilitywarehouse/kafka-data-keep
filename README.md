@@ -383,3 +383,33 @@ The following endpoints are available on this server:
 - `/debug/pprof/profile`: pprof profile
 - `/debug/pprof/symbol`: pprof symbol
 - `/debug/pprof/trace`: pprof trace
+
+# Operations
+
+## Deployment
+Kubernetes manifests are provided through kustomize at ./deploy/kustomize
+
+## Backup
+The backup is straight forward: just run the topics and consumer group backup in parallel continuously. 
+In kubernetes these run as Deployments.
+
+## Restore
+### Considerations
+The restore can be split across multiple independent pipelines, each with its own plan-restore topic. Common splits:
+1. **Large vs. normal topics** — prevents large topics from blocking restoration of smaller ones.
+2. **High-priority vs. low-priority topics** — ensures critical topics are not blocked by low-priority ones.
+
+### Steps
+
+1. Provision the new Kafka cluster.
+2. Create the plan-restore topic(s). Use 20–50 partitions to maximise parallelism during topics restore.
+3. Create the target topics with the **same partition count** as the source.
+4. Run `topics-plan-restore` (one per plan-restore topic). These are short-lived Kubernetes Jobs.
+5. Run `topics-restore` (one Deployment per plan-restore topic). Scale replicas to match the plan-restore topic's partition count. Monitor consumer group progress to determine completion.
+6. Run `consumer-groups-restore`. Can run in parallel with step 5. Runs as a Kubernetes Job and exits when all consumer groups are restored.
+
+> **Note:** Consumer group restore lags behind topic restore because it retries on a timer interval.
+
+### Tips
+
+1. Use Terraform with the [Kafka provider](https://registry.terraform.io/providers/Mongey/kafka/latest/docs) to manage topic definitions. This way, step 3 is just pointing the module at the new cluster and running `terraform apply`.
