@@ -1,6 +1,22 @@
 # kafka-data-keep
 DR utility for preserving kafka topics and consumer groups data in S3, with the ability to restore.
 
+# Performance
+
+Benchmarked on an MSK 3.8.x cluster with 9 `kafka.m7g.2xlarge` nodes.
+
+## Backup
+
+**Topics:** 179 topics (~2400 partitions) backed up in **3h 45min**, producing **~1 TB** of Avro-compressed files on S3 with up to 10 parallel replicas. Sustained throughput: **~78 MB/s**.
+
+**Consumer groups:** ~500 groups backed up in **~500ms**.
+
+## Restore
+
+**Topics:** 177 topics (~2300 partitions) restored from 600 GB of compressed Avro files in **1h** (2 large topics excluded). Sustained throughput: **~166 MB/s**. Peak record throughput reached **1.84 million records/s** using a plan topic with 50 partitions and up to 30 restore replicas. Kafka broker CPU peaked at 40%.
+
+**Consumer groups:** Restore runs alongside the topics restore and progresses with it. It typically completes within ~1 minute after the topics restore finishes. See [Operations](#operations) for details.
+
 # Topics backup
 ## Approach
 
