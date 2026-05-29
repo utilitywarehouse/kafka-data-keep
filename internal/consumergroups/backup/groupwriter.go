@@ -74,13 +74,23 @@ func (w *GroupWriter) writeGroupsToFile(ctx context.Context, f *os.File, groupID
 		return fmt.Errorf("failed to create encoder: %w", err)
 	}
 
-	for _, groupID := range groupIDs.Groups() {
-		kOffset, err := w.client.FetchOffsets(ctx, groupID)
-		if err != nil {
-			return fmt.Errorf("failed to fetch offsets for group %s: %w", groupID, err)
+	groupList := groupIDs.Groups()
+	if len(groupList) == 0 {
+		return nil
+	}
+
+	fetchedAll := w.client.FetchManyOffsets(ctx, groupList...)
+	if err := fetchedAll.Error(); err != nil {
+		return fmt.Errorf("failed to fetch offsets: %w", err)
+	}
+
+	for _, groupID := range groupList {
+		fo, ok := fetchedAll[groupID]
+		if !ok {
+			return fmt.Errorf("no offset result for group %s", groupID)
 		}
 
-		cgOffset := toAvro(ctx, groupID, kOffset, emptyPartitions)
+		cgOffset := toAvro(ctx, groupID, fo.Fetched, emptyPartitions)
 
 		if err := encoder.Encode(cgOffset); err != nil {
 			return fmt.Errorf("failed to encode group offset: %w", err)
