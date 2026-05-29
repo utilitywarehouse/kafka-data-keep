@@ -152,14 +152,23 @@ func toAvro(ctx context.Context, groupID string, kOffset kadm.OffsetResponses, e
 // emptyPartitions returns a set of topic-partitions where start offset equals
 // end offset, meaning the partition contains no records. Keys are formatted as
 // "topic/partition" via topicPartitionKey.
+//
+// End offsets are fetched first, then start offsets. This ordering protects
+// against the TOCTOU case where retention advances the start offset between
+// the two calls — if start advances to match end, the partition is truly
+// empty and its offsets would be stale on restore, so we correctly exclude
+// them. The reverse race (a write landing between the calls) would compare a
+// stale end offset against a current start, marking the partition empty when
+// it has new data — but this is self-healing: the next backup tick captures
+// those offsets, and the loss of one snapshot is harmless.
 func (w *GroupWriter) emptyPartitions(ctx context.Context) (map[string]bool, error) {
-	startOffsets, err := w.client.ListStartOffsets(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list start offsets: %w", err)
-	}
 	endOffsets, err := w.client.ListEndOffsets(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list end offsets: %w", err)
+	}
+	startOffsets, err := w.client.ListStartOffsets(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list start offsets: %w", err)
 	}
 
 	empty := make(map[string]bool)
