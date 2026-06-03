@@ -7,13 +7,17 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+    groups:
+      actions:
+        patterns:
+          - "*"
 
   # Maintain dependencies for Go modules
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:
       interval: "monthly"
-    ignore:
-      - dependency-name: "go.opentelemetry.io/otel/exporters/prometheus"
-        versions:
-          - ">= 0.58.1"
+    groups:
+      go-modules:
+        patterns:
+          - "*"
