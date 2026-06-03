@@ -41,4 +41,5 @@ jobs:
         with:
           repo-checkout: false
           go-version-file: 'go.mod'
+          go-version-input: '' # use empty input to force it to use the version from go.mod
           cache: true
