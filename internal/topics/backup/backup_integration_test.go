@@ -720,6 +720,102 @@ func TestBackupIntegration(t *testing.T) {
 
 		stopApp(t, cancel, errCh)
 	})
+
+	t.Run("upload on connection lost", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		// Dedicated Kafka service - we terminate it mid-test, so it must not be shared
+		subKafkaBrokers, terminateKafka := testutil.StartKafkaService(t)
+		t.Cleanup(terminateKafka)
+
+		subAdminClient, err := kgo.NewClient(
+			kgo.SeedBrokers(subKafkaBrokers),
+			kgo.RecordPartitioner(kgo.ManualPartitioner()),
+		)
+		require.NoError(t, err)
+		t.Cleanup(subAdminClient.Close)
+
+		subKadmClient := kadm.NewClient(subAdminClient)
+		t.Cleanup(subKadmClient.Close)
+
+		topic := newRandomName("upload-on-conn-lost")
+		_, err = subKadmClient.CreateTopic(ctx, 1, 1, nil, topic)
+		require.NoError(t, err)
+
+		workingDir := t.TempDir()
+		groupID := newRandomName("upload-on-conn-lost-group")
+		s3Prefix := "upload-on-conn-lost/"
+
+		cfg := AppConfig{
+			KafkaConfig: kafka.Config{
+				Brokers: subKafkaBrokers,
+			},
+			TopicsRegex:            topic,
+			GroupID:                groupID,
+			PartitionIdleThreshold: 1 * time.Second,
+			MinFileSize:            100 * 1024 * 1024, // high limit to prevent auto flush
+			WorkingDir:             workingDir,
+			S3: ints3.Config{
+				Bucket:   bucketName,
+				Endpoint: s3Endpoint, // reuse the outer S3 service
+				Region:   testutil.MinioRegion,
+			},
+			S3Prefix: s3Prefix,
+		}
+
+		// First run: start backup and consume messages
+		firstErrCh := make(chan error, 1)
+		firstCtx, firstCancel := context.WithCancel(ctx)
+		defer firstCancel()
+		go func() {
+			firstErrCh <- Run(firstCtx, cfg)
+		}()
+
+		testutil.WaitConsumerStart(t, subKadmClient, groupID)
+		writeRecords(t, subAdminClient, topic, 0, 1000, 1000)
+
+		fileKey := testutil.FileKey(s3Prefix, topic, 0, 0)
+		waitLocalFileHasRecords(t, workingDir, fileKey, 1000)
+
+		// Stop Kafka - the backup consumer should fail and exit, retaining local files
+		terminateKafka()
+
+		select {
+		case err := <-firstErrCh:
+			require.Error(t, err, "backup should exit with error when Kafka connection is lost")
+		case <-time.After(30 * time.Second):
+			t.Fatal("backup did not exit within 30 seconds after Kafka was stopped")
+		}
+
+		// Local file should still exist; nothing should have been uploaded
+		_, err = os.Stat(filepath.Join(workingDir, fileKey))
+		require.NoError(t, err, "local file should still exist after backup failed")
+		require.Empty(t, listFilesOnBucket(t, s3Client, s3Prefix), "no files should be in S3 after backup failed")
+
+		// Second run: Kafka is still down, so initKafkaClient fails.
+		// The app should upload the local files to S3 before returning the error.
+		secondErrCh := make(chan error, 1)
+		go func() {
+			secondErrCh <- Run(ctx, cfg)
+		}()
+
+		select {
+		case err := <-secondErrCh:
+			require.Error(t, err, "backup should fail to connect to Kafka")
+		case <-time.After(30 * time.Second):
+			t.Fatal("second backup did not exit in time")
+		}
+
+		// Local file should be gone (uploaded and deleted)
+		_, err = os.Stat(filepath.Join(workingDir, fileKey))
+		require.ErrorIs(t, err, os.ErrNotExist, "local file should be deleted after upload to S3")
+
+		// S3 should have the file with all records
+		filesFound := listFilesOnBucket(t, s3Client, s3Prefix)
+		require.Equal(t, map[string]int{fileKey: 1000}, filesFound)
+	})
 }
 
 // Helper to navigate the OTel data tree

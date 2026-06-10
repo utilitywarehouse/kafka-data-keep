@@ -23,8 +23,8 @@ Benchmarked on an MSK 3.8.x cluster with 9 `kafka.m7g.2xlarge` nodes.
 The application functions as a Kafka consumer that backs up data to S3. It uses a local buffering strategy to ensure data integrity and efficient uploads.
 
 1.  **Consumption**: Each partition data is written to a separate file.
-2.  **Local Buffering**: Messages are encoded (using Avro) and written to local files on disk. 
-    This acts as a buffer before uploading to S3 and is more memory efficient than "streaming" to S3, as the S3 SDK implementation uses a minimum 5MB buffer per file. 
+2.  **Local Buffering**: Messages are encoded (using Avro) and written to local files on disk.
+    This acts as a buffer before uploading to S3 and is more memory efficient than "streaming" to S3, as the S3 SDK implementation uses a minimum 5MB buffer per file.
 3.  **Rotation & Upload**:
     - The application monitors the size of the local file.
     - Once a file reaches a configured minimum size (`MinFileSize`), the file is uploaded to S3, the Kafka offsets are committed and the local file is deleted
@@ -73,14 +73,14 @@ my-topic-0-0000000000000012345.avro
 
 The 19-digit zero-padding ensures that files are sorted chronologically when listed alphabetically, which is essential for having the messages sorted on restore.
 
-Since Kafka offsets are only committed after a successful S3 upload, this file naming convention makes the backup process idempotent in most scenarios. 
-However, overlapping files can occasionally be generated, such as when a partition's starting offset advances due to log retention policies. 
+Since Kafka offsets are only committed after a successful S3 upload, this file naming convention makes the backup process idempotent in most scenarios.
+However, overlapping files can occasionally be generated, such as when a partition's starting offset advances due to log retention policies.
 The restore process handles these edge cases by automatically detecting and skipping duplicate records. For more details, see [Deduplication](#deduplication).
 
 ### Data Durability
 Any records not yet uploaded to S3 are stored durably in the configured `WorkingDir`.
 - **Resilience**: Data is preserved and will be processed on the next application start, even if the Kafka cluster is unavailable.
-- **Planned Work**: Implementation of an emergency flush mechanism triggered by detected Kafka connectivity failures.
+- **Startup Flush**: If the application cannot connect to Kafka on startup (e.g. after a cluster outage), it automatically uploads all local `.avro` files to S3 and removes them before exiting. This prevents data loss in scenarios where Kafka is temporarily unavailable.
 
 ### Idle Partitions
 To optimize memory usage, the application automatically closes local files associated with partitions that become idle (i.e., do not receive new data for a configurable duration).
@@ -158,10 +158,10 @@ Both methods will immediately flush all active partition writers to S3.
 
 # Topics Plan Restore
 
-Prepares the restore plan by reading the backup files on the S3 bucket and, for each file, it will create a record in a Kafka topic. 
+Prepares the restore plan by reading the backup files on the S3 bucket and, for each file, it will create a record in a Kafka topic.
 We are using this intermediary phase, before restore, to leverage the kafka consumer group functionality to achieve parallelism per partition safely at restore time and to keep track of the restore process.
 
-The topics will be processed in the order specified in the `restore-topics-regex` list. If multiple topics match a particular regex, they'll be processed in alphabetical order. 
+The topics will be processed in the order specified in the `restore-topics-regex` list. If multiple topics match a particular regex, they'll be processed in alphabetical order.
 
 In case something fails during the execution, it will resume the listing by reading the last messages produced on the kafka topic.
 
@@ -208,7 +208,7 @@ The `topics-restore` command consumes restore plan records from the plan topic (
 ## Key Features
 
 ### Data
-It restores the records in their original partition, keeping the order of the messages. 
+It restores the records in their original partition, keeping the order of the messages.
 It keeps all the data from the original record: key, value, timestamp, headers (note: duplicate header keys are dropped during backup, see Topics backup limitations).
 In addition, it adds the `restore.source-offset` header to each restored message pointing to the original Kafka offset in the source topic. Uses this for resuming and deduplication.
 
@@ -228,7 +228,7 @@ In addition, to avoid duplicate records due to redeliveries from the plan topic,
 ### Parallelism
 It supports launching as many instances as the number of partitions in the plan topic.
 Each instance will consume a single partition from the plan topic and restore its data from S3.
-In the plan topic, the partitioning is done based on the source topic name and partition; 
+In the plan topic, the partitioning is done based on the source topic name and partition;
 this ensures that all the files holding the data for a topic's partition will be restored in order by the same instance.
 
 ## Configuration
@@ -388,7 +388,7 @@ The `consumer-groups-restore` subcommand supports the following flags and enviro
 
 # HTTP Endpoints
 
-All commands expose an HTTP server on the port specified by `--metrics-port` or `METRICS_PORT` environment variable (default: `8081`). 
+All commands expose an HTTP server on the port specified by `--metrics-port` or `METRICS_PORT` environment variable (default: `8081`).
 The following endpoints are available:
 - `/__/metrics`: Prometheus metrics
 

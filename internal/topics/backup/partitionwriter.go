@@ -316,14 +316,8 @@ func (p *partitionWriter) flushLocked(ctx context.Context) error {
 			return fmt.Errorf("failed closing local file on flush: %w", err)
 		}
 	}
-	// Upload the closed file
-	if err := p.uploader.Upload(ctx, p.currentFilePath, p.currentKey); err != nil {
-		return fmt.Errorf("failed to upload file %s: %w", p.currentFilePath, err)
-	}
-
-	// Remove the local file after successful upload
-	if err := os.Remove(p.currentFilePath); err != nil {
-		return fmt.Errorf("failed to remove local file %s: %w", p.currentFilePath, err)
+	if err := uploadAndDelete(ctx, p.uploader, p.currentFilePath, p.currentKey); err != nil {
+		return fmt.Errorf("failed to flush file for partition %s-%d: %w", p.topic, p.partition, err)
 	}
 
 	// Commit offset
@@ -334,6 +328,16 @@ func (p *partitionWriter) flushLocked(ctx context.Context) error {
 	p.isOpen = false
 	p.lastWriteAt = time.Time{}
 
+	return nil
+}
+
+func uploadAndDelete(ctx context.Context, uploader *ints3.Uploader, localPath, s3Key string) error {
+	if err := uploader.Upload(ctx, localPath, s3Key); err != nil {
+		return fmt.Errorf("failed to upload file %s: %w", localPath, err)
+	}
+	if err := os.Remove(localPath); err != nil {
+		return fmt.Errorf("failed to remove local file %s: %w", localPath, err)
+	}
 	return nil
 }
 
