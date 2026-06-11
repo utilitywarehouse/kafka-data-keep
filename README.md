@@ -412,9 +412,9 @@ Kubernetes manifests are provided through kustomize at ./deploy/kustomize
 ## Backup
 Run the topics backup and consumer group backup as two separate, continuously running processes in parallel.
 
-In Kubernetes, deploy each as a Deployment:
-- **Consumer group backup**: run with exactly 1 replica.
-- **Topics backup**: scale replicas based on your cluster size. More replicas speed up the initial backup. Once the initial backup is complete, tune the replica count to match cluster load — for reference, 2 replicas handles a cluster with 300 topics and 11k total partitions (including replicas).
+In Kubernetes:
+- **Consumer group backup**: deploy as a Deployment with exactly 1 replica.
+- **Topics backup**: deploy as a StatefulSet for automatic PVC provisioning for durable storage. Scale replicas based on your cluster size. More replicas speed up the initial backup. Once the initial backup is complete, tune the replica count to match cluster load — for reference, 2 replicas handles a cluster with 300 topics and 11k total partitions (including replicas).
 ## Restore
 ### Considerations
 The restore can be split across multiple independent pipelines, each with its own plan-restore topic. Common splits:
