@@ -71,6 +71,10 @@ func Run(ctx context.Context, cfg AppConfig) error {
 
 	client, err := initKafkaClient(ctx, cfg, mgr)
 	if err != nil {
+		slog.WarnContext(ctx, "failed to connect to Kafka on startup, uploading local files", "error", err)
+		if uploadErr := mgr.UploadLocalFiles(ctx); uploadErr != nil {
+			slog.ErrorContext(ctx, "failed to upload local files on startup", "error", uploadErr)
+		}
 		return fmt.Errorf("failed to create kafka client: %w", err)
 	}
 	defer client.CloseAllowingRebalance()

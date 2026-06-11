@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -180,6 +181,31 @@ func (m *partitionsWriterManager) PauseIdleWriters(ctx context.Context) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// UploadLocalFiles uploads all .avro files found in the working directory to S3,
+// then removes them locally. Used to recover leftover files when Kafka is unreachable on startup.
+func (m *partitionsWriterManager) UploadLocalFiles(ctx context.Context) error {
+	if _, err := os.Stat(m.config.RootPath); os.IsNotExist(err) {
+		return nil
+	}
+	return filepath.WalkDir(m.config.RootPath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if filepath.Ext(path) != ".avro" {
+			return nil
+		}
+		s3Key, err := filepath.Rel(m.config.RootPath, path)
+		if err != nil {
+			return fmt.Errorf("failed to get relative path for %s: %w", path, err)
+		}
+		slog.InfoContext(ctx, "uploading leftover local file", "path", path, "key", s3Key)
+		return uploadAndDelete(ctx, m.uploader, path, s3Key)
+	})
 }
 
 func (m *partitionsWriterManager) FlushAll(ctx context.Context) error {
