@@ -78,9 +78,8 @@ However, overlapping files can occasionally be generated, such as when a partiti
 The restore process handles these edge cases by automatically detecting and skipping duplicate records. For more details, see [Deduplication](#deduplication).
 
 ### Data Durability
-Any records not yet uploaded to S3 are stored durably in the configured `WorkingDir`.
-- **Resilience**: Data is preserved and will be processed on the next application start, even if the Kafka cluster is unavailable.
-- **Startup Flush**: If the application cannot connect to Kafka on startup (e.g. after a cluster outage), it automatically uploads all local `.avro` files to S3 and removes them before exiting. This prevents data loss in scenarios where Kafka is temporarily unavailable.
+Any records not yet uploaded to S3 are stored durably in the configured `WorkingDir` as local files.
+- **Startup Flush**: when the application cannot connect to Kafka on startup, it automatically uploads all local `.avro` files to S3 and removes them before exiting. It does this only on startup and not on app exit, because it excludes the case when some brokers become temporarily unavailable (e.g. due to rolling upgrade), but the cluster is still functional. This is done to ensure all data is available in S3 when a restore is absolutely necessary due to full cluster unavailability.
 
 ### Idle Partitions
 To optimize memory usage, the application automatically closes local files associated with partitions that become idle (i.e., do not receive new data for a configurable duration).
