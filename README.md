@@ -78,8 +78,13 @@ However, overlapping files can occasionally be generated, such as when a partiti
 The restore process handles these edge cases by automatically detecting and skipping duplicate records. For more details, see [Deduplication](#deduplication).
 
 ### Data Durability
-Any records not yet uploaded to S3 are stored durably in the configured `WorkingDir` as local files.
-- **Startup Flush**: when the application cannot connect to Kafka on startup, it automatically uploads all local `.avro` files to S3 and removes them before exiting. It does this only on startup and not on app exit, because it excludes the case when some brokers become temporarily unavailable (e.g. due to rolling upgrade), but the cluster is still functional. This is done to ensure all data is available in S3 when a restore is absolutely necessary due to full cluster unavailability.
+Any records not yet uploaded to S3 are stored durably in the configured `WorkingDir` as local files. It is mandatory for this to be a durable storage that pesists between app restarts. The application deliberately does **not** flush local files to S3 on crash or exit — this avoids triggering an unnecessary upload when individual brokers are temporarily unavailable (e.g. during a rolling upgrade) while the cluster is otherwise functional.
+
+Instead, the cluster's availability is checked on startup via a connection ping. If the ping fails, the entire cluster is considered unavailable and the application uploads all local `.avro` files to S3 before exiting. This ensures all the buffered data reaches S3 before a full-cluster restore is initiated. The expected sequence for a full-cluster outage is:
+
+1. The app crashes because Kafka becomes fully unavailable — buffered data remains on disk.
+2. The app is restarted (e.g. by Kubernetes).
+3. On startup, the Kafka ping fails — the app uploads the local files to S3 and exits.
 
 ### Idle Partitions
 To optimize memory usage, the application automatically closes local files associated with partitions that become idle (i.e., do not receive new data for a configurable duration).
