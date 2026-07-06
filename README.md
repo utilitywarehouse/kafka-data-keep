@@ -169,6 +169,21 @@ The topics will be processed in the order specified in the `restore-topics-regex
 
 In case something fails during the execution, it will resume the listing by reading the last messages produced on the kafka topic.
 
+### Deferring large topics
+
+When `-process-large-topics-last` is set, topics whose total S3 backup size exceeds `-large-topic-threshold-mb` are moved to the end of the plan. Topics below the threshold are planned first (preserving their original order), followed by the large ones (also preserving their relative order). This is useful to avoid a single large topic blocking the restoration of many smaller ones.
+
+### Plan record headers
+
+Each record produced into the plan topic carries two headers that expose per-partition progress:
+
+| Header | Description |
+| :--- | :--- |
+| `plan-restore.file-index` | 1-based index of this file within its partition (absolute across resumes) |
+| `plan-restore.total-files` | Total number of backup files for this partition |
+
+The `topics-restore` command reads these headers and exposes them as Prometheus gauges (see [Restore metrics](#restore-metrics)).
+
 ## Configuration
 
 The `plan-restore` subcommand supports the following flags and environment variables. Flags take precedence over environment variables.
@@ -187,6 +202,8 @@ The `plan-restore` subcommand supports the following flags and environment varia
 | `-plan-topic` | `PLAN_TOPIC` | `pubsub.plan-topic-restore` | Kafka topic to send the restore plan to |
 | `-s3-bucket` | `S3_BUCKET` | | S3 bucket name where the backup files are stored |
 | `-s3-prefix` | `S3_PREFIX` | `msk-backup` | The prefix for the backup files in S3 |
+| `-process-large-topics-last` | `PROCESS_LARGE_TOPICS_LAST` | `false` | When set, topics whose total S3 size exceeds `-large-topic-threshold-mb` are planned after all smaller topics |
+| `-large-topic-threshold-mb` | `LARGE_TOPIC_THRESHOLD_MB` | `92160` (90 GB) | Size threshold in megabytes above which a topic is considered large (used with `-process-large-topics-last`) |
 | `-s3-endpoint` | `AWS_ENDPOINT_URL` | | S3 endpoint URL (for LocalStack or custom S3-compatible storage) |
 | `-s3-region` | `AWS_REGION` | `eu-west-1` | S3 region |
 | `-log-level` | `LOG_LEVEL` | `INFO` | The log level to use |
@@ -234,6 +251,17 @@ It supports launching as many instances as the number of partitions in the plan 
 Each instance will consume a single partition from the plan topic and restore its data from S3.
 In the plan topic, the partitioning is done based on the source topic name and partition;
 this ensures that all the files holding the data for a topic's partition will be restored in order by the same instance.
+
+### Restore metrics
+
+The restore command exposes per-topic/per-partition progress gauges on the metrics endpoint (`/__/metrics`):
+
+| Metric | Labels | Description |
+| :--- | :--- | :--- |
+| `kafka_data_keep_restore_partition_total_files` | `topic`, `partition` | Total number of backup files for this partition, as written into the plan |
+| `kafka_data_keep_restore_partition_file_index` | `topic`, `partition` | 1-based index of the backup file currently being processed |
+
+These are derived from the `plan-restore.file-index` / `plan-restore.total-files` headers set by `topics-plan-restore`. If a plan was produced by an older version of the planner (without those headers), the gauges are simply not emitted for that run.
 
 ## Configuration
 
@@ -418,7 +446,7 @@ In Kubernetes:
 ## Restore
 ### Considerations
 The restore can be split across multiple independent pipelines, each with its own plan-restore topic. Common splits:
-1. **Large vs. normal topics** — prevents large topics from blocking restoration of smaller ones.
+1. **Large vs. normal topics** — prevents large topics from blocking restoration of smaller ones. As an alternative to separate pipelines, the `-process-large-topics-last` flag on `topics-plan-restore` defers large topics within a single pipeline automatically.
 2. **High-priority vs. low-priority topics** — ensures critical topics are not blocked by low-priority ones.
 
 ### Steps

@@ -19,6 +19,13 @@ type AppConfig struct {
 	PlanTopic          string
 	S3                 ints3.Config
 	S3Prefix           string
+
+	// ProcessLargeTopicsLast, when set, moves topics whose total backed-up S3 size
+	// exceeds LargeTopicThresholdMB to the end of the restore plan.
+	ProcessLargeTopicsLast bool
+	// LargeTopicThresholdMB is the size threshold in megabytes above which a topic is
+	// considered large (only used when ProcessLargeTopicsLast is set).
+	LargeTopicThresholdMB int64
 }
 
 func Run(ctx context.Context, cfg AppConfig) error {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -13,6 +14,20 @@ import (
 	"github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 )
 
+const (
+	// FileIndexHeader is the 1-based index of this file within its partition (absolute across resumes).
+	FileIndexHeader = "plan-restore.file-index"
+	// TotalFilesHeader is the total number of backup files for this partition.
+	TotalFilesHeader = "plan-restore.total-files"
+)
+
+type topicInfo struct {
+	// sizeBytes is the total size of all S3 objects for this topic.
+	sizeBytes int64
+	// partitionCounts maps partition name to the number of backup files in that partition.
+	partitionCounts map[string]int
+}
+
 type planner struct {
 	s3Client     *s3.Client
 	kafkaClient  *kgo.Client
@@ -21,7 +36,7 @@ type planner struct {
 }
 
 func (p *planner) Run(ctx context.Context) error {
-	topics, err := p.listTopicsFromS3(ctx)
+	topics, info, err := p.listTopicsFromS3(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list topics from S3: %w", err)
 	}
@@ -29,6 +44,11 @@ func (p *planner) Run(ctx context.Context) error {
 	topics, err = p.filterTopics(topics)
 	if err != nil {
 		return err
+	}
+
+	if p.cfg.ProcessLargeTopicsLast {
+		thresholdBytes := p.cfg.LargeTopicThresholdMB * 1024 * 1024
+		topics = reorderLargeTopicsLast(ctx, topics, info, thresholdBytes)
 	}
 
 	if len(topics) == 0 {
@@ -63,7 +83,7 @@ func (p *planner) Run(ctx context.Context) error {
 				resumeFile = ""
 			}
 
-			if err := p.planForTopic(ctx, topic, resumeFile); err != nil {
+			if err := p.planForTopic(ctx, topic, resumeFile, info[topic]); err != nil {
 				return err
 			}
 			continue
@@ -136,59 +156,81 @@ func (p *planner) filterTopics(topics []string) ([]string, error) {
 	return result, nil
 }
 
-func (p *planner) listTopicsFromS3(ctx context.Context) ([]string, error) {
+// listTopicsFromS3 lists all topics under the configured S3 prefix and aggregates
+// per-topic size and per-partition file counts. Topics are returned in first-seen
+// lexicographic order (identical to the previous CommonPrefixes listing).
+func (p *planner) listTopicsFromS3(ctx context.Context) ([]string, map[string]*topicInfo, error) {
 	prefix := p.cfg.S3Prefix
 	if !strings.HasSuffix(prefix, "/") {
 		prefix += "/"
 	}
 
 	input := &s3.ListObjectsV2Input{
-		Bucket:    aws.String(p.cfg.S3.Bucket),
-		Prefix:    aws.String(prefix),
-		Delimiter: aws.String("/"),
+		Bucket: aws.String(p.cfg.S3.Bucket),
+		Prefix: aws.String(prefix),
 	}
 
-	var topics []string
-	paginator := s3.NewListObjectsV2Paginator(p.s3Client, input)
+	var topicsOrdered []string
+	infoMap := make(map[string]*topicInfo)
 
+	paginator := s3.NewListObjectsV2Paginator(p.s3Client, input)
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to list objects pages: %w", err)
+			return nil, nil, fmt.Errorf("failed to list objects pages: %w", err)
 		}
 
-		for _, commonPrefix := range page.CommonPrefixes {
-			if commonPrefix.Prefix == nil {
+		for _, obj := range page.Contents {
+			if obj.Key == nil {
 				continue
 			}
-			// commonPrefix is like "prefix/topic/"
-			// we want "topic"
-			// remove prefix
-			cp := *commonPrefix.Prefix
-			if strings.HasPrefix(cp, prefix) {
-				sub := cp[len(prefix):]
-				// remove trailing slash
-				topic := strings.TrimSuffix(sub, "/")
-				if topic != "" {
-					topics = append(topics, topic)
-				}
+			topic, partition, err := TopicPartitionFromFileName(*obj.Key)
+			if err != nil {
+				slog.DebugContext(ctx, "Skipping unparseable S3 key during inventory", "key", *obj.Key, "error", err)
+				continue
 			}
+
+			ti, exists := infoMap[topic]
+			if !exists {
+				ti = &topicInfo{partitionCounts: make(map[string]int)}
+				infoMap[topic] = ti
+				topicsOrdered = append(topicsOrdered, topic)
+			}
+			if obj.Size != nil {
+				ti.sizeBytes += *obj.Size
+			}
+			ti.partitionCounts[partition]++
 		}
 	}
-	return topics, nil
+	return topicsOrdered, infoMap, nil
 }
 
-func (p *planner) planForTopic(ctx context.Context, topic string, resumeFile string) error {
+// reorderLargeTopicsLast moves topics whose total size exceeds thresholdBytes to the
+// end of the list, preserving relative order within each group.
+func reorderLargeTopicsLast(ctx context.Context, topics []string, info map[string]*topicInfo, thresholdBytes int64) []string {
+	var small, large []string
+	for _, topic := range topics {
+		ti := info[topic]
+		if ti != nil && ti.sizeBytes > thresholdBytes {
+			slog.InfoContext(ctx, "Deferring large topic to end of plan", "topic", topic, "size_bytes", ti.sizeBytes, "threshold_bytes", thresholdBytes)
+			large = append(large, topic)
+		} else {
+			small = append(small, topic)
+		}
+	}
+	return append(small, large...)
+}
+
+func (p *planner) planForTopic(ctx context.Context, topic string, resumeFile string, ti *topicInfo) error {
 	input := &s3.ListObjectsV2Input{
 		Bucket: aws.String(p.cfg.S3.Bucket),
 		Prefix: aws.String(p.cfg.S3Prefix + "/" + topic + "/"),
 	}
 
-	if resumeFile != "" {
-		input.StartAfter = aws.String(resumeFile)
-	}
-
 	paginator := s3.NewListObjectsV2Paginator(p.s3Client, input)
+
+	// partIndex tracks the 1-based absolute file index per partition across all pages.
+	partIndex := make(map[string]int)
 
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)
@@ -196,17 +238,42 @@ func (p *planner) planForTopic(ctx context.Context, topic string, resumeFile str
 			return fmt.Errorf("failed to get page: %w", err)
 		}
 
-		// 4. Process the page contents
 		recs := make([]*kgo.Record, 0, len(page.Contents))
 		for _, obj := range page.Contents {
-			if obj.Key != nil {
-				slog.InfoContext(ctx, "Processing key for topic", "key", *obj.Key, "topic", topic)
-				recs = append(recs, &kgo.Record{
-					Value: []byte(*obj.Key),
-					Key:   []byte(partitioningKey(*obj.Key)),
-				})
+			if obj.Key == nil {
+				continue
 			}
+			key := *obj.Key
+
+			_, partition, err := TopicPartitionFromFileName(key)
+			if err != nil {
+				slog.WarnContext(ctx, "Skipping unparseable key in planForTopic", "key", key, "error", err)
+				continue
+			}
+
+			partIndex[partition]++
+
+			// Reproduce StartAfter semantics: skip keys that were already planned.
+			if resumeFile != "" && key <= resumeFile {
+				continue
+			}
+
+			slog.DebugContext(ctx, "Processing key for topic", "key", key, "topic", topic)
+
+			recs = append(recs, &kgo.Record{
+				Value: []byte(key),
+				Key:   []byte(partitioningKey(key)),
+				Headers: []kgo.RecordHeader{
+					{Key: FileIndexHeader, Value: []byte(strconv.Itoa(partIndex[partition]))},
+					{Key: TotalFilesHeader, Value: []byte(strconv.Itoa(ti.partitionCounts[partition]))},
+				},
+			})
 		}
+
+		if len(recs) == 0 {
+			continue
+		}
+
 		if res := p.kafkaClient.ProduceSync(ctx, recs...); res.FirstErr() != nil {
 			return fmt.Errorf("failed to produce records for topic %s: %w", topic, res.FirstErr())
 		}

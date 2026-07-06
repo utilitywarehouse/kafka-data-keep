@@ -1,6 +1,7 @@
 package planrestore
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -159,6 +160,60 @@ func TestComputeResume(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantTopic, topic)
 			assert.Equal(t, tt.wantFile, file)
+		})
+	}
+}
+
+func TestReorderLargeTopicsLast(t *testing.T) {
+	ctx := context.Background()
+	mb := int64(1024 * 1024)
+
+	smallInfo := &topicInfo{sizeBytes: 10 * mb, partitionCounts: map[string]int{}}
+	largeInfo := &topicInfo{sizeBytes: 200 * mb, partitionCounts: map[string]int{}}
+	threshold := 100 * mb
+
+	tests := []struct {
+		name     string
+		topics   []string
+		info     map[string]*topicInfo
+		expected []string
+	}{
+		{
+			name:     "all small",
+			topics:   []string{"a", "b", "c"},
+			info:     map[string]*topicInfo{"a": smallInfo, "b": smallInfo, "c": smallInfo},
+			expected: []string{"a", "b", "c"},
+		},
+		{
+			name:     "all large",
+			topics:   []string{"a", "b", "c"},
+			info:     map[string]*topicInfo{"a": largeInfo, "b": largeInfo, "c": largeInfo},
+			expected: []string{"a", "b", "c"},
+		},
+		{
+			name:     "mixed: large moved to end, order preserved within groups",
+			topics:   []string{"small-a", "large-b", "small-c", "large-d"},
+			info:     map[string]*topicInfo{"small-a": smallInfo, "large-b": largeInfo, "small-c": smallInfo, "large-d": largeInfo},
+			expected: []string{"small-a", "small-c", "large-b", "large-d"},
+		},
+		{
+			name:     "boundary: exactly at threshold is not large",
+			topics:   []string{"a"},
+			info:     map[string]*topicInfo{"a": {sizeBytes: threshold, partitionCounts: map[string]int{}}},
+			expected: []string{"a"},
+		},
+		{
+			name:     "topic with missing info treated as small",
+			topics:   []string{"known", "unknown"},
+			info:     map[string]*topicInfo{"known": largeInfo},
+			expected: []string{"unknown", "known"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := reorderLargeTopicsLast(ctx, tt.topics, tt.info, threshold)
+			assert.Equal(t, tt.expected, got)
 		})
 	}
 }
