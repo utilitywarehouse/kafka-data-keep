@@ -160,12 +160,13 @@ func TestPlanRestoreIntegration(t *testing.T) {
 
 	checkPlannedEntries(t, expectedMap, records)
 
-	// On resume, topic-b/0 now has 2 total files. The resumed file (index 2) must show the
-	// absolute index, confirming the planner counts from the start even on resume.
+	// On resume, topic-b/0 now has 2 total files. The first record was produced in the initial
+	// run (total=1 then); the resumed record must carry the absolute index (2) and the updated
+	// total (2), confirming the planner counts from the start on each run.
 	expectedHeadersAfterResume := map[string][]planRecordHeaders{
 		"kafka-backup/topic-b/0/": {
-			{fileIndex: "1", totalFiles: "2"},
-			{fileIndex: "2", totalFiles: "2"},
+			{fileIndex: "1", totalFiles: "1"}, // produced in first run when only 1 file existed
+			{fileIndex: "2", totalFiles: "2"}, // produced on resume; absolute index, updated total
 		},
 		"kafka-backup/topic-b/1/": {
 			{fileIndex: "1", totalFiles: "1"},
