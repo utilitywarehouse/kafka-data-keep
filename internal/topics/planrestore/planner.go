@@ -62,52 +62,57 @@ func (p *planner) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to read latest records from plan topic: %w", err)
 	}
 
-	resumeTopic, resumeFile, err := computeResume(latestRecords, topics)
+	rs, err := computeResume(latestRecords, topics)
 	if err != nil {
 		return fmt.Errorf("failed determining resume file: %w", err)
 	}
 
-	slog.InfoContext(ctx, "Resuming from file", "file", resumeFile, "topic", resumeTopic)
+	slog.InfoContext(ctx, "Computed resume state", "resume_state", rs)
 
-	resumed := resumeTopic == ""
+	resumed := rs == nil
 
 	for _, topic := range topics {
 		// start processing when we reach the resume topic
-		if topic == resumeTopic {
+		if rs != nil && topic == rs.topic {
 			resumed = true
 		}
 
-		if resumed {
-			// pass the resume file only for the resume topic
-			if topic != resumeTopic {
-				resumeFile = ""
-			}
-
-			if err := p.planForTopic(ctx, topic, resumeFile, info[topic]); err != nil {
-				return err
-			}
+		if !resumed {
+			slog.InfoContext(ctx, "Skipping topic", "topic", topic)
 			continue
 		}
 
-		slog.InfoContext(ctx, "Skipping topic", "topic", topic)
+		if err := p.planForTopic(ctx, topic, rs, info[topic]); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-func computeResume(latestRecords map[int32]*kgo.Record, topicsOrder []string) (string, string, error) {
+type resumeState struct {
+	topic     string
+	file      string
+	fileIndex int // 1-based absolute index from FileIndexHeader; 0 when absent
+}
+
+func computeResume(latestRecords map[int32]*kgo.Record, topicsOrder []string) (*resumeState, error) {
+	if len(latestRecords) == 0 || len(topicsOrder) == 0 {
+		return nil, nil
+	}
+
 	// we might have files from different topics as the last entries in the plan topic
-	resumeMap := make(map[string]string)
+	resumeMap := make(map[string]*kgo.Record)
 	for _, rec := range latestRecords {
 		file := string(rec.Value)
 		topic, _, err := TopicPartitionFromFileName(file)
 		if err != nil {
-			return "", "", fmt.Errorf("failed to extract topic from file %s: %w", file, err)
+			return nil, fmt.Errorf("failed to extract topic from file %s: %w", file, err)
 		}
-		currentVal, exists := resumeMap[topic]
+		current, exists := resumeMap[topic]
 		if !exists {
-			resumeMap[topic] = file
-		} else if currentVal < file {
-			resumeMap[topic] = file
+			resumeMap[topic] = rec
+		} else if string(current.Value) < file {
+			resumeMap[topic] = rec
 		}
 	}
 
@@ -119,11 +124,26 @@ func computeResume(latestRecords map[int32]*kgo.Record, topicsOrder []string) (s
 		}
 	}
 
+	// the last topic is not included in the list of topics
 	if lastTopic == "" {
-		return "", "", nil
+		return nil, nil
 	}
 
-	return lastTopic, resumeMap[lastTopic], nil
+	resumeRec := resumeMap[lastTopic]
+	rs := resumeState{
+		topic: lastTopic,
+		file:  string(resumeRec.Value),
+	}
+	for _, h := range resumeRec.Headers {
+		if h.Key == FileIndexHeader {
+			if idx, err := strconv.Atoi(string(h.Value)); err == nil {
+				rs.fileIndex = idx
+			}
+			break
+		}
+	}
+
+	return &rs, nil
 }
 
 func (p *planner) filterTopics(topics []string) ([]string, error) {
@@ -186,7 +206,7 @@ func (p *planner) listTopicsFromS3(ctx context.Context) ([]string, map[string]*t
 			}
 			topic, partition, err := TopicPartitionFromFileName(*obj.Key)
 			if err != nil {
-				slog.DebugContext(ctx, "Skipping unparseable S3 key during inventory", "key", *obj.Key, "error", err)
+				slog.WarnContext(ctx, "Skipping unparseable S3 key during inventory", "key", *obj.Key, "error", err)
 				continue
 			}
 
@@ -221,16 +241,29 @@ func reorderLargeTopicsLast(ctx context.Context, topics []string, info map[strin
 	return append(small, large...)
 }
 
-func (p *planner) planForTopic(ctx context.Context, topic string, resumeFile string, ti *topicInfo) error {
+func (p *planner) planForTopic(ctx context.Context, topic string, rs *resumeState, ti *topicInfo) error {
 	input := &s3.ListObjectsV2Input{
 		Bucket: aws.String(p.cfg.S3.Bucket),
 		Prefix: aws.String(p.cfg.S3Prefix + "/" + topic + "/"),
 	}
 
-	paginator := s3.NewListObjectsV2Paginator(p.s3Client, input)
-
 	// partIndex tracks the 1-based absolute file index per partition across all pages.
+	// For the resume partition, seed from the stored header so the next file gets the
+	// correct absolute index without re-listing files before StartAfter.
 	partIndex := make(map[string]int)
+
+	if rs != nil && rs.topic == topic {
+		input.StartAfter = aws.String(rs.file)
+
+		_, resumePartition, err := TopicPartitionFromFileName(rs.file)
+		if err != nil {
+			return fmt.Errorf("failed to extract resume partition from file %s: %w", rs.file, err)
+		}
+
+		partIndex[resumePartition] = rs.fileIndex
+	}
+
+	paginator := s3.NewListObjectsV2Paginator(p.s3Client, input)
 
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)
@@ -252,11 +285,6 @@ func (p *planner) planForTopic(ctx context.Context, topic string, resumeFile str
 			}
 
 			partIndex[partition]++
-
-			// Reproduce StartAfter semantics: skip keys that were already planned.
-			if resumeFile != "" && key <= resumeFile {
-				continue
-			}
 
 			slog.DebugContext(ctx, "Processing key for topic", "key", key, "topic", topic)
 
