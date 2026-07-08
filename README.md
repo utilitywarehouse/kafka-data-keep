@@ -445,10 +445,11 @@ In Kubernetes:
 - **Topics backup**: deploy as a StatefulSet for automatic PVC provisioning for durable storage. Scale replicas based on your cluster size. More replicas speed up the initial backup. Once the initial backup is complete, tune the replica count to match cluster load — for reference, 2 replicas handles a cluster with 300 topics and 11k total partitions (including replicas).
 ## Restore
 ### Considerations
-The restore can be split across multiple independent pipelines, each with its own plan-restore topic. Common splits:
-1. **Large vs. normal topics** — prevents large topics from blocking restoration of smaller ones. As an alternative to separate pipelines, the `-process-large-topics-last` flag on `topics-plan-restore` defers large topics within a single pipeline automatically.
-2. **High-priority vs. low-priority topics** — ensures critical topics are not blocked by low-priority ones.
+Within a single pipeline, ordering can be controlled via configuration:
+1. **Large vs. normal topics** — use the `-process-large-topics-last` flag on `topics-plan-restore` to defer large topics automatically, so they don't block restoration of smaller ones.
+2. **High-priority vs. low-priority topics** — list high-priority topics first in the `-restore-topics-regex` parameter (e.g. `high-prio1,high-prio2,.*`) so they are planned and restored before others.
 
+The progress of restore for topics can be monitored through the [exposed metrics](#restore-metrics).
 ### Steps
 
 1. Provision the new Kafka cluster.
