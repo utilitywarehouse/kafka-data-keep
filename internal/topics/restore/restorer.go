@@ -14,6 +14,9 @@ import (
 	"github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/codec/avro"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/planrestore"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 )
 
 type kafkaS3Restorer struct {
@@ -26,6 +29,25 @@ type kafkaS3Restorer struct {
 
 	latestReader         *kafka.LatestReader
 	excludeTopicsRegexes []*regexp.Regexp
+}
+
+var (
+	restoreTotalFilesGauge = initInt64Gauge(
+		"kafka.data-keep.restore.partition-total-files",
+		"Total number of backup files for a topic partition, as planned",
+	)
+	restoreFileIndexGauge = initInt64Gauge(
+		"kafka.data-keep.restore.partition-file-index",
+		"1-based index of the backup file currently being restored for a topic partition",
+	)
+)
+
+func initInt64Gauge(name, desc string) metric.Int64Gauge {
+	g, err := otel.Meter("kafka-data-keep").Int64Gauge(name, metric.WithDescription(desc))
+	if err != nil {
+		panic(fmt.Sprintf("failed to create gauge metric %s: %v", name, err))
+	}
+	return g
 }
 
 func (r *kafkaS3Restorer) Run(ctx context.Context) error {
@@ -56,10 +78,9 @@ func (r *kafkaS3Restorer) Run(ctx context.Context) error {
 			}
 			rec := it.Next()
 
-			key := string(rec.Value)
-			err := r.restoreFile(ctx, key)
+			err := r.restoreFile(ctx, rec)
 			if err != nil {
-				return fmt.Errorf("failed restoring file %s: %w", key, err)
+				return fmt.Errorf("failed restoring file %s: %w", string(rec.Value), err)
 			}
 			c.MarkCommitRecords(rec)
 		}
@@ -67,7 +88,9 @@ func (r *kafkaS3Restorer) Run(ctx context.Context) error {
 	}
 }
 
-func (r *kafkaS3Restorer) restoreFile(ctx context.Context, key string) error {
+func (r *kafkaS3Restorer) restoreFile(ctx context.Context, planRec *kgo.Record) error {
+	key := string(planRec.Value)
+
 	topic, partition, err := planrestore.TopicPartitionFromFileName(key)
 	if err != nil {
 		return fmt.Errorf("failed to extract topic from file name: %w", err)
@@ -77,6 +100,8 @@ func (r *kafkaS3Restorer) restoreFile(ctx context.Context, key string) error {
 		slog.InfoContext(ctx, "Skipping excluded topic", "topic", topic, "file", key)
 		return nil
 	}
+
+	r.recordFileProgressMetrics(ctx, planRec.Headers, topic, partition)
 
 	lastProcessedOffset, err := r.getLastProcessedOffset(ctx, topic, partition)
 	if err != nil {
@@ -105,6 +130,42 @@ func (r *kafkaS3Restorer) restoreFile(ctx context.Context, key string) error {
 
 	slog.InfoContext(ctx, "Restored file", "key", key, "records", len(recs), "last_offset", lastRecordOffset, "last_processed_offset", lastProcessedOffset)
 	return nil
+}
+
+// recordFileProgressMetrics reads plan-restore.file-index and plan-restore.total-files
+// headers from the plan record and updates the corresponding gauges. Missing or
+// unparseable headers are silently skipped for backward-compatibility with older plans.
+func (r *kafkaS3Restorer) recordFileProgressMetrics(ctx context.Context, headers []kgo.RecordHeader, topic, partition string) {
+	attrs := metric.WithAttributes(
+		attribute.String("topic", topic),
+		attribute.String("partition", partition),
+	)
+
+	if idxStr, ok := headerValue(headers, planrestore.FileIndexHeader); ok {
+		if idx, err := strconv.ParseInt(idxStr, 10, 64); err == nil {
+			restoreFileIndexGauge.Record(ctx, idx, attrs)
+		} else {
+			slog.DebugContext(ctx, "Failed parsing file-index header", "value", idxStr, "error", err)
+		}
+	}
+
+	if totalStr, ok := headerValue(headers, planrestore.TotalFilesHeader); ok {
+		if total, err := strconv.ParseInt(totalStr, 10, 64); err == nil {
+			restoreTotalFilesGauge.Record(ctx, total, attrs)
+		} else {
+			slog.DebugContext(ctx, "Failed parsing total-files header", "value", totalStr, "error", err)
+		}
+	}
+}
+
+// headerValue looks up a header by key and returns its string value.
+func headerValue(headers []kgo.RecordHeader, key string) (string, bool) {
+	for i := range headers {
+		if headers[i].Key == key {
+			return string(headers[i].Value), true
+		}
+	}
+	return "", false
 }
 
 func (r *kafkaS3Restorer) getLastProcessedOffset(ctx context.Context, topic string, partition string) (int64, error) {

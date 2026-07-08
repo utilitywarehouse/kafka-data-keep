@@ -6,6 +6,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -15,164 +16,206 @@ import (
 )
 
 func TestPlanRestoreIntegration(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	ctx := t.Context()
-
-	// 1. Start Services
 	kafkaBrokers, tkf := testutil.StartKafkaService(t)
-	defer tkf()
+	t.Cleanup(tkf)
 
 	s3Endpoint, ts3f := testutil.StartS3Service(t)
-	defer ts3f()
+	t.Cleanup(ts3f)
 	testutil.SetupEnvS3Access()
 	s3Client := testutil.NewS3Client(t, s3Endpoint)
 
-	bucketName := "test-restore-bucket"
-	_, err := s3Client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucketName)})
+	const bucketName = "test-planrestore-bucket"
+	_, err := s3Client.CreateBucket(t.Context(), &s3.CreateBucketInput{Bucket: aws.String(bucketName)})
 	require.NoError(t, err)
 
-	planTopic := "restore-plan"
-	adminClient, err := kgo.NewClient(
-		kgo.SeedBrokers(kafkaBrokers),
-	)
+	adminClient, err := kgo.NewClient(kgo.SeedBrokers(kafkaBrokers))
 	require.NoError(t, err)
-	defer adminClient.Close()
+	t.Cleanup(adminClient.Close)
 
 	kadmClient := kadm.NewClient(adminClient)
-	defer kadmClient.Close()
-	_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, planTopic)
-	require.NoError(t, err)
+	t.Cleanup(kadmClient.Close)
 
-	// Format: s3Prefix/topic/partition/filename
-	files := []string{
-		"kafka-backup/topic-a/0/topic-a-0-0000000000000000000.avro",
-		"kafka-backup/topic-a/0/topic-a-0-0000000000000000010.avro",
-		"kafka-backup/topic-a/1/topic-a-1-0000000000000000000.avro",
-		"kafka-backup/topic-a/1/topic-a-1-0000000000000000300.avro",
-		"kafka-backup/topic-b/0/topic-b-0-0000000000000000050.avro",
-		"kafka-backup/not-included-topic/0/not-included-topic-0-0000000000000000050.avro",
-		"kafka-backup/topic-excluded/0/topic-excluded-0-0000000000000000000.avro",
-	}
+	t.Run("resume", func(t *testing.T) {
+		t.Parallel()
+		ctx := t.Context()
 
-	createS3Objects(t, bucketName, files, s3Client)
+		// Single-partition plan topic to preserve production order end-to-end.
+		planTopic := "restore-plan-resume"
+		_, err := kadmClient.CreateTopic(ctx, 1, 1, nil, planTopic)
+		require.NoError(t, err)
 
-	// 3. Run planner
-	cfg := AppConfig{
-		KafkaConfig: kafka.Config{
-			Brokers: kafkaBrokers,
-		},
-		PlanTopic: planTopic,
-		S3: ints3.Config{
-			Bucket:   bucketName,
-			Endpoint: s3Endpoint,
-			Region:   testutil.MinioRegion,
-		},
-		S3Prefix: "kafka-backup",
+		createS3Objects(t, bucketName, []s3Object{
+			{key: "kafka-backup/topic-a/0/topic-a-0-0000000000000000000.avro"},
+			{key: "kafka-backup/topic-a/0/topic-a-0-0000000000000000010.avro"},
+			{key: "kafka-backup/topic-a/1/topic-a-1-0000000000000000000.avro"},
+			{key: "kafka-backup/topic-a/1/topic-a-1-0000000000000000300.avro"},
+			{key: "kafka-backup/topic-b/0/topic-b-0-0000000000000000050.avro"},
+			{key: "kafka-backup/not-included-topic/0/not-included-topic-0-0000000000000000050.avro"},
+			{key: "kafka-backup/topic-excluded/0/topic-excluded-0-0000000000000000000.avro"},
+		}, s3Client)
 
-		RestoreTopicsRegex: "topic-.*",
-		ExcludeTopicsRegex: "topic-excluded",
-	}
+		cfg := AppConfig{
+			KafkaConfig:        kafka.Config{Brokers: kafkaBrokers},
+			PlanTopic:          planTopic,
+			S3:                 ints3.Config{Bucket: bucketName, Endpoint: s3Endpoint, Region: testutil.MinioRegion},
+			S3Prefix:           "kafka-backup",
+			RestoreTopicsRegex: "topic-.*",
+			ExcludeTopicsRegex: "topic-excluded",
+		}
 
-	err = Run(ctx, cfg)
-	require.NoError(t, err)
+		err = Run(ctx, cfg)
+		require.NoError(t, err)
 
-	// map[messageKey] -> list of messageValues (full s3 keys)
-	expectedMap := map[string][]string{
-		"kafka-backup/topic-a/0/": {
-			"kafka-backup/topic-a/0/topic-a-0-0000000000000000000.avro",
-			"kafka-backup/topic-a/0/topic-a-0-0000000000000000010.avro",
-		},
-		"kafka-backup/topic-a/1/": {
-			"kafka-backup/topic-a/1/topic-a-1-0000000000000000000.avro",
-			"kafka-backup/topic-a/1/topic-a-1-0000000000000000300.avro",
-		},
-		"kafka-backup/topic-b/0/": {
-			"kafka-backup/topic-b/0/topic-b-0-0000000000000000050.avro",
-		},
-	}
+		// file-index is 1-based absolute; S3 lists lexicographically within each topic prefix.
+		expected := []planRecord{
+			{value: "kafka-backup/topic-a/0/topic-a-0-0000000000000000000.avro", fileIndex: "1", totalFiles: "2"},
+			{value: "kafka-backup/topic-a/0/topic-a-0-0000000000000000010.avro", fileIndex: "2", totalFiles: "2"},
+			{value: "kafka-backup/topic-a/1/topic-a-1-0000000000000000000.avro", fileIndex: "1", totalFiles: "2"},
+			{value: "kafka-backup/topic-a/1/topic-a-1-0000000000000000300.avro", fileIndex: "2", totalFiles: "2"},
+			{value: "kafka-backup/topic-b/0/topic-b-0-0000000000000000050.avro", fileIndex: "1", totalFiles: "1"},
+		}
 
-	records, err := testutil.WaitForRecords(t, planTopic, kafkaBrokers, totalMapValues(expectedMap))
-	require.NoError(t, err)
+		records, err := testutil.WaitForRecords(t, planTopic, kafkaBrokers, len(expected))
+		require.NoError(t, err)
+		checkPlannedEntries(t, expected, records)
 
-	checkPlannedEntries(t, expectedMap, records)
+		// Add more S3 objects to simulate a resume on the next run.
+		createS3Objects(t, bucketName, []s3Object{
+			{key: "kafka-backup/topic-b/0/topic-b-0-0000000000000000250.avro"},
+			{key: "kafka-backup/topic-b/1/topic-b-1-0000000000000000000.avro"},
+			{key: "kafka-backup/topic-c/0/topic-c-0-0000000000000000000.avro"},
+			{key: "kafka-backup/topic-c/1/topic-c-1-0000000000000000000.avro"},
+		}, s3Client)
 
-	//	write more entries in S3, to simulate a resume
-	files = []string{
-		"kafka-backup/topic-b/0/topic-b-0-0000000000000000250.avro",
-		"kafka-backup/topic-b/1/topic-b-1-0000000000000000000.avro",
-		"kafka-backup/topic-c/0/topic-c-0-0000000000000000000.avro",
-		"kafka-backup/topic-c/1/topic-c-1-0000000000000000000.avro",
-	}
+		err = Run(ctx, cfg)
+		require.NoError(t, err)
 
-	createS3Objects(t, bucketName, files, s3Client)
+		// Run-1 records are re-read from offset 0; run-2 appends resumed records after.
+		// topic-b/0's run-1 record carries total=1; the resumed record has absolute index 2 and updated total 2.
+		expectedAfterResume := []planRecord{
+			{value: "kafka-backup/topic-a/0/topic-a-0-0000000000000000000.avro", fileIndex: "1", totalFiles: "2"},
+			{value: "kafka-backup/topic-a/0/topic-a-0-0000000000000000010.avro", fileIndex: "2", totalFiles: "2"},
+			{value: "kafka-backup/topic-a/1/topic-a-1-0000000000000000000.avro", fileIndex: "1", totalFiles: "2"},
+			{value: "kafka-backup/topic-a/1/topic-a-1-0000000000000000300.avro", fileIndex: "2", totalFiles: "2"},
+			{value: "kafka-backup/topic-b/0/topic-b-0-0000000000000000050.avro", fileIndex: "1", totalFiles: "1"},
+			{value: "kafka-backup/topic-b/0/topic-b-0-0000000000000000250.avro", fileIndex: "2", totalFiles: "2"},
+			{value: "kafka-backup/topic-b/1/topic-b-1-0000000000000000000.avro", fileIndex: "1", totalFiles: "1"},
+			{value: "kafka-backup/topic-c/0/topic-c-0-0000000000000000000.avro", fileIndex: "1", totalFiles: "1"},
+			{value: "kafka-backup/topic-c/1/topic-c-1-0000000000000000000.avro", fileIndex: "1", totalFiles: "1"},
+		}
 
-	// run it a second time -> it should read what's already in the topic and resume from there
-	err = Run(ctx, cfg)
-	require.NoError(t, err)
+		records, err = testutil.WaitForRecords(t, planTopic, kafkaBrokers, len(expectedAfterResume))
+		require.NoError(t, err)
+		checkPlannedEntries(t, expectedAfterResume, records)
+	})
 
-	expectedMap = map[string][]string{
-		"kafka-backup/topic-a/0/": {
-			"kafka-backup/topic-a/0/topic-a-0-0000000000000000000.avro",
-			"kafka-backup/topic-a/0/topic-a-0-0000000000000000010.avro",
-		},
-		"kafka-backup/topic-a/1/": {
-			"kafka-backup/topic-a/1/topic-a-1-0000000000000000000.avro",
-			"kafka-backup/topic-a/1/topic-a-1-0000000000000000300.avro",
-		},
-		"kafka-backup/topic-b/0/": {
-			"kafka-backup/topic-b/0/topic-b-0-0000000000000000050.avro",
-			"kafka-backup/topic-b/0/topic-b-0-0000000000000000250.avro",
-		},
-		"kafka-backup/topic-b/1/": {
-			"kafka-backup/topic-b/1/topic-b-1-0000000000000000000.avro",
-		},
-		"kafka-backup/topic-c/0/": {
-			"kafka-backup/topic-c/0/topic-c-0-0000000000000000000.avro",
-		},
-		"kafka-backup/topic-c/1/": {
-			"kafka-backup/topic-c/1/topic-c-1-0000000000000000000.avro",
-		},
-	}
+	t.Run("large topics last", func(t *testing.T) {
+		t.Parallel()
+		ctx := t.Context()
 
-	records, err = testutil.WaitForRecords(t, planTopic, kafkaBrokers, totalMapValues(expectedMap))
-	require.NoError(t, err)
+		// Single-partition plan topic to preserve production order end-to-end.
+		planTopic := "restore-plan-large-last"
+		_, err := kadmClient.CreateTopic(ctx, 1, 1, nil, planTopic)
+		require.NoError(t, err)
 
-	checkPlannedEntries(t, expectedMap, records)
+		// small-topic: 2 partitions, tiny files. large-topic: 2 partitions, multiple 600 KB files
+		// each → well above the 1 MB threshold, triggering deferral.
+		const largeFileBytes = 600 * 1024
+		createS3Objects(t, bucketName, []s3Object{
+			{key: "large-last/small-topic/0/small-topic-0-0000000000000000000.avro", sizeBytes: 5},
+			{key: "large-last/small-topic/0/small-topic-0-0000000000000000100.avro", sizeBytes: 5},
+			{key: "large-last/small-topic/1/small-topic-1-0000000000000000000.avro", sizeBytes: 5},
+			{key: "large-last/large-topic/0/large-topic-0-0000000000000000000.avro", sizeBytes: largeFileBytes},
+			{key: "large-last/large-topic/0/large-topic-0-0000000000000000500.avro", sizeBytes: largeFileBytes},
+			{key: "large-last/large-topic/0/large-topic-0-0000000000000001000.avro", sizeBytes: largeFileBytes},
+			{key: "large-last/large-topic/1/large-topic-1-0000000000000000000.avro", sizeBytes: largeFileBytes},
+			{key: "large-last/large-topic/1/large-topic-1-0000000000000000200.avro", sizeBytes: largeFileBytes},
+		}, s3Client)
+
+		// Set threshold to 1 MB so large-topic (~3 MB total) is deferred.
+		cfg := AppConfig{
+			KafkaConfig:            kafka.Config{Brokers: kafkaBrokers},
+			PlanTopic:              planTopic,
+			S3:                     ints3.Config{Bucket: bucketName, Endpoint: s3Endpoint, Region: testutil.MinioRegion},
+			S3Prefix:               "large-last",
+			RestoreTopicsRegex:     ".*",
+			ProcessLargeTopicsLast: true,
+			LargeTopicThresholdMB:  1,
+		}
+
+		err = Run(ctx, cfg)
+		require.NoError(t, err)
+
+		// listTopicsFromS3 discovers large-topic before small-topic (lexicographic order), but
+		// reorderLargeTopicsLast moves it to the end. The slice encodes the resulting production
+		// order: all small-topic records first, then large-topic records.
+		expected := []planRecord{
+			{value: "large-last/small-topic/0/small-topic-0-0000000000000000000.avro", fileIndex: "1", totalFiles: "2"},
+			{value: "large-last/small-topic/0/small-topic-0-0000000000000000100.avro", fileIndex: "2", totalFiles: "2"},
+			{value: "large-last/small-topic/1/small-topic-1-0000000000000000000.avro", fileIndex: "1", totalFiles: "1"},
+			{value: "large-last/large-topic/0/large-topic-0-0000000000000000000.avro", fileIndex: "1", totalFiles: "3"},
+			{value: "large-last/large-topic/0/large-topic-0-0000000000000000500.avro", fileIndex: "2", totalFiles: "3"},
+			{value: "large-last/large-topic/0/large-topic-0-0000000000000001000.avro", fileIndex: "3", totalFiles: "3"},
+			{value: "large-last/large-topic/1/large-topic-1-0000000000000000000.avro", fileIndex: "1", totalFiles: "2"},
+			{value: "large-last/large-topic/1/large-topic-1-0000000000000000200.avro", fileIndex: "2", totalFiles: "2"},
+		}
+
+		records, err := testutil.WaitForRecords(t, planTopic, kafkaBrokers, len(expected))
+		require.NoError(t, err)
+		checkPlannedEntries(t, expected, records)
+	})
 }
 
-func totalMapValues(expectedMap map[string][]string) int {
-	totalExpected := 0
-	for _, v := range expectedMap {
-		totalExpected += len(v)
-	}
-	return totalExpected
+type planRecord struct {
+	value      string
+	fileIndex  string
+	totalFiles string
 }
 
-func checkPlannedEntries(t *testing.T, expectedMap map[string][]string, records []*kgo.Record) {
+// checkPlannedEntries asserts that records matches expected exactly, in order.
+// Because the plan topic is a single partition, the production order is preserved end-to-end.
+func checkPlannedEntries(t *testing.T, expected []planRecord, records []*kgo.Record) {
 	t.Helper()
-	consumedMap := make(map[string][]string)
-	for _, record := range records {
-		key := string(record.Key)
-		val := string(record.Value)
-		consumedMap[key] = append(consumedMap[key], val)
-	}
-
-	require.Len(t, consumedMap, len(expectedMap))
-	for k, expectedVals := range expectedMap {
-		require.Equal(t, expectedVals, consumedMap[k], "mismatch for key %s", k)
+	require.Len(t, records, len(expected), "wrong number of records")
+	for i, want := range expected {
+		rec := records[i]
+		assert.Equal(t, want.value, string(rec.Value), "record %d: wrong value", i)
+		gotIdx, hasIdx := getHeader(rec, FileIndexHeader)
+		gotTotal, hasTotal := getHeader(rec, TotalFilesHeader)
+		assert.True(t, hasIdx, "record %d missing %s", i, FileIndexHeader)
+		assert.True(t, hasTotal, "record %d missing %s", i, TotalFilesHeader)
+		assert.Equal(t, want.fileIndex, gotIdx, "record %d: wrong file-index", i)
+		assert.Equal(t, want.totalFiles, gotTotal, "record %d: wrong total-files", i)
 	}
 }
 
-func createS3Objects(t *testing.T, bucketName string, files []string, s3Client *s3.Client) {
+func getHeader(rec *kgo.Record, key string) (string, bool) {
+	for _, h := range rec.Headers {
+		if h.Key == key {
+			return string(h.Value), true
+		}
+	}
+	return "", false
+}
+
+type s3Object struct {
+	key       string
+	sizeBytes int
+}
+
+func createS3Objects(t *testing.T, bucketName string, objects []s3Object, s3Client *s3.Client) {
 	t.Helper()
-	for _, f := range files {
+	for _, o := range objects {
 		_, err := s3Client.PutObject(t.Context(), &s3.PutObjectInput{
 			Bucket: aws.String(bucketName),
-			Key:    aws.String(f),
-			Body:   strings.NewReader("dummy content"),
+			Key:    aws.String(o.key),
+			Body:   strings.NewReader(strings.Repeat("x", o.sizeBytes)),
 		})
 		require.NoError(t, err)
 	}

@@ -210,6 +210,19 @@ func loadTopicsPlanRestoreAppConfig(args []string) (topicsplanrestore.AppConfig,
 		"The prefix for the backup files in S3",
 	)
 
+	fs.BoolVar(
+		&cfg.ProcessLargeTopicsLast,
+		"process-large-topics-last",
+		getEnvBool("PROCESS_LARGE_TOPICS_LAST", false),
+		"When set, topics whose total backed-up S3 size exceeds large-topic-threshold-mb are planned last",
+	)
+	fs.Int64Var(
+		&cfg.LargeTopicThresholdMB,
+		"large-topic-threshold-mb",
+		getEnvInt64("LARGE_TOPIC_THRESHOLD_MB", 92160),
+		"Size threshold in megabytes above which a topic is considered large (used with process-large-topics-last)",
+	)
+
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
 	}
