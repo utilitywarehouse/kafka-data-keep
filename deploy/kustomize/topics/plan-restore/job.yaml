@@ -66,3 +66,8 @@ spec:
               value: "false"
             - name: PPROF_PORT
               value: "6060"
+            - name: PROCESS_LARGE_TOPICS_LAST
+              value: "false"
+            - name: LARGE_TOPIC_THRESHOLD_MB
+              # This is the threshold for a topic to be considered large. Topics larger than this will be processed last if PROCESS_LARGE_TOPICS_LAST is set to true. Default 90GB
+              value: "92160"
