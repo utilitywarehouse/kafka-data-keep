@@ -89,8 +89,6 @@ func TestPlanRestoreIntegration(t *testing.T) {
 		createS3Objects(t, bucketName, []s3Object{
 			{key: "kafka-backup/topic-b/0/topic-b-0-0000000000000000250.avro"},
 			{key: "kafka-backup/topic-b/1/topic-b-1-0000000000000000000.avro"},
-			{key: "kafka-backup/topic-c/0/topic-c-0-0000000000000000000.avro"},
-			{key: "kafka-backup/topic-c/1/topic-c-1-0000000000000000000.avro"},
 		}, s3Client)
 
 		err = Run(ctx, cfg)
@@ -106,10 +104,7 @@ func TestPlanRestoreIntegration(t *testing.T) {
 			{value: "kafka-backup/topic-b/0/topic-b-0-0000000000000000050.avro", fileIndex: "1", totalFiles: "1"},
 			{value: "kafka-backup/topic-b/0/topic-b-0-0000000000000000250.avro", fileIndex: "2", totalFiles: "2"},
 			{value: "kafka-backup/topic-b/1/topic-b-1-0000000000000000000.avro", fileIndex: "1", totalFiles: "1"},
-			{value: "kafka-backup/topic-c/0/topic-c-0-0000000000000000000.avro", fileIndex: "1", totalFiles: "1"},
-			{value: "kafka-backup/topic-c/1/topic-c-1-0000000000000000000.avro", fileIndex: "1", totalFiles: "1"},
 		}
-
 		records, err = testutil.WaitForRecords(t, planTopic, kafkaBrokers, len(expectedAfterResume))
 		require.NoError(t, err)
 		checkPlannedEntries(t, expectedAfterResume, records)
@@ -169,6 +164,41 @@ func TestPlanRestoreIntegration(t *testing.T) {
 		records, err := testutil.WaitForRecords(t, planTopic, kafkaBrokers, len(expected))
 		require.NoError(t, err)
 		checkPlannedEntries(t, expected, records)
+	})
+
+	t.Run("resume fails on topic mismatch", func(t *testing.T) {
+		t.Parallel()
+		ctx := t.Context()
+
+		// Use a dedicated S3 prefix to avoid interference with other sub-tests.
+		planTopic := "restore-plan-topic-mismatch"
+		_, err := kadmClient.CreateTopic(ctx, 1, 1, nil, planTopic)
+		require.NoError(t, err)
+
+		createS3Objects(t, bucketName, []s3Object{
+			{key: "mismatch/topic-x/0/topic-x-0-0000000000000000001.avro"},
+			{key: "mismatch/topic-y/0/topic-y-0-0000000000000000001.avro"},
+		}, s3Client)
+
+		// First run: only topic-x is in scope.
+		cfgFirst := AppConfig{
+			KafkaConfig:        kafka.Config{Brokers: kafkaBrokers},
+			PlanTopic:          planTopic,
+			S3:                 ints3.Config{Bucket: bucketName, Endpoint: s3Endpoint, Region: testutil.MinioRegion},
+			S3Prefix:           "mismatch",
+			RestoreTopicsRegex: "topic-x",
+		}
+		err = Run(ctx, cfgFirst)
+		require.NoError(t, err)
+
+		_, err = testutil.WaitForRecords(t, planTopic, kafkaBrokers, 1)
+		require.NoError(t, err)
+
+		// Second run: topic-y is added to scope — different topic set, SHA mismatch.
+		cfgSecond := cfgFirst
+		cfgSecond.RestoreTopicsRegex = "topic-x, topic-y"
+		err = Run(ctx, cfgSecond)
+		require.ErrorContains(t, err, "topics SHA mismatch")
 	})
 }
 

@@ -175,14 +175,34 @@ When `-process-large-topics-last` is set, topics whose total S3 backup size exce
 
 ### Plan record headers
 
-Each record produced into the plan topic carries two headers that expose per-partition progress:
+Each record produced into the plan topic carries the following headers:
 
 | Header | Description |
 | :--- | :--- |
 | `plan-restore.file-index` | 1-based index of this file within its partition (absolute across resumes) |
 | `plan-restore.total-files` | Total number of backup files for this partition |
+| `plan-restore.topics-sha` | SHA-256 (hex) of the ordered, comma-joined topic list resolved at plan time |
 
-The `topics-restore` command reads these headers and exposes them as Prometheus gauges (see [Restore metrics](#restore-metrics)).
+The `topics-restore` command reads `plan-restore.file-index` and `plan-restore.total-files` and exposes them as Prometheus gauges (see [Restore metrics](#restore-metrics)).
+
+### Topic-set consistency on resume
+
+On each run, `topics-plan-restore` computes a SHA-256 over the resolved, ordered list of topics (after applying `-restore-topics-regex` and `-exclude-topics-regex`) and stamps it on every record it produces via the `plan-restore.topics-sha` header.
+
+When a previous run is detected (the plan topic is non-empty), the SHA from the last produced record is compared against the SHA for the current run. If they differ — meaning the effective topic set has changed between runs — the command exits immediately with an error:
+
+```
+topics SHA mismatch: the prior plan run used a different set of topics (recorded SHA <old>, current SHA <new>); empty the plan topic to run from scratch or align the topic configuration
+```
+
+**What triggers a mismatch:**
+- Changing `-restore-topics-regex` or `-exclude-topics-regex` so that the resolved topic list differs from the previous run.
+- Enabling or disabling `-process-large-topics-last` when it changes the order of topics.
+
+**What does not trigger a mismatch:**
+- New backup files appearing in S3 for topics already in the plan (same topic set, just more files).
+
+**To recover:** either align the topic configuration to match the previous run and re-run to resume, or empty the plan topic to start a fresh plan.
 
 ## Configuration
 

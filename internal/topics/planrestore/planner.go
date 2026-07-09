@@ -2,8 +2,12 @@ package planrestore
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -19,6 +23,9 @@ const (
 	FileIndexHeader = "plan-restore.file-index"
 	// TotalFilesHeader is the total number of backup files for this partition.
 	TotalFilesHeader = "plan-restore.total-files"
+	// TopicsSHAHeader is the SHA-256 of the ordered topic list at plan time.
+	// Used to detect topic-set changes between a prior plan run and a resume.
+	TopicsSHAHeader = "plan-restore.topics-sha"
 )
 
 type topicInfo struct {
@@ -56,7 +63,10 @@ func (p *planner) Run(ctx context.Context) error {
 		return nil
 	}
 
-	slog.InfoContext(ctx, "Planning restore for topics", "count", len(topics), "topics", topics)
+	sha := computeTopicsSHA(topics)
+
+	slog.InfoContext(ctx, "Planning restore for topics", "count", len(topics), "topics", topics, "sha", sha)
+
 	latestRecords, err := p.latestReader.Read(ctx, p.cfg.PlanTopic)
 	if err != nil {
 		return fmt.Errorf("failed to read latest records from plan topic: %w", err)
@@ -65,6 +75,10 @@ func (p *planner) Run(ctx context.Context) error {
 	rs, err := computeResume(latestRecords, topics)
 	if err != nil {
 		return fmt.Errorf("failed determining resume file: %w", err)
+	}
+
+	if rs != nil && rs.topicsSHA != sha {
+		return fmt.Errorf("topics SHA mismatch: the prior plan run used a different set of topics (recorded SHA %s, current SHA %s); empty the plan topic to run from scratch or align the topic configuration", rs.topicsSHA, sha)
 	}
 
 	slog.InfoContext(ctx, "Computed resume state", "resume_state", rs)
@@ -82,7 +96,7 @@ func (p *planner) Run(ctx context.Context) error {
 			continue
 		}
 
-		if err := p.planForTopic(ctx, topic, rs, info[topic]); err != nil {
+		if err := p.planForTopic(ctx, topic, rs, info[topic], sha); err != nil {
 			return err
 		}
 	}
@@ -92,7 +106,8 @@ func (p *planner) Run(ctx context.Context) error {
 type resumeState struct {
 	topic     string
 	file      string
-	fileIndex int // 1-based absolute index from FileIndexHeader; 0 when absent
+	fileIndex int    // 1-based absolute index from FileIndexHeader; 0 when absent
+	topicsSHA string // SHA-256 of the topic list from TopicsSHAHeader; "" when absent (old records)
 }
 
 func computeResume(latestRecords map[int32]*kgo.Record, topicsOrder []string) (*resumeState, error) {
@@ -126,7 +141,7 @@ func computeResume(latestRecords map[int32]*kgo.Record, topicsOrder []string) (*
 
 	// the last topic is not included in the list of topics
 	if lastTopic == "" {
-		return nil, nil
+		return nil, fmt.Errorf("failed computing resume state: the prior plan used a different set of topics (topics in latest records: %v, current topics: %v); empty the plan topic to run from scratch or align the topic configuration", slices.Collect(maps.Keys(resumeMap)), topicsOrder)
 	}
 
 	resumeRec := resumeMap[lastTopic]
@@ -135,11 +150,13 @@ func computeResume(latestRecords map[int32]*kgo.Record, topicsOrder []string) (*
 		file:  string(resumeRec.Value),
 	}
 	for _, h := range resumeRec.Headers {
-		if h.Key == FileIndexHeader {
+		switch h.Key {
+		case FileIndexHeader:
 			if idx, err := strconv.Atoi(string(h.Value)); err == nil {
 				rs.fileIndex = idx
 			}
-			break
+		case TopicsSHAHeader:
+			rs.topicsSHA = string(h.Value)
 		}
 	}
 
@@ -241,7 +258,7 @@ func reorderLargeTopicsLast(ctx context.Context, topics []string, info map[strin
 	return append(small, large...)
 }
 
-func (p *planner) planForTopic(ctx context.Context, topic string, rs *resumeState, ti *topicInfo) error {
+func (p *planner) planForTopic(ctx context.Context, topic string, rs *resumeState, ti *topicInfo, topicsSHA string) error {
 	input := &s3.ListObjectsV2Input{
 		Bucket: aws.String(p.cfg.S3.Bucket),
 		Prefix: aws.String(p.cfg.S3Prefix + "/" + topic + "/"),
@@ -294,6 +311,7 @@ func (p *planner) planForTopic(ctx context.Context, topic string, rs *resumeStat
 				Headers: []kgo.RecordHeader{
 					{Key: FileIndexHeader, Value: []byte(strconv.Itoa(partIndex[partition]))},
 					{Key: TotalFilesHeader, Value: []byte(strconv.Itoa(ti.partitionCounts[partition]))},
+					{Key: TopicsSHAHeader, Value: []byte(topicsSHA)},
 				},
 			})
 		}
@@ -309,6 +327,12 @@ func (p *planner) planForTopic(ctx context.Context, topic string, rs *resumeStat
 	slog.InfoContext(ctx, "Finished processing topic", "topic", topic)
 
 	return nil
+}
+
+func computeTopicsSHA(topics []string) string {
+	h := sha256.New()
+	h.Write([]byte(strings.Join(topics, ",")))
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 func partitioningKey(path string) string {

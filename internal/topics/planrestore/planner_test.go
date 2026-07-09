@@ -93,18 +93,19 @@ func TestPlanner_filterTopics(t *testing.T) {
 }
 
 func TestComputeResume(t *testing.T) {
-	recWith := func(value string, fileIndex int) *kgo.Record {
+	recWith := func(value string, fileIndex int, topicsSHA string) *kgo.Record {
 		rec := &kgo.Record{Value: []byte(value)}
 		if fileIndex > 0 {
-			rec.Headers = []kgo.RecordHeader{
-				{Key: FileIndexHeader, Value: []byte(strconv.Itoa(fileIndex))},
-			}
+			rec.Headers = append(rec.Headers, kgo.RecordHeader{Key: FileIndexHeader, Value: []byte(strconv.Itoa(fileIndex))})
+		}
+		if topicsSHA != "" {
+			rec.Headers = append(rec.Headers, kgo.RecordHeader{Key: TopicsSHAHeader, Value: []byte(topicsSHA)})
 		}
 		return rec
 	}
 
-	rs := func(topic, file string, fileIndex int) *resumeState {
-		return &resumeState{topic: topic, file: file, fileIndex: fileIndex}
+	rs := func(topic, file string, fileIndex int, topicsSHA string) *resumeState {
+		return &resumeState{topic: topic, file: file, fileIndex: fileIndex, topicsSHA: topicsSHA}
 	}
 
 	tests := []struct {
@@ -116,43 +117,34 @@ func TestComputeResume(t *testing.T) {
 		{
 			name: "single topic",
 			latestRecords: map[int32]*kgo.Record{
-				0: recWith("kafka-backup/account-identity.account.change.events/0/account-identity.account.change.events-0-0000000000000000001.avro", 0),
-				1: recWith("kafka-backup/account-identity.account.change.events/11/account-identity.account.change.events-11-0000000000009153963.avro", 0),
-				2: recWith("kafka-backup/account-identity.account.change.events/12/account-identity.account.change.events-12-0000000000008519936.avro", 0),
-				3: recWith("kafka-backup/account-identity.account.change.events/12/account-identity.account.change.events-12-0000000000009082875.avro", 0),
+				0: recWith("kafka-backup/account-identity.account.change.events/0/account-identity.account.change.events-0-0000000000000000001.avro", 0, ""),
+				1: recWith("kafka-backup/account-identity.account.change.events/11/account-identity.account.change.events-11-0000000000009153963.avro", 0, ""),
+				2: recWith("kafka-backup/account-identity.account.change.events/12/account-identity.account.change.events-12-0000000000008519936.avro", 0, ""),
+				3: recWith("kafka-backup/account-identity.account.change.events/12/account-identity.account.change.events-12-0000000000009082875.avro", 0, ""),
 			},
 			topicsOrder: []string{
 				"topic-not-in-list",
 				"account-identity.account.change.events",
 			},
 			want: rs("account-identity.account.change.events",
-				"kafka-backup/account-identity.account.change.events/12/account-identity.account.change.events-12-0000000000009082875.avro", 0),
+				"kafka-backup/account-identity.account.change.events/12/account-identity.account.change.events-12-0000000000009082875.avro", 0, ""),
 		},
 		{
 			name: "multiple topics",
 			latestRecords: map[int32]*kgo.Record{
-				0: recWith("kafka-backup/account-identity.account.change.events/0/account-identity.account.change.events-0-0000000000000000001.avro", 0),
-				1: recWith("kafka-backup/account-identity.account.change.events/11/account-identity.account.change.events-11-0000000000009153963.avro", 0),
-				2: recWith("kafka-backup/account-identity.account.change.events/12/account-identity.account.change.events-12-0000000000008519936.avro", 0),
-				3: recWith("kafka-backup/cbc.PaymentologyNotificationEvents/0/cbc.PaymentologyNotificationEvents-0-0000000000049607695.avro", 0),
-				4: recWith("kafka-backup/cbc.PaymentologyNotificationEvents/11/cbc.PaymentologyNotificationEvents-11-0000000000006148155.avro", 0),
-				5: recWith("kafka-backup/cbc.PaymentologyNotificationEvents/3/cbc.PaymentologyNotificationEvents-3-0000000000023826482.avro", 0),
-				6: recWith("kafka-backup/cbc.PaymentologyNotificationEvents/2/cbc.PaymentologyNotificationEvents-2-0000000000049854163.avro", 0),
+				0: recWith("kafka-backup/account-identity.account.change.events/0/account-identity.account.change.events-0-0000000000000000001.avro", 0, ""),
+				1: recWith("kafka-backup/account-identity.account.change.events/11/account-identity.account.change.events-11-0000000000009153963.avro", 0, ""),
+				2: recWith("kafka-backup/account-identity.account.change.events/12/account-identity.account.change.events-12-0000000000008519936.avro", 0, ""),
+				3: recWith("kafka-backup/cbc.PaymentologyNotificationEvents/0/cbc.PaymentologyNotificationEvents-0-0000000000049607695.avro", 0, ""),
+				4: recWith("kafka-backup/cbc.PaymentologyNotificationEvents/11/cbc.PaymentologyNotificationEvents-11-0000000000006148155.avro", 0, ""),
+				5: recWith("kafka-backup/cbc.PaymentologyNotificationEvents/3/cbc.PaymentologyNotificationEvents-3-0000000000023826482.avro", 0, ""),
+				6: recWith("kafka-backup/cbc.PaymentologyNotificationEvents/2/cbc.PaymentologyNotificationEvents-2-0000000000049854163.avro", 0, ""),
 			},
 			topicsOrder: []string{
 				"cbc.PaymentologyNotificationEvents", "account-identity.account.change.events",
 			},
 			want: rs("account-identity.account.change.events",
-				"kafka-backup/account-identity.account.change.events/12/account-identity.account.change.events-12-0000000000008519936.avro", 0),
-		},
-		{
-			name: "no matching topic in order",
-			latestRecords: map[int32]*kgo.Record{
-				2: recWith("kafka-backup/account-identity.account.change.events/12/account-identity.account.change.events-12-0000000000008519936.avro", 0),
-				3: recWith("kafka-backup/cbc.PaymentologyNotificationEvents/0/cbc.PaymentologyNotificationEvents-0-0000000000049607695.avro", 0),
-			},
-			topicsOrder: []string{"another-topic"},
-			want:        nil,
+				"kafka-backup/account-identity.account.change.events/12/account-identity.account.change.events-12-0000000000008519936.avro", 0, ""),
 		},
 		{
 			name:          "no last entries",
@@ -165,10 +157,18 @@ func TestComputeResume(t *testing.T) {
 		{
 			name: "file-index header is extracted from the resume record",
 			latestRecords: map[int32]*kgo.Record{
-				0: recWith("kafka-backup/topic-a/0/topic-a-0-0000000000000000005.avro", 5),
+				0: recWith("kafka-backup/topic-a/0/topic-a-0-0000000000000000005.avro", 5, ""),
 			},
 			topicsOrder: []string{"topic-a"},
-			want:        rs("topic-a", "kafka-backup/topic-a/0/topic-a-0-0000000000000000005.avro", 5),
+			want:        rs("topic-a", "kafka-backup/topic-a/0/topic-a-0-0000000000000000005.avro", 5, ""),
+		},
+		{
+			name: "topics-sha header is extracted from the resume record",
+			latestRecords: map[int32]*kgo.Record{
+				0: recWith("kafka-backup/topic-a/0/topic-a-0-0000000000000000003.avro", 3, "abc123sha"),
+			},
+			topicsOrder: []string{"topic-a"},
+			want:        rs("topic-a", "kafka-backup/topic-a/0/topic-a-0-0000000000000000003.avro", 3, "abc123sha"),
 		},
 	}
 
@@ -179,6 +179,28 @@ func TestComputeResume(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestComputeResume_TopicMismatch(t *testing.T) {
+	latestRecords := map[int32]*kgo.Record{
+		2: {Value: []byte("kafka-backup/account-identity.account.change.events/12/account-identity.account.change.events-12-0000000000008519936.avro")},
+		3: {Value: []byte("kafka-backup/cbc.PaymentologyNotificationEvents/0/cbc.PaymentologyNotificationEvents-0-0000000000049607695.avro")},
+	}
+
+	_, err := computeResume(latestRecords, []string{"another-topic"})
+	require.ErrorContains(t, err, "prior plan used a different set of topics")
+}
+
+func TestComputeTopicsSHA(t *testing.T) {
+	sha1 := computeTopicsSHA([]string{"topic-a", "topic-b"})
+	sha2 := computeTopicsSHA([]string{"topic-a", "topic-b"})
+	sha3 := computeTopicsSHA([]string{"topic-b", "topic-a"})
+	sha4 := computeTopicsSHA([]string{"topic-a"})
+
+	assert.Equal(t, sha1, sha2, "same input should produce same SHA")
+	assert.NotEqual(t, sha1, sha3, "different order should produce different SHA")
+	assert.NotEqual(t, sha1, sha4, "different topics should produce different SHA")
+	assert.Len(t, sha1, 64, "SHA-256 hex should be 64 characters")
 }
 
 func TestReorderLargeTopicsLast(t *testing.T) {
