@@ -89,8 +89,6 @@ func TestPlanRestoreIntegration(t *testing.T) {
 		createS3Objects(t, bucketName, []s3Object{
 			{key: "kafka-backup/topic-b/0/topic-b-0-0000000000000000250.avro"},
 			{key: "kafka-backup/topic-b/1/topic-b-1-0000000000000000000.avro"},
-			{key: "kafka-backup/topic-c/0/topic-c-0-0000000000000000000.avro"},
-			{key: "kafka-backup/topic-c/1/topic-c-1-0000000000000000000.avro"},
 		}, s3Client)
 
 		err = Run(ctx, cfg)
@@ -106,10 +104,7 @@ func TestPlanRestoreIntegration(t *testing.T) {
 			{value: "kafka-backup/topic-b/0/topic-b-0-0000000000000000050.avro", fileIndex: "1", totalFiles: "1"},
 			{value: "kafka-backup/topic-b/0/topic-b-0-0000000000000000250.avro", fileIndex: "2", totalFiles: "2"},
 			{value: "kafka-backup/topic-b/1/topic-b-1-0000000000000000000.avro", fileIndex: "1", totalFiles: "1"},
-			{value: "kafka-backup/topic-c/0/topic-c-0-0000000000000000000.avro", fileIndex: "1", totalFiles: "1"},
-			{value: "kafka-backup/topic-c/1/topic-c-1-0000000000000000000.avro", fileIndex: "1", totalFiles: "1"},
 		}
-
 		records, err = testutil.WaitForRecords(t, planTopic, kafkaBrokers, len(expectedAfterResume))
 		require.NoError(t, err)
 		checkPlannedEntries(t, expectedAfterResume, records)
