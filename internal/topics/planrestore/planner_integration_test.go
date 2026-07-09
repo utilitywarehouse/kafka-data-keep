@@ -165,6 +165,41 @@ func TestPlanRestoreIntegration(t *testing.T) {
 		require.NoError(t, err)
 		checkPlannedEntries(t, expected, records)
 	})
+
+	t.Run("resume fails on topic mismatch", func(t *testing.T) {
+		t.Parallel()
+		ctx := t.Context()
+
+		// Use a dedicated S3 prefix to avoid interference with other sub-tests.
+		planTopic := "restore-plan-topic-mismatch"
+		_, err := kadmClient.CreateTopic(ctx, 1, 1, nil, planTopic)
+		require.NoError(t, err)
+
+		createS3Objects(t, bucketName, []s3Object{
+			{key: "mismatch/topic-x/0/topic-x-0-0000000000000000001.avro"},
+			{key: "mismatch/topic-y/0/topic-y-0-0000000000000000001.avro"},
+		}, s3Client)
+
+		// First run: only topic-x is in scope.
+		cfgFirst := AppConfig{
+			KafkaConfig:        kafka.Config{Brokers: kafkaBrokers},
+			PlanTopic:          planTopic,
+			S3:                 ints3.Config{Bucket: bucketName, Endpoint: s3Endpoint, Region: testutil.MinioRegion},
+			S3Prefix:           "mismatch",
+			RestoreTopicsRegex: "topic-x",
+		}
+		err = Run(ctx, cfgFirst)
+		require.NoError(t, err)
+
+		_, err = testutil.WaitForRecords(t, planTopic, kafkaBrokers, 1)
+		require.NoError(t, err)
+
+		// Second run: topic-y is added to scope — different topic set, SHA mismatch.
+		cfgSecond := cfgFirst
+		cfgSecond.RestoreTopicsRegex = "topic-x, topic-y"
+		err = Run(ctx, cfgSecond)
+		require.ErrorContains(t, err, "topics SHA mismatch")
+	})
 }
 
 type planRecord struct {
