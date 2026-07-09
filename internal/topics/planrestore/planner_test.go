@@ -147,15 +147,6 @@ func TestComputeResume(t *testing.T) {
 				"kafka-backup/account-identity.account.change.events/12/account-identity.account.change.events-12-0000000000008519936.avro", 0, ""),
 		},
 		{
-			name: "no matching topic in order",
-			latestRecords: map[int32]*kgo.Record{
-				2: recWith("kafka-backup/account-identity.account.change.events/12/account-identity.account.change.events-12-0000000000008519936.avro", 0, ""),
-				3: recWith("kafka-backup/cbc.PaymentologyNotificationEvents/0/cbc.PaymentologyNotificationEvents-0-0000000000049607695.avro", 0, ""),
-			},
-			topicsOrder: []string{"another-topic"},
-			want:        nil,
-		},
-		{
 			name:          "no last entries",
 			latestRecords: nil,
 			topicsOrder: []string{
@@ -188,6 +179,16 @@ func TestComputeResume(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestComputeResume_TopicMismatch(t *testing.T) {
+	latestRecords := map[int32]*kgo.Record{
+		2: {Value: []byte("kafka-backup/account-identity.account.change.events/12/account-identity.account.change.events-12-0000000000008519936.avro")},
+		3: {Value: []byte("kafka-backup/cbc.PaymentologyNotificationEvents/0/cbc.PaymentologyNotificationEvents-0-0000000000049607695.avro")},
+	}
+
+	_, err := computeResume(latestRecords, []string{"another-topic"})
+	require.ErrorContains(t, err, "prior plan used a different set of topics")
 }
 
 func TestComputeTopicsSHA(t *testing.T) {

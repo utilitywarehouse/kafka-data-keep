@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -139,7 +141,7 @@ func computeResume(latestRecords map[int32]*kgo.Record, topicsOrder []string) (*
 
 	// the last topic is not included in the list of topics
 	if lastTopic == "" {
-		return nil, nil
+		return nil, fmt.Errorf("failed computing resume state: the prior plan used a different set of topics (topics in latest records: %v, current topics: %v); empty the plan topic to run from scratch or align the topic configuration", slices.Collect(maps.Keys(resumeMap)), topicsOrder)
 	}
 
 	resumeRec := resumeMap[lastTopic]
