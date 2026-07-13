@@ -208,6 +208,7 @@ func (p *planner) filterTopics(topics []string) ([]string, error) {
 // per-topic size and per-partition file counts. Topics are returned in first-seen
 // lexicographic order (identical to the previous CommonPrefixes listing).
 func (p *planner) listTopicsFromS3(ctx context.Context) ([]string, map[string]*topicInfo, error) {
+	slog.InfoContext(ctx, "Extracting topic information from S3 ...")
 	prefix := p.cfg.S3Prefix
 	if !strings.HasSuffix(prefix, "/") {
 		prefix += "/"
