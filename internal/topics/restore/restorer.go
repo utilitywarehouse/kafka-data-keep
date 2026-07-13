@@ -40,6 +40,10 @@ var (
 		"kafka.data-keep.restore.partition-file-index",
 		"1-based index of the backup file currently being restored for a topic partition",
 	)
+	restoreTopicTotalFilesGauge = initInt64Gauge(
+		"kafka.data-keep.restore.topic-total-files",
+		"Total number of backup files for a topic, summed across all its partitions, as planned",
+	)
 )
 
 func initInt64Gauge(name, desc string) metric.Int64Gauge {
@@ -132,28 +136,36 @@ func (r *kafkaS3Restorer) restoreFile(ctx context.Context, planRec *kgo.Record) 
 	return nil
 }
 
-// recordFileProgressMetrics reads plan-restore.file-index and plan-restore.total-files
-// headers from the plan record and updates the corresponding gauges. Missing or
-// unparseable headers are silently skipped for backward-compatibility with older plans.
+// recordFileProgressMetrics reads the plan-restore.partition-file-index, plan-restore.partition-total-files,
+// and plan-restore.topic-total-files headers from the plan record and updates the corresponding gauges.
+// Missing or unparseable headers are silently skipped for backward-compatibility with older plans.
 func (r *kafkaS3Restorer) recordFileProgressMetrics(ctx context.Context, headers []kgo.RecordHeader, topic, partition string) {
-	attrs := metric.WithAttributes(
+	partitionAttrs := metric.WithAttributes(
 		attribute.String("topic", topic),
 		attribute.String("partition", partition),
 	)
 
-	if idxStr, ok := headerValue(headers, planrestore.FileIndexHeader); ok {
+	if idxStr, ok := headerValue(headers, planrestore.PartitionFileIndexHeader); ok {
 		if idx, err := strconv.ParseInt(idxStr, 10, 64); err == nil {
-			restoreFileIndexGauge.Record(ctx, idx, attrs)
+			restoreFileIndexGauge.Record(ctx, idx, partitionAttrs)
 		} else {
-			slog.DebugContext(ctx, "Failed parsing file-index header", "value", idxStr, "error", err)
+			slog.DebugContext(ctx, "Failed parsing partition-file-index header", "value", idxStr, "error", err)
 		}
 	}
 
-	if totalStr, ok := headerValue(headers, planrestore.TotalFilesHeader); ok {
+	if totalStr, ok := headerValue(headers, planrestore.PartitionTotalFilesHeader); ok {
 		if total, err := strconv.ParseInt(totalStr, 10, 64); err == nil {
-			restoreTotalFilesGauge.Record(ctx, total, attrs)
+			restoreTotalFilesGauge.Record(ctx, total, partitionAttrs)
 		} else {
-			slog.DebugContext(ctx, "Failed parsing total-files header", "value", totalStr, "error", err)
+			slog.DebugContext(ctx, "Failed parsing partition-total-files header", "value", totalStr, "error", err)
+		}
+	}
+
+	if topicTotalStr, ok := headerValue(headers, planrestore.TopicTotalFilesHeader); ok {
+		if topicTotal, err := strconv.ParseInt(topicTotalStr, 10, 64); err == nil {
+			restoreTopicTotalFilesGauge.Record(ctx, topicTotal, metric.WithAttributes(attribute.String("topic", topic)))
+		} else {
+			slog.DebugContext(ctx, "Failed parsing topic-total-files header", "value", topicTotalStr, "error", err)
 		}
 	}
 }

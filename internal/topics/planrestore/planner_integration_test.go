@@ -73,12 +73,14 @@ func TestPlanRestoreIntegration(t *testing.T) {
 		require.NoError(t, err)
 
 		// file-index is 1-based absolute; S3 lists lexicographically within each topic prefix.
+		// topic-a: 2 files in partition 0 + 2 in partition 1 = 4 topic-total-files.
+		// topic-b: 1 file in partition 0 (partition 1 doesn't exist yet) = 1 topic-total-files.
 		expected := []planRecord{
-			{value: "kafka-backup/topic-a/0/topic-a-0-0000000000000000000.avro", fileIndex: "1", totalFiles: "2"},
-			{value: "kafka-backup/topic-a/0/topic-a-0-0000000000000000010.avro", fileIndex: "2", totalFiles: "2"},
-			{value: "kafka-backup/topic-a/1/topic-a-1-0000000000000000000.avro", fileIndex: "1", totalFiles: "2"},
-			{value: "kafka-backup/topic-a/1/topic-a-1-0000000000000000300.avro", fileIndex: "2", totalFiles: "2"},
-			{value: "kafka-backup/topic-b/0/topic-b-0-0000000000000000050.avro", fileIndex: "1", totalFiles: "1"},
+			{value: "kafka-backup/topic-a/0/topic-a-0-0000000000000000000.avro", fileIndex: "1", totalFiles: "2", topicTotalFiles: "4"},
+			{value: "kafka-backup/topic-a/0/topic-a-0-0000000000000000010.avro", fileIndex: "2", totalFiles: "2", topicTotalFiles: "4"},
+			{value: "kafka-backup/topic-a/1/topic-a-1-0000000000000000000.avro", fileIndex: "1", totalFiles: "2", topicTotalFiles: "4"},
+			{value: "kafka-backup/topic-a/1/topic-a-1-0000000000000000300.avro", fileIndex: "2", totalFiles: "2", topicTotalFiles: "4"},
+			{value: "kafka-backup/topic-b/0/topic-b-0-0000000000000000050.avro", fileIndex: "1", totalFiles: "1", topicTotalFiles: "1"},
 		}
 
 		records, err := testutil.WaitForRecords(t, planTopic, kafkaBrokers, len(expected))
@@ -95,15 +97,17 @@ func TestPlanRestoreIntegration(t *testing.T) {
 		require.NoError(t, err)
 
 		// Run-1 records are re-read from offset 0; run-2 appends resumed records after.
-		// topic-b/0's run-1 record carries total=1; the resumed record has absolute index 2 and updated total 2.
+		// topic-b/0's run-1 record carries total=1 and topic-total=1 (partition 1 didn't exist
+		// yet); the resumed records reflect the updated partition/topic totals (3 files total:
+		// 2 in partition 0, 1 in partition 1).
 		expectedAfterResume := []planRecord{
-			{value: "kafka-backup/topic-a/0/topic-a-0-0000000000000000000.avro", fileIndex: "1", totalFiles: "2"},
-			{value: "kafka-backup/topic-a/0/topic-a-0-0000000000000000010.avro", fileIndex: "2", totalFiles: "2"},
-			{value: "kafka-backup/topic-a/1/topic-a-1-0000000000000000000.avro", fileIndex: "1", totalFiles: "2"},
-			{value: "kafka-backup/topic-a/1/topic-a-1-0000000000000000300.avro", fileIndex: "2", totalFiles: "2"},
-			{value: "kafka-backup/topic-b/0/topic-b-0-0000000000000000050.avro", fileIndex: "1", totalFiles: "1"},
-			{value: "kafka-backup/topic-b/0/topic-b-0-0000000000000000250.avro", fileIndex: "2", totalFiles: "2"},
-			{value: "kafka-backup/topic-b/1/topic-b-1-0000000000000000000.avro", fileIndex: "1", totalFiles: "1"},
+			{value: "kafka-backup/topic-a/0/topic-a-0-0000000000000000000.avro", fileIndex: "1", totalFiles: "2", topicTotalFiles: "4"},
+			{value: "kafka-backup/topic-a/0/topic-a-0-0000000000000000010.avro", fileIndex: "2", totalFiles: "2", topicTotalFiles: "4"},
+			{value: "kafka-backup/topic-a/1/topic-a-1-0000000000000000000.avro", fileIndex: "1", totalFiles: "2", topicTotalFiles: "4"},
+			{value: "kafka-backup/topic-a/1/topic-a-1-0000000000000000300.avro", fileIndex: "2", totalFiles: "2", topicTotalFiles: "4"},
+			{value: "kafka-backup/topic-b/0/topic-b-0-0000000000000000050.avro", fileIndex: "1", totalFiles: "1", topicTotalFiles: "1"},
+			{value: "kafka-backup/topic-b/0/topic-b-0-0000000000000000250.avro", fileIndex: "2", totalFiles: "2", topicTotalFiles: "3"},
+			{value: "kafka-backup/topic-b/1/topic-b-1-0000000000000000000.avro", fileIndex: "1", totalFiles: "1", topicTotalFiles: "3"},
 		}
 		records, err = testutil.WaitForRecords(t, planTopic, kafkaBrokers, len(expectedAfterResume))
 		require.NoError(t, err)
@@ -150,15 +154,17 @@ func TestPlanRestoreIntegration(t *testing.T) {
 		// listTopicsFromS3 discovers large-topic before small-topic (lexicographic order), but
 		// reorderLargeTopicsLast moves it to the end. The slice encodes the resulting production
 		// order: all small-topic records first, then large-topic records.
+		// small-topic: 2 files in partition 0 + 1 in partition 1 = 3 topic-total-files.
+		// large-topic: 3 files in partition 0 + 2 in partition 1 = 5 topic-total-files.
 		expected := []planRecord{
-			{value: "large-last/small-topic/0/small-topic-0-0000000000000000000.avro", fileIndex: "1", totalFiles: "2"},
-			{value: "large-last/small-topic/0/small-topic-0-0000000000000000100.avro", fileIndex: "2", totalFiles: "2"},
-			{value: "large-last/small-topic/1/small-topic-1-0000000000000000000.avro", fileIndex: "1", totalFiles: "1"},
-			{value: "large-last/large-topic/0/large-topic-0-0000000000000000000.avro", fileIndex: "1", totalFiles: "3"},
-			{value: "large-last/large-topic/0/large-topic-0-0000000000000000500.avro", fileIndex: "2", totalFiles: "3"},
-			{value: "large-last/large-topic/0/large-topic-0-0000000000000001000.avro", fileIndex: "3", totalFiles: "3"},
-			{value: "large-last/large-topic/1/large-topic-1-0000000000000000000.avro", fileIndex: "1", totalFiles: "2"},
-			{value: "large-last/large-topic/1/large-topic-1-0000000000000000200.avro", fileIndex: "2", totalFiles: "2"},
+			{value: "large-last/small-topic/0/small-topic-0-0000000000000000000.avro", fileIndex: "1", totalFiles: "2", topicTotalFiles: "3"},
+			{value: "large-last/small-topic/0/small-topic-0-0000000000000000100.avro", fileIndex: "2", totalFiles: "2", topicTotalFiles: "3"},
+			{value: "large-last/small-topic/1/small-topic-1-0000000000000000000.avro", fileIndex: "1", totalFiles: "1", topicTotalFiles: "3"},
+			{value: "large-last/large-topic/0/large-topic-0-0000000000000000000.avro", fileIndex: "1", totalFiles: "3", topicTotalFiles: "5"},
+			{value: "large-last/large-topic/0/large-topic-0-0000000000000000500.avro", fileIndex: "2", totalFiles: "3", topicTotalFiles: "5"},
+			{value: "large-last/large-topic/0/large-topic-0-0000000000000001000.avro", fileIndex: "3", totalFiles: "3", topicTotalFiles: "5"},
+			{value: "large-last/large-topic/1/large-topic-1-0000000000000000000.avro", fileIndex: "1", totalFiles: "2", topicTotalFiles: "5"},
+			{value: "large-last/large-topic/1/large-topic-1-0000000000000000200.avro", fileIndex: "2", totalFiles: "2", topicTotalFiles: "5"},
 		}
 
 		records, err := testutil.WaitForRecords(t, planTopic, kafkaBrokers, len(expected))
@@ -203,9 +209,10 @@ func TestPlanRestoreIntegration(t *testing.T) {
 }
 
 type planRecord struct {
-	value      string
-	fileIndex  string
-	totalFiles string
+	value           string
+	fileIndex       string
+	totalFiles      string
+	topicTotalFiles string
 }
 
 // checkPlannedEntries asserts that records matches expected exactly, in order.
@@ -216,12 +223,15 @@ func checkPlannedEntries(t *testing.T, expected []planRecord, records []*kgo.Rec
 	for i, want := range expected {
 		rec := records[i]
 		assert.Equal(t, want.value, string(rec.Value), "record %d: wrong value", i)
-		gotIdx, hasIdx := getHeader(rec, FileIndexHeader)
-		gotTotal, hasTotal := getHeader(rec, TotalFilesHeader)
-		assert.True(t, hasIdx, "record %d missing %s", i, FileIndexHeader)
-		assert.True(t, hasTotal, "record %d missing %s", i, TotalFilesHeader)
+		gotIdx, hasIdx := getHeader(rec, PartitionFileIndexHeader)
+		gotTotal, hasTotal := getHeader(rec, PartitionTotalFilesHeader)
+		gotTopicTotal, hasTopicTotal := getHeader(rec, TopicTotalFilesHeader)
+		assert.True(t, hasIdx, "record %d missing %s", i, PartitionFileIndexHeader)
+		assert.True(t, hasTotal, "record %d missing %s", i, PartitionTotalFilesHeader)
+		assert.True(t, hasTopicTotal, "record %d missing %s", i, TopicTotalFilesHeader)
 		assert.Equal(t, want.fileIndex, gotIdx, "record %d: wrong file-index", i)
 		assert.Equal(t, want.totalFiles, gotTotal, "record %d: wrong total-files", i)
+		assert.Equal(t, want.topicTotalFiles, gotTopicTotal, "record %d: wrong topic-total-files", i)
 	}
 }
 

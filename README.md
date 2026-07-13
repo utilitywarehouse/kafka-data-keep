@@ -179,11 +179,12 @@ Each record produced into the plan topic carries the following headers:
 
 | Header | Description |
 | :--- | :--- |
-| `plan-restore.file-index` | 1-based index of this file within its partition (absolute across resumes) |
-| `plan-restore.total-files` | Total number of backup files for this partition |
+| `plan-restore.partition-file-index` | 1-based index of this file within its partition (absolute across resumes) |
+| `plan-restore.partition-total-files` | Total number of backup files for this partition |
+| `plan-restore.topic-total-files` | Total number of backup files for this topic, summed across all its partitions |
 | `plan-restore.topics-sha` | SHA-256 (hex) of the ordered, comma-joined topic list resolved at plan time |
 
-The `topics-restore` command reads `plan-restore.file-index` and `plan-restore.total-files` and exposes them as Prometheus gauges (see [Restore metrics](#restore-metrics)).
+The `topics-restore` command reads these headers (except `plan-restore.topics-sha`, which is only used internally by the planner) and exposes them as Prometheus gauges (see [Restore metrics](#restore-metrics)).
 
 ### Topic-set consistency on resume
 
@@ -280,8 +281,9 @@ The restore command exposes per-topic/per-partition progress gauges on the metri
 | :--- | :--- | :--- |
 | `kafka_data_keep_restore_partition_total_files` | `topic`, `partition` | Total number of backup files for this partition, as written into the plan |
 | `kafka_data_keep_restore_partition_file_index` | `topic`, `partition` | 1-based index of the backup file currently being processed |
+| `kafka_data_keep_restore_topic_total_files` | `topic` | Total number of backup files for this topic, summed across all its partitions |
 
-These are derived from the `plan-restore.file-index` / `plan-restore.total-files` headers set by `topics-plan-restore`. If a plan was produced by an older version of the planner (without those headers), the gauges are simply not emitted for that run.
+These are derived from the `plan-restore.partition-file-index` / `plan-restore.partition-total-files` / `plan-restore.topic-total-files` headers set by `topics-plan-restore`. If a plan was produced by an older version of the planner (without those headers), the corresponding gauges are simply not emitted for that run.
 
 ## Configuration
 
