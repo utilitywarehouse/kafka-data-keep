@@ -54,7 +54,7 @@ type planner struct {
 }
 
 func (p *planner) Run(ctx context.Context) error {
-	topics, info, err := p.listTopicsFromS3(ctx)
+	topics, err := p.listTopicsFromS3(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list topics from S3: %w", err)
 	}
@@ -64,14 +64,19 @@ func (p *planner) Run(ctx context.Context) error {
 		return err
 	}
 
-	if p.cfg.ProcessLargeTopicsLast {
-		thresholdBytes := p.cfg.LargeTopicThresholdMB * 1024 * 1024
-		topics = reorderLargeTopicsLast(ctx, topics, info, thresholdBytes)
-	}
-
 	if len(topics) == 0 {
 		slog.WarnContext(ctx, "No topics found to restore")
 		return nil
+	}
+
+	info, err := p.getTopicsInfo(ctx, topics)
+	if err != nil {
+		return fmt.Errorf("failed to get topics info from S3: %w", err)
+	}
+
+	if p.cfg.ProcessLargeTopicsLast {
+		thresholdBytes := p.cfg.LargeTopicThresholdMB * 1024 * 1024
+		topics = reorderLargeTopicsLast(ctx, topics, info, thresholdBytes)
 	}
 
 	sha := computeTopicsSHA(topics)
@@ -204,54 +209,91 @@ func (p *planner) filterTopics(topics []string) ([]string, error) {
 	return result, nil
 }
 
-// listTopicsFromS3 lists all topics under the configured S3 prefix and aggregates
-// per-topic size and per-partition file counts. Topics are returned in first-seen
-// lexicographic order (identical to the previous CommonPrefixes listing).
-func (p *planner) listTopicsFromS3(ctx context.Context) ([]string, map[string]*topicInfo, error) {
-	slog.InfoContext(ctx, "Extracting topic information from S3 ...")
-	prefix := p.cfg.S3Prefix
-	if !strings.HasSuffix(prefix, "/") {
-		prefix += "/"
-	}
+// listTopicsFromS3 lists the topic names under the configured S3 prefix, using a
+// delimited listing so only the topic-level "directories" are returned (no object
+// bodies/sizes are fetched). Topics are returned in lexicographic order.
+func (p *planner) listTopicsFromS3(ctx context.Context) ([]string, error) {
+	slog.InfoContext(ctx, "Listing topics from S3 ...")
+	prefix := normalizePrefix(p.cfg.S3Prefix)
 
 	input := &s3.ListObjectsV2Input{
-		Bucket: aws.String(p.cfg.S3.Bucket),
-		Prefix: aws.String(prefix),
+		Bucket:    aws.String(p.cfg.S3.Bucket),
+		Prefix:    aws.String(prefix),
+		Delimiter: aws.String("/"),
 	}
 
-	var topicsOrdered []string
-	infoMap := make(map[string]*topicInfo)
+	var topics []string
 
 	paginator := s3.NewListObjectsV2Paginator(p.s3Client, input)
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to list objects pages: %w", err)
+			return nil, fmt.Errorf("failed to list objects pages: %w", err)
 		}
 
-		for _, obj := range page.Contents {
-			if obj.Key == nil {
+		for _, cp := range page.CommonPrefixes {
+			if cp.Prefix == nil {
 				continue
 			}
-			topic, partition, err := TopicPartitionFromFileName(*obj.Key)
-			if err != nil {
-				slog.WarnContext(ctx, "Skipping unparseable S3 key during inventory", "key", *obj.Key, "error", err)
+			topic := strings.TrimSuffix(strings.TrimPrefix(*cp.Prefix, prefix), "/")
+			if topic == "" {
 				continue
 			}
-
-			ti, exists := infoMap[topic]
-			if !exists {
-				ti = &topicInfo{partitionCounts: make(map[string]int)}
-				infoMap[topic] = ti
-				topicsOrdered = append(topicsOrdered, topic)
-			}
-			if obj.Size != nil {
-				ti.sizeBytes += *obj.Size
-			}
-			ti.partitionCounts[partition]++
+			topics = append(topics, topic)
 		}
 	}
-	return topicsOrdered, infoMap, nil
+	return topics, nil
+}
+
+// getTopicsInfo lists the S3 objects for each of the given topics and aggregates
+// per-topic size and per-partition file counts. Only called with the already
+// filtered topic list, so excluded topics are never listed.
+func (p *planner) getTopicsInfo(ctx context.Context, topics []string) (map[string]*topicInfo, error) {
+	infoMap := make(map[string]*topicInfo, len(topics))
+
+	for _, topic := range topics {
+		input := &s3.ListObjectsV2Input{
+			Bucket: aws.String(p.cfg.S3.Bucket),
+			Prefix: aws.String(normalizePrefix(p.cfg.S3Prefix) + topic + "/"),
+		}
+
+		ti := &topicInfo{partitionCounts: make(map[string]int)}
+
+		paginator := s3.NewListObjectsV2Paginator(p.s3Client, input)
+		for paginator.HasMorePages() {
+			page, err := paginator.NextPage(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to list objects for topic %s: %w", topic, err)
+			}
+
+			for _, obj := range page.Contents {
+				if obj.Key == nil {
+					continue
+				}
+				_, partition, err := TopicPartitionFromFileName(*obj.Key)
+				if err != nil {
+					slog.WarnContext(ctx, "Skipping unparseable S3 key during inventory", "key", *obj.Key, "error", err)
+					continue
+				}
+				if obj.Size != nil {
+					ti.sizeBytes += *obj.Size
+				}
+				ti.partitionCounts[partition]++
+			}
+		}
+
+		infoMap[topic] = ti
+	}
+
+	return infoMap, nil
+}
+
+// normalizePrefix ensures the S3 prefix ends with a single trailing slash.
+func normalizePrefix(prefix string) string {
+	if prefix != "" && !strings.HasSuffix(prefix, "/") {
+		prefix += "/"
+	}
+	return prefix
 }
 
 // reorderLargeTopicsLast moves topics whose total size exceeds thresholdBytes to the
@@ -273,7 +315,7 @@ func reorderLargeTopicsLast(ctx context.Context, topics []string, info map[strin
 func (p *planner) planForTopic(ctx context.Context, topic string, rs *resumeState, ti *topicInfo, topicsSHA string) error {
 	input := &s3.ListObjectsV2Input{
 		Bucket: aws.String(p.cfg.S3.Bucket),
-		Prefix: aws.String(p.cfg.S3Prefix + "/" + topic + "/"),
+		Prefix: aws.String(normalizePrefix(p.cfg.S3Prefix) + topic + "/"),
 	}
 
 	// partIndex tracks the 1-based absolute file index per partition across all pages.
