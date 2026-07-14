@@ -19,10 +19,12 @@ import (
 )
 
 const (
-	// FileIndexHeader is the 1-based index of this file within its partition (absolute across resumes).
-	FileIndexHeader = "plan-restore.file-index"
-	// TotalFilesHeader is the total number of backup files for this partition.
-	TotalFilesHeader = "plan-restore.total-files"
+	// PartitionFileIndexHeader is the 1-based index of this file within its partition (absolute across resumes).
+	PartitionFileIndexHeader = "plan-restore.partition-file-index"
+	// PartitionTotalFilesHeader is the total number of backup files for this partition.
+	PartitionTotalFilesHeader = "plan-restore.partition-total-files"
+	// TopicTotalFilesHeader is the total number of backup files for this topic, summed across all its partitions.
+	TopicTotalFilesHeader = "plan-restore.topic-total-files"
 	// TopicsSHAHeader is the SHA-256 of the ordered topic list at plan time.
 	// Used to detect topic-set changes between a prior plan run and a resume.
 	TopicsSHAHeader = "plan-restore.topics-sha"
@@ -33,6 +35,15 @@ type topicInfo struct {
 	sizeBytes int64
 	// partitionCounts maps partition name to the number of backup files in that partition.
 	partitionCounts map[string]int
+}
+
+// totalFiles returns the total number of backup files for this topic, summed across all its partitions.
+func (ti *topicInfo) totalFiles() int {
+	total := 0
+	for _, count := range ti.partitionCounts {
+		total += count
+	}
+	return total
 }
 
 type planner struct {
@@ -106,7 +117,7 @@ func (p *planner) Run(ctx context.Context) error {
 type resumeState struct {
 	topic     string
 	file      string
-	fileIndex int    // 1-based absolute index from FileIndexHeader; 0 when absent
+	fileIndex int    // 1-based absolute index from PartitionFileIndexHeader; 0 when absent
 	topicsSHA string // SHA-256 of the topic list from TopicsSHAHeader; "" when absent (old records)
 }
 
@@ -151,7 +162,7 @@ func computeResume(latestRecords map[int32]*kgo.Record, topicsOrder []string) (*
 	}
 	for _, h := range resumeRec.Headers {
 		switch h.Key {
-		case FileIndexHeader:
+		case PartitionFileIndexHeader:
 			if idx, err := strconv.Atoi(string(h.Value)); err == nil {
 				rs.fileIndex = idx
 			}
@@ -197,6 +208,7 @@ func (p *planner) filterTopics(topics []string) ([]string, error) {
 // per-topic size and per-partition file counts. Topics are returned in first-seen
 // lexicographic order (identical to the previous CommonPrefixes listing).
 func (p *planner) listTopicsFromS3(ctx context.Context) ([]string, map[string]*topicInfo, error) {
+	slog.InfoContext(ctx, "Extracting topic information from S3 ...")
 	prefix := p.cfg.S3Prefix
 	if !strings.HasSuffix(prefix, "/") {
 		prefix += "/"
@@ -268,6 +280,7 @@ func (p *planner) planForTopic(ctx context.Context, topic string, rs *resumeStat
 	// For the resume partition, seed from the stored header so the next file gets the
 	// correct absolute index without re-listing files before StartAfter.
 	partIndex := make(map[string]int)
+	topicTotalFiles := strconv.Itoa(ti.totalFiles())
 
 	if rs != nil && rs.topic == topic {
 		input.StartAfter = aws.String(rs.file)
@@ -309,8 +322,9 @@ func (p *planner) planForTopic(ctx context.Context, topic string, rs *resumeStat
 				Value: []byte(key),
 				Key:   []byte(partitioningKey(key)),
 				Headers: []kgo.RecordHeader{
-					{Key: FileIndexHeader, Value: []byte(strconv.Itoa(partIndex[partition]))},
-					{Key: TotalFilesHeader, Value: []byte(strconv.Itoa(ti.partitionCounts[partition]))},
+					{Key: PartitionFileIndexHeader, Value: []byte(strconv.Itoa(partIndex[partition]))},
+					{Key: PartitionTotalFilesHeader, Value: []byte(strconv.Itoa(ti.partitionCounts[partition]))},
+					{Key: TopicTotalFilesHeader, Value: []byte(topicTotalFiles)},
 					{Key: TopicsSHAHeader, Value: []byte(topicsSHA)},
 				},
 			})

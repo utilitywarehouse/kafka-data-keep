@@ -96,7 +96,7 @@ func TestComputeResume(t *testing.T) {
 	recWith := func(value string, fileIndex int, topicsSHA string) *kgo.Record {
 		rec := &kgo.Record{Value: []byte(value)}
 		if fileIndex > 0 {
-			rec.Headers = append(rec.Headers, kgo.RecordHeader{Key: FileIndexHeader, Value: []byte(strconv.Itoa(fileIndex))})
+			rec.Headers = append(rec.Headers, kgo.RecordHeader{Key: PartitionFileIndexHeader, Value: []byte(strconv.Itoa(fileIndex))})
 		}
 		if topicsSHA != "" {
 			rec.Headers = append(rec.Headers, kgo.RecordHeader{Key: TopicsSHAHeader, Value: []byte(topicsSHA)})
