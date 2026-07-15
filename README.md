@@ -190,8 +190,10 @@ The `topics-plan-restore` command itself exposes gauges on the metrics endpoint 
 
 | Metric | Labels | Description |
 | :--- | :--- | :--- |
-| `kafka_data_keep_plan_restore_topics_total` | `topics_sha` | Number of topics included in the current restore plan |
+| `kafka_data_keep_plan_restore_topic_progress` | `topic`, `topics_sha` | `0` while a topic is still pending, set to `1` once it has been planned or skipped on resume |
 | `kafka_data_keep_plan_restore_partition_total_files` | `topic`, `partition`, `topics_sha` | Total number of planned backup files for this topic partition |
+
+All topics start at `topic_progress = 0` as soon as the topic list is resolved; each one flips to `1` once its plan records have been produced (or immediately, if it's skipped because it was already planned in a prior run being resumed). This gives a per-topic view of plan progress alongside the overall total from `len(topics)` at scrape time.
 
 The `topics_sha` label is the same SHA-256 stamped on the plan records via the `plan-restore.topics-sha` header, so it can be used to identify which plan run a given set of metric values belongs to.
 

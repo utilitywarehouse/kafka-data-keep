@@ -13,9 +13,9 @@ var (
 		"kafka.data-keep.plan-restore.partition-total-files",
 		"Total number of backup files for a topic partition, as planned",
 	)
-	planTopicsTotalGauge = internal.InitInt64Gauge(
-		"kafka.data-keep.plan-restore.topics-total",
-		"Total number of topics included in the current restore plan",
+	planTopicProgressGauge = internal.InitInt64Gauge(
+		"kafka.data-keep.plan-restore.topic-progress",
+		"Progress of planning a topic: 0 while pending, 1 once it has been planned or skipped on resume",
 	)
 )
 
@@ -28,9 +28,14 @@ func recordPartitionTotalFilesMetric(ctx context.Context, topicsSHA, topic, part
 	))
 }
 
-// recordTopicsTotalMetric records the number of topics included in the current restore plan.
-func recordTopicsTotalMetric(ctx context.Context, topicsSHA string, total int) {
-	planTopicsTotalGauge.Record(ctx, int64(total), metric.WithAttributes(
+// recordTopicProgressMetric records whether a topic has been planned (or skipped on resume) yet.
+func recordTopicProgressMetric(ctx context.Context, topicsSHA, topic string, done bool) {
+	var val int64
+	if done {
+		val = 1
+	}
+	planTopicProgressGauge.Record(ctx, val, metric.WithAttributes(
 		attribute.String("topics_sha", topicsSHA),
+		attribute.String("topic", topic),
 	))
 }

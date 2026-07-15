@@ -69,7 +69,12 @@ func (p *planner) Run(ctx context.Context) error {
 
 	sha := computeTopicsSHA(topics)
 
-	recordTopicsTotalMetric(ctx, sha, len(topics))
+	for _, topic := range topics {
+		recordTopicProgressMetric(ctx, sha, topic, false)
+		for partition, total := range info[topic].partitionCounts {
+			recordPartitionTotalFilesMetric(ctx, sha, topic, partition, total)
+		}
+	}
 
 	slog.InfoContext(ctx, "Planning restore for topics", "count", len(topics), "topics", topics, "sha", sha)
 
@@ -99,12 +104,14 @@ func (p *planner) Run(ctx context.Context) error {
 
 		if !resumed {
 			slog.InfoContext(ctx, "Skipping topic", "topic", topic)
+			recordTopicProgressMetric(ctx, sha, topic, true)
 			continue
 		}
 
-		if err := p.planForTopic(ctx, topic, rs, info[topic], sha); err != nil {
+		if err := p.planForTopic(ctx, topic, rs, sha); err != nil {
 			return err
 		}
+		recordTopicProgressMetric(ctx, sha, topic, true)
 	}
 	slog.InfoContext(ctx, "Finished plan restore")
 	return nil
@@ -303,14 +310,10 @@ func reorderLargeTopicsLast(ctx context.Context, topics []string, info map[strin
 	return append(small, large...)
 }
 
-func (p *planner) planForTopic(ctx context.Context, topic string, rs *resumeState, ti *topicInfo, topicsSHA string) error {
+func (p *planner) planForTopic(ctx context.Context, topic string, rs *resumeState, topicsSHA string) error {
 	input := &s3.ListObjectsV2Input{
 		Bucket: aws.String(p.cfg.S3.Bucket),
 		Prefix: aws.String(normalizePrefix(p.cfg.S3Prefix) + topic + "/"),
-	}
-
-	for partition, total := range ti.partitionCounts {
-		recordPartitionTotalFilesMetric(ctx, topicsSHA, topic, partition, total)
 	}
 
 	// partIndex tracks the 1-based absolute file index per partition across all pages.
