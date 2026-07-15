@@ -59,6 +59,7 @@ func (p *planner) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to list topics from S3: %w", err)
 	}
 
+	// filter topics based on include/exclude regexes, and only afterwards build the topics info to avoid listing S3 objects for excluded topics
 	topics, err = p.filterTopics(topics)
 	if err != nil {
 		return err
@@ -69,7 +70,7 @@ func (p *planner) Run(ctx context.Context) error {
 		return nil
 	}
 
-	info, err := p.getTopicsInfo(ctx, topics)
+	info, err := p.buildTopicsInfo(ctx, topics)
 	if err != nil {
 		return fmt.Errorf("failed to get topics info from S3: %w", err)
 	}
@@ -245,10 +246,10 @@ func (p *planner) listTopicsFromS3(ctx context.Context) ([]string, error) {
 	return topics, nil
 }
 
-// getTopicsInfo lists the S3 objects for each of the given topics and aggregates
-// per-topic size and per-partition file counts. Only called with the already
-// filtered topic list, so excluded topics are never listed.
-func (p *planner) getTopicsInfo(ctx context.Context, topics []string) (map[string]*topicInfo, error) {
+// buildTopicsInfo lists the S3 objects for each of the given topics and aggregates
+// per-topic size and per-partition file counts.
+func (p *planner) buildTopicsInfo(ctx context.Context, topics []string) (map[string]*topicInfo, error) {
+	slog.InfoContext(ctx, "Building topics info from S3 ...")
 	infoMap := make(map[string]*topicInfo, len(topics))
 
 	for _, topic := range topics {
