@@ -180,11 +180,22 @@ Each record produced into the plan topic carries the following headers:
 | Header | Description |
 | :--- | :--- |
 | `plan-restore.partition-file-index` | 1-based index of this file within its partition (absolute across resumes) |
-| `plan-restore.partition-total-files` | Total number of backup files for this partition |
-| `plan-restore.topic-total-files` | Total number of backup files for this topic, summed across all its partitions |
 | `plan-restore.topics-sha` | SHA-256 (hex) of the ordered, comma-joined topic list resolved at plan time |
 
-The `topics-restore` command reads these headers (except `plan-restore.topics-sha`, which is only used internally by the planner) and exposes them as Prometheus gauges (see [Restore metrics](#restore-metrics)).
+The `topics-restore` command reads both headers and exposes `plan-restore.partition-file-index` as a Prometheus gauge, tagged with the `topics_sha` from `plan-restore.topics-sha` so progress can be correlated back to the plan run that produced it (see [Restore metrics](#restore-metrics)).
+
+### Plan-restore metrics
+
+The `topics-plan-restore` command itself exposes gauges on the metrics endpoint (`/__/metrics`), set directly while building the plan rather than round-tripped through the record headers above:
+
+| Metric | Labels | Description |
+| :--- | :--- | :--- |
+| `kafka_data_keep_plan_restore_topics_total` | `topics_sha` | Number of topics included in the current restore plan |
+| `kafka_data_keep_plan_restore_partition_total_files` | `topic`, `partition`, `topics_sha` | Total number of planned backup files for this topic partition |
+
+The `topics_sha` label is the same SHA-256 stamped on the plan records via the `plan-restore.topics-sha` header, so it can be used to identify which plan run a given set of metric values belongs to.
+
+Because `topics-plan-restore` is a one-shot task that finishes as soon as the plan is produced, the process stays alive after completion (blocking until it receives a shutdown signal) so these final metric values are scraped until the pod is terminated. See [Deployment](#deployment).
 
 ### Topic-set consistency on resume
 
@@ -275,15 +286,15 @@ this ensures that all the files holding the data for a topic's partition will be
 
 ### Restore metrics
 
-The restore command exposes per-topic/per-partition progress gauges on the metrics endpoint (`/__/metrics`):
+The restore command exposes a per-topic/per-partition progress gauge on the metrics endpoint (`/__/metrics`):
 
 | Metric | Labels | Description |
 | :--- | :--- | :--- |
-| `kafka_data_keep_restore_partition_total_files` | `topic`, `partition` | Total number of backup files for this partition, as written into the plan |
-| `kafka_data_keep_restore_partition_file_index` | `topic`, `partition` | 1-based index of the backup file currently being processed |
-| `kafka_data_keep_restore_topic_total_files` | `topic` | Total number of backup files for this topic, summed across all its partitions |
+| `kafka_data_keep_restore_partition_file_index` | `topic`, `partition`, `topics_sha` | 1-based index of the backup file currently being processed |
 
-These are derived from the `plan-restore.partition-file-index` / `plan-restore.partition-total-files` / `plan-restore.topic-total-files` headers set by `topics-plan-restore`. If a plan was produced by an older version of the planner (without those headers), the corresponding gauges are simply not emitted for that run.
+This is derived from the `plan-restore.partition-file-index` header set by `topics-plan-restore` (`topics_sha` comes from the `plan-restore.topics-sha` header on the same record). If a plan was produced by an older version of the planner (without that header), the gauge is simply not emitted for that run.
+
+The total-files-per-partition metric is exposed by the planner itself instead — see [Plan-restore metrics](#plan-restore-metrics).
 
 ## Configuration
 
@@ -477,7 +488,7 @@ The progress of restore for topics can be monitored through the [exposed metrics
 1. Provision the new Kafka cluster.
 2. Create the plan-restore topic(s). Use 20–50 partitions to maximise parallelism during topics restore.
 3. Create the target topics with the **same partition count** as the source.
-4. Run `topics-plan-restore` (one per plan-restore topic). These are short-lived Kubernetes Jobs.
+4. Run `topics-plan-restore` (one per plan-restore topic). Deploy as a Kubernetes Deployment with 1 replica — the process keeps running after the plan is produced so its metrics remain scrapeable (see [Plan-restore metrics](#plan-restore-metrics)).
 5. Run `topics-restore` (one Deployment per plan-restore topic). Scale replicas to match the plan-restore topic's partition count. Monitor consumer group progress to determine completion.
 6. Run `consumer-groups-restore`. Can run in parallel with step 5. Runs as a Kubernetes Job and exits when all consumer groups are restored.
 
