@@ -14,9 +14,6 @@ import (
 	"github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/codec/avro"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/topics/planrestore"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 )
 
 type kafkaS3Restorer struct {
@@ -29,29 +26,6 @@ type kafkaS3Restorer struct {
 
 	latestReader         *kafka.LatestReader
 	excludeTopicsRegexes []*regexp.Regexp
-}
-
-var (
-	restoreTotalFilesGauge = initInt64Gauge(
-		"kafka.data-keep.restore.partition-total-files",
-		"Total number of backup files for a topic partition, as planned",
-	)
-	restoreFileIndexGauge = initInt64Gauge(
-		"kafka.data-keep.restore.partition-file-index",
-		"1-based index of the backup file currently being restored for a topic partition",
-	)
-	restoreTopicTotalFilesGauge = initInt64Gauge(
-		"kafka.data-keep.restore.topic-total-files",
-		"Total number of backup files for a topic, summed across all its partitions, as planned",
-	)
-)
-
-func initInt64Gauge(name, desc string) metric.Int64Gauge {
-	g, err := otel.Meter("kafka-data-keep").Int64Gauge(name, metric.WithDescription(desc))
-	if err != nil {
-		panic(fmt.Sprintf("failed to create gauge metric %s: %v", name, err))
-	}
-	return g
 }
 
 func (r *kafkaS3Restorer) Run(ctx context.Context) error {
@@ -136,36 +110,17 @@ func (r *kafkaS3Restorer) restoreFile(ctx context.Context, planRec *kgo.Record) 
 	return nil
 }
 
-// recordFileProgressMetrics reads the plan-restore.partition-file-index, plan-restore.partition-total-files,
-// and plan-restore.topic-total-files headers from the plan record and updates the corresponding gauges.
-// Missing or unparseable headers are silently skipped for backward-compatibility with older plans.
+// recordFileProgressMetrics reads the plan-restore.partition-file-index header from the plan record
+// and updates the corresponding gauge. A missing or unparseable header is silently skipped for
+// backward-compatibility with older plans.
 func (r *kafkaS3Restorer) recordFileProgressMetrics(ctx context.Context, headers []kgo.RecordHeader, topic, partition string) {
-	partitionAttrs := metric.WithAttributes(
-		attribute.String("topic", topic),
-		attribute.String("partition", partition),
-	)
+	topicsSHA, _ := headerValue(headers, planrestore.TopicsSHAHeader)
 
 	if idxStr, ok := headerValue(headers, planrestore.PartitionFileIndexHeader); ok {
 		if idx, err := strconv.ParseInt(idxStr, 10, 64); err == nil {
-			restoreFileIndexGauge.Record(ctx, idx, partitionAttrs)
+			recordFileIndexMetric(ctx, topicsSHA, topic, partition, idx)
 		} else {
 			slog.DebugContext(ctx, "Failed parsing partition-file-index header", "value", idxStr, "error", err)
-		}
-	}
-
-	if totalStr, ok := headerValue(headers, planrestore.PartitionTotalFilesHeader); ok {
-		if total, err := strconv.ParseInt(totalStr, 10, 64); err == nil {
-			restoreTotalFilesGauge.Record(ctx, total, partitionAttrs)
-		} else {
-			slog.DebugContext(ctx, "Failed parsing partition-total-files header", "value", totalStr, "error", err)
-		}
-	}
-
-	if topicTotalStr, ok := headerValue(headers, planrestore.TopicTotalFilesHeader); ok {
-		if topicTotal, err := strconv.ParseInt(topicTotalStr, 10, 64); err == nil {
-			restoreTopicTotalFilesGauge.Record(ctx, topicTotal, metric.WithAttributes(attribute.String("topic", topic)))
-		} else {
-			slog.DebugContext(ctx, "Failed parsing topic-total-files header", "value", topicTotalStr, "error", err)
 		}
 	}
 }

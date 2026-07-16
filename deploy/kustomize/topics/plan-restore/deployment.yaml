@@ -3,19 +3,29 @@ kind: ServiceAccount
 metadata:
   name: kafka-topics-plan-restore
 ---
-apiVersion: batch/v1
-kind: Job
+apiVersion: apps/v1
+kind: Deployment
 metadata:
   name: kafka-topics-plan-restore
   labels:
     app: kafka-topics-plan-restore
     app.kubernetes.io/name: kafka-topics-plan-restore
 spec:
-  # plan-restore supports resuming, so we can keep the default backoff limit of 6 times.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka-topics-plan-restore
   template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /__/metrics
+        prometheus.io/port: "8081"
+      labels:
+        app: kafka-topics-plan-restore
+        app.kubernetes.io/name: kafka-topics-plan-restore
     spec:
       serviceAccountName: kafka-topics-plan-restore
-      restartPolicy: OnFailure
       containers:
         - name: kafka-topics-plan-restore
           image: quay.io/utilitywarehouse/kafka-data-keep:main

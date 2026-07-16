@@ -21,10 +21,6 @@ import (
 const (
 	// PartitionFileIndexHeader is the 1-based index of this file within its partition (absolute across resumes).
 	PartitionFileIndexHeader = "plan-restore.partition-file-index"
-	// PartitionTotalFilesHeader is the total number of backup files for this partition.
-	PartitionTotalFilesHeader = "plan-restore.partition-total-files"
-	// TopicTotalFilesHeader is the total number of backup files for this topic, summed across all its partitions.
-	TopicTotalFilesHeader = "plan-restore.topic-total-files"
 	// TopicsSHAHeader is the SHA-256 of the ordered topic list at plan time.
 	// Used to detect topic-set changes between a prior plan run and a resume.
 	TopicsSHAHeader = "plan-restore.topics-sha"
@@ -35,15 +31,6 @@ type topicInfo struct {
 	sizeBytes int64
 	// partitionCounts maps partition name to the number of backup files in that partition.
 	partitionCounts map[string]int
-}
-
-// totalFiles returns the total number of backup files for this topic, summed across all its partitions.
-func (ti *topicInfo) totalFiles() int {
-	total := 0
-	for _, count := range ti.partitionCounts {
-		total += count
-	}
-	return total
 }
 
 type planner struct {
@@ -82,6 +69,13 @@ func (p *planner) Run(ctx context.Context) error {
 
 	sha := computeTopicsSHA(topics)
 
+	for _, topic := range topics {
+		recordTopicProgressMetric(ctx, sha, topic, false)
+		for partition, total := range info[topic].partitionCounts {
+			recordPartitionTotalFilesMetric(ctx, sha, topic, partition, total)
+		}
+	}
+
 	slog.InfoContext(ctx, "Planning restore for topics", "count", len(topics), "topics", topics, "sha", sha)
 
 	latestRecords, err := p.latestReader.Read(ctx, p.cfg.PlanTopic)
@@ -110,13 +104,16 @@ func (p *planner) Run(ctx context.Context) error {
 
 		if !resumed {
 			slog.InfoContext(ctx, "Skipping topic", "topic", topic)
+			recordTopicProgressMetric(ctx, sha, topic, true)
 			continue
 		}
 
-		if err := p.planForTopic(ctx, topic, rs, info[topic], sha); err != nil {
+		if err := p.planForTopic(ctx, topic, rs, sha); err != nil {
 			return err
 		}
+		recordTopicProgressMetric(ctx, sha, topic, true)
 	}
+	slog.InfoContext(ctx, "Finished plan restore")
 	return nil
 }
 
@@ -313,7 +310,7 @@ func reorderLargeTopicsLast(ctx context.Context, topics []string, info map[strin
 	return append(small, large...)
 }
 
-func (p *planner) planForTopic(ctx context.Context, topic string, rs *resumeState, ti *topicInfo, topicsSHA string) error {
+func (p *planner) planForTopic(ctx context.Context, topic string, rs *resumeState, topicsSHA string) error {
 	input := &s3.ListObjectsV2Input{
 		Bucket: aws.String(p.cfg.S3.Bucket),
 		Prefix: aws.String(normalizePrefix(p.cfg.S3Prefix) + topic + "/"),
@@ -323,7 +320,6 @@ func (p *planner) planForTopic(ctx context.Context, topic string, rs *resumeStat
 	// For the resume partition, seed from the stored header so the next file gets the
 	// correct absolute index without re-listing files before StartAfter.
 	partIndex := make(map[string]int)
-	topicTotalFiles := strconv.Itoa(ti.totalFiles())
 
 	if rs != nil && rs.topic == topic {
 		input.StartAfter = aws.String(rs.file)
@@ -366,8 +362,6 @@ func (p *planner) planForTopic(ctx context.Context, topic string, rs *resumeStat
 				Key:   []byte(partitioningKey(key)),
 				Headers: []kgo.RecordHeader{
 					{Key: PartitionFileIndexHeader, Value: []byte(strconv.Itoa(partIndex[partition]))},
-					{Key: PartitionTotalFilesHeader, Value: []byte(strconv.Itoa(ti.partitionCounts[partition]))},
-					{Key: TopicTotalFilesHeader, Value: []byte(topicTotalFiles)},
 					{Key: TopicsSHAHeader, Value: []byte(topicsSHA)},
 				},
 			})

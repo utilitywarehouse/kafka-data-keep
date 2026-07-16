@@ -172,6 +172,12 @@ func topicsPlanRestoreCmd(ctx context.Context, args []string) error {
 	if err := topicsplanrestore.Run(ctx, cfg); err != nil {
 		return fmt.Errorf("error running plan-restore: %w", err)
 	}
+
+	// plan-restore is a one-shot job; keep the process (and its metrics server) alive
+	// until shutdown so the final metrics values are scraped.
+	slog.InfoContext(ctx, "Plan restore finished, waiting for shutdown signal")
+	<-ctx.Done()
+
 	return nil
 }
 
