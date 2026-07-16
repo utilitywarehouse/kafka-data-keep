@@ -8,7 +8,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 )
 
-var restoreFileIndexGauge = internal.InitInt64Gauge(
+var restoreFileIndexGauge = internal.MustInitInt64Gauge(
 	"kafka.data-keep.restore.partition-file-index",
 	"1-based index of the backup file currently being restored for a topic partition",
 )

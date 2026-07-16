@@ -9,11 +9,11 @@ import (
 )
 
 var (
-	planPartitionTotalFilesGauge = internal.InitInt64Gauge(
+	planPartitionTotalFilesGauge = internal.MustInitInt64Gauge(
 		"kafka.data-keep.plan-restore.partition-total-files",
 		"Total number of backup files for a topic partition, as planned",
 	)
-	planTopicProgressGauge = internal.InitInt64Gauge(
+	planTopicProgressGauge = internal.MustInitInt64Gauge(
 		"kafka.data-keep.plan-restore.topic-progress",
 		"Progress of planning a topic: 0 while pending, 1 once it has been planned or skipped on resume",
 	)
