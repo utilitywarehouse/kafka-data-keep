@@ -19,6 +19,7 @@ type AppConfig struct {
 	RestoreTopicPrefix   string
 	ConsumerGroup        string
 	ExcludeTopicsRegexes string
+	FailOnExistingData   bool
 	S3                   ints3.Config
 }
 

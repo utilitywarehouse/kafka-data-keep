@@ -51,6 +51,8 @@ spec:
               value: ""
             - name: EXCLUDE_TOPICS_REGEXES
               value: ""
+            - name: FAIL_ON_EXISTING_DATA
+              value: "true"
             - name: S3_BUCKET
               value: TBD
             - name: AWS_REGION

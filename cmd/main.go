@@ -287,6 +287,12 @@ func loadTopicsRestoreAppConfig(args []string) (topicsrestore.AppConfig, error) 
 		getEnv("KAFKA_GROUP_ID", "pubsub.msk-data-keep-restore"),
 		"Kafka consumer group ID",
 	)
+	fs.BoolVar(
+		&cfg.FailOnExistingData,
+		"fail-on-existing-data",
+		getEnvBool("FAIL_ON_EXISTING_DATA", true),
+		"Fail restore if a destination topic partition already contains data that was not written by a previous restore run",
+	)
 
 	// Storage
 	bindS3Config(fs, &cfg.S3)
