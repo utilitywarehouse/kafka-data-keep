@@ -42,9 +42,7 @@ type Restorer struct {
 func (r *Restorer) Restore(ctx context.Context, offsets []codec.ConsumerGroupOffset) error {
 	for _, cg := range offsets {
 		for _, to := range cg.Topics {
-			for _, po := range to.Partitions {
-				recordStatusMetric(ctx, cg.GroupID, to.Topic, po.Partition, statusScheduled)
-			}
+			recordStatusMetric(ctx, cg.GroupID, to.Topic, statusScheduled)
 		}
 	}
 
@@ -66,13 +64,17 @@ func (r *Restorer) Restore(ctx context.Context, offsets []codec.ConsumerGroupOff
 	}
 	slog.InfoContext(ctx, "Filtered non existing topics", "remaining", len(grouped))
 
+	// Build pending partition counts per (groupID, topic) and mark in_progress.
+	// Terminal statuses are emitted only once all partitions for a group+topic are done.
+	pendingCounts := make(map[string]int)
 	for _, entries := range grouped {
 		for _, e := range entries {
-			recordStatusMetric(ctx, e.GroupID, e.Topic, e.Partition, statusInProgress)
+			recordStatusMetric(ctx, e.GroupID, e.Topic, statusInProgress)
+			pendingCounts[groupTopicKey(e.GroupID, e.Topic)]++
 		}
 	}
 
-	return r.runLoop(ctx, r.loopInterval, grouped)
+	return r.runLoop(ctx, r.loopInterval, grouped, pendingCounts)
 }
 
 // filterAlreadyRestored removes partitions that already have offsets committed
@@ -127,7 +129,6 @@ func (r *Restorer) filterTopicPartitions(ctx context.Context, cg codec.ConsumerG
 				if resp, ok := fetchedPartitions[po.Partition]; ok && resp.At >= 0 {
 					slog.DebugContext(ctx, "Skipping already restored partition",
 						"group", cg.GroupID, "topic", to.Topic, "partition", po.Partition)
-					recordStatusMetric(ctx, cg.GroupID, to.Topic, po.Partition, statusAlreadyRestored)
 					continue
 				}
 			}
@@ -138,6 +139,8 @@ func (r *Restorer) filterTopicPartitions(ctx context.Context, cg codec.ConsumerG
 				Topic:      to.Topic,
 				Partitions: remaining,
 			})
+		} else {
+			recordStatusMetric(ctx, cg.GroupID, to.Topic, statusAlreadyRestored)
 		}
 	}
 	return filtered
@@ -173,7 +176,7 @@ func filterExcludedTopics(ctx context.Context, grouped map[string][]groupOffset,
 		if internal.MatchesAny(topic, excludeRegexes) {
 			slog.InfoContext(ctx, "Skipping excluded topic", "topic", topic)
 			for _, e := range entries {
-				recordStatusMetric(ctx, e.GroupID, e.Topic, e.Partition, statusSkipped)
+				recordStatusMetric(ctx, e.GroupID, e.Topic, statusSkipped)
 			}
 			continue
 		}
@@ -209,7 +212,7 @@ func (r *Restorer) filterNonExistingTopics(ctx context.Context, grouped map[stri
 		} else {
 			slog.InfoContext(ctx, "Skipping topic not found in cluster", "topic", restoredTopic)
 			for _, e := range entries {
-				recordStatusMetric(ctx, e.GroupID, e.Topic, e.Partition, statusSkipped)
+				recordStatusMetric(ctx, e.GroupID, e.Topic, statusSkipped)
 			}
 		}
 	}
@@ -217,7 +220,7 @@ func (r *Restorer) filterNonExistingTopics(ctx context.Context, grouped map[stri
 }
 
 // runLoop runs the restore process on a ticker until all offsets are resolved or context is cancelled.
-func (r *Restorer) runLoop(ctx context.Context, interval time.Duration, grouped map[string][]groupOffset) error {
+func (r *Restorer) runLoop(ctx context.Context, interval time.Duration, grouped map[string][]groupOffset, pendingCounts map[string]int) error {
 	if len(grouped) == 0 {
 		slog.InfoContext(ctx, "No consumer groups to restore")
 		return nil
@@ -227,7 +230,7 @@ func (r *Restorer) runLoop(ctx context.Context, interval time.Duration, grouped 
 	defer ticker.Stop()
 
 	for {
-		if err := r.processTopics(ctx, grouped); err != nil {
+		if err := r.processTopics(ctx, grouped, pendingCounts); err != nil {
 			return err
 		}
 		if len(grouped) == 0 {
@@ -248,9 +251,9 @@ func (r *Restorer) runLoop(ctx context.Context, interval time.Duration, grouped 
 }
 
 // processTopics iterates through all topics and processes their group offsets.
-func (r *Restorer) processTopics(ctx context.Context, grouped map[string][]groupOffset) error {
+func (r *Restorer) processTopics(ctx context.Context, grouped map[string][]groupOffset, pendingCounts map[string]int) error {
 	for topic, entries := range grouped {
-		remaining, err := r.processTopic(ctx, topic, entries)
+		remaining, err := r.processTopic(ctx, topic, entries, pendingCounts)
 		if err != nil {
 			return fmt.Errorf("processing topic %s: %w", topic, err)
 		}
@@ -264,7 +267,7 @@ func (r *Restorer) processTopics(ctx context.Context, grouped map[string][]group
 }
 
 // processTopic reads the latest record on each partition and resolves offsets for the group entries.
-func (r *Restorer) processTopic(ctx context.Context, topic string, entries []groupOffset) ([]groupOffset, error) {
+func (r *Restorer) processTopic(ctx context.Context, topic string, entries []groupOffset, pendingCounts map[string]int) ([]groupOffset, error) {
 	slog.InfoContext(ctx, "Start processing topic", "topic", topic, "entries", entries)
 	restoredTopic := r.restoredTopic(topic)
 
@@ -284,7 +287,7 @@ func (r *Restorer) processTopic(ctx context.Context, topic string, entries []gro
 			continue
 		}
 
-		resolved, err := r.resolveEntry(ctx, entry, rec)
+		resolved, err := r.resolveEntry(ctx, entry, rec, pendingCounts)
 		if err != nil {
 			return nil, err
 		}
@@ -302,7 +305,7 @@ func (r *Restorer) restoredTopic(topic string) string {
 
 // resolveEntry checks if the latest record's source offset covers the entry's offset.
 // If so, it finds the correct restored offset and commits it.
-func (r *Restorer) resolveEntry(ctx context.Context, entry groupOffset, latestRecord *kgo.Record) (bool, error) {
+func (r *Restorer) resolveEntry(ctx context.Context, entry groupOffset, latestRecord *kgo.Record, pendingCounts map[string]int) (bool, error) {
 	sourceOffset, err := topicsrestore.GetSourceOffsetFromHeader(latestRecord)
 	if err != nil {
 		return false, fmt.Errorf("getting source offset from header: %w", err)
@@ -337,7 +340,11 @@ func (r *Restorer) resolveEntry(ctx context.Context, entry groupOffset, latestRe
 	}
 
 	slog.InfoContext(ctx, "Restored consumer group offset", "group_entry", entry, "restored_offset", foundOffset)
-	recordStatusMetric(ctx, entry.GroupID, entry.Topic, entry.Partition, statusRestored)
+	key := groupTopicKey(entry.GroupID, entry.Topic)
+	pendingCounts[key]--
+	if pendingCounts[key] == 0 {
+		recordStatusMetric(ctx, entry.GroupID, entry.Topic, statusRestored)
+	}
 	return true, nil
 }
 
@@ -513,6 +520,10 @@ func (r *Restorer) commitOffset(ctx context.Context, groupID, topic string, part
 		return fmt.Errorf("committing offset for group %s topic %s partition %d: %w", groupID, topic, partition, resp.Error())
 	}
 	return nil
+}
+
+func groupTopicKey(groupID, topic string) string {
+	return groupID + "|" + topic
 }
 
 func uniquePartitions(entries []groupOffset) []int32 {
