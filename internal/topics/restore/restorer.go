@@ -184,6 +184,9 @@ func (r *kafkaS3Restorer) computeLastRestoredOffset(ctx context.Context, topic s
 
 	if lastRestoredOffset == -1 {
 		slog.DebugContext(ctx, "compute last restored offset: restore header not found in last record", "headers", rec.Headers, "topic", rec.Topic, "partition", rec.Partition, "offset", rec.Offset)
+		if r.cfg.FailOnExistingData {
+			return -1, fmt.Errorf("refusing to restore into topic %s partition %d: last record at offset %d has no %s header, meaning it was not written by a previous restore", rec.Topic, rec.Partition, rec.Offset, sourceOffsetHeader)
+		}
 	}
 	return lastRestoredOffset, nil
 }

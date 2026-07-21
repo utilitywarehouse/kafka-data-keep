@@ -47,11 +47,12 @@ const (
 )
 
 func TestRestore(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("Skipping e2e test in short mode")
 	}
 
-	t.Parallel()
 	ctx := t.Context()
 
 	// Start Services
@@ -84,70 +85,196 @@ func TestRestore(t *testing.T) {
 
 	runPlanRestore(ctx, t, kadmClient, kafkaBrokers, s3Endpoint)
 
-	// Create the restore Topic (15 partitions) with the "restored" prefix
-	restoredTopic := restoredPrefix + srcTopic
-	_, err = kadmClient.CreateTopic(ctx, int32(srcTopicPartitions), 1, nil, restoredTopic)
-	require.NoError(t, err)
+	// The subtests below all restore from the same plan topic and backed-up S3 data, created
+	// once above. They differentiate their output by using a unique RestoreTopicPrefix (and a
+	// unique consumer group) each, so they can run concurrently against shared infrastructure.
 
-	restoredExcludedTopic := restoredPrefix + excludeRestoreTopic
-	_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, restoredExcludedTopic)
-	require.NoError(t, err)
+	t.Run("dedup, resume and topic exclusion", func(t *testing.T) {
+		t.Parallel()
+		ctx := t.Context()
 
-	// 8. Run Restore
-	restoreGroup := newRandomName("e2e-restore")
-	restoreCfg := restore.AppConfig{
-		KafkaConfig: kafka.Config{
-			Brokers: kafkaBrokers,
-		},
-		PlanTopic:            planTopic,
-		RestoreTopicPrefix:   restoredPrefix,
-		ConsumerGroup:        restoreGroup,
-		ExcludeTopicsRegexes: excludeRestoreTopic,
-		S3: ints3.Config{
-			Bucket:   bucketName,
-			Endpoint: s3Endpoint,
-			Region:   testutil.MinioRegion,
-		},
-	}
+		// Create the restore Topic (15 partitions) with the "restored" prefix
+		restoredTopic := restoredPrefix + srcTopic
+		_, err := kadmClient.CreateTopic(ctx, int32(srcTopicPartitions), 1, nil, restoredTopic)
+		require.NoError(t, err)
 
-	restoreCtx, restoreCancel := context.WithCancel(ctx)
-	defer restoreCancel()
+		restoredExcludedTopic := restoredPrefix + excludeRestoreTopic
+		_, err = kadmClient.CreateTopic(ctx, 1, 1, nil, restoredExcludedTopic)
+		require.NoError(t, err)
 
-	restoreErrCh := make(chan error, 1)
-	go func() {
-		restoreErrCh <- restore.Run(restoreCtx, restoreCfg)
-	}()
+		restoreGroup := newRandomName("e2e-restore")
+		restoreCfg := restore.AppConfig{
+			KafkaConfig: kafka.Config{
+				Brokers: kafkaBrokers,
+			},
+			PlanTopic:            planTopic,
+			RestoreTopicPrefix:   restoredPrefix,
+			ConsumerGroup:        restoreGroup,
+			ExcludeTopicsRegexes: excludeRestoreTopic,
+			S3: ints3.Config{
+				Bucket:   bucketName,
+				Endpoint: s3Endpoint,
+				Region:   testutil.MinioRegion,
+			},
+		}
 
-	// pause the restore after some records were restored. Stopping after processing between 10 and 70 percent.
-	_, err = testutil.WaitForRecords(t, restoredTopic, kafkaBrokers, total(totalRecsPerPartition)*randomInt(10, 70)/100)
-	require.NoError(t, err)
+		restoreCtx, restoreCancel := context.WithCancel(ctx)
+		defer restoreCancel()
 
-	stopApp(t, restoreCancel, restoreErrCh)
+		restoreErrCh := make(chan error, 1)
+		go func() {
+			restoreErrCh <- restore.Run(restoreCtx, restoreCfg)
+		}()
 
-	// rewind the offsets in the plan topic to the beginning so that we force it to reconsume the messages to check the resume mechanism
-	resetConsumerGroup(ctx, t, kadmClient, restoreGroup)
+		// pause the restore after some records were restored. Stopping after processing between 10 and 70 percent.
+		_, err = testutil.WaitForRecords(t, restoredTopic, kafkaBrokers, total(totalRecsPerPartition)*randomInt(10, 70)/100)
+		require.NoError(t, err)
 
-	// start again the restore
-	resumeRestoreCtx, resumeRestoreCancel := context.WithCancel(ctx)
-	defer resumeRestoreCancel()
-	resumeRestoreErrCh := make(chan error, 1)
-	go func() {
-		resumeRestoreErrCh <- restore.Run(resumeRestoreCtx, restoreCfg)
-	}()
+		stopApp(t, restoreCancel, restoreErrCh)
 
-	// Wait for the restore group to finish consuming the plan topic
-	testutil.WaitConsumeAll(t, kadmClient, planTopic, restoreGroup)
+		// rewind the offsets in the plan topic to the beginning so that we force it to reconsume the messages to check the resume mechanism
+		resetConsumerGroup(ctx, t, kadmClient, restoreGroup)
 
-	stopApp(t, resumeRestoreCancel, resumeRestoreErrCh)
+		// start again the restore
+		resumeRestoreCtx, resumeRestoreCancel := context.WithCancel(ctx)
+		defer resumeRestoreCancel()
+		resumeRestoreErrCh := make(chan error, 1)
+		go func() {
+			resumeRestoreErrCh <- restore.Run(resumeRestoreCtx, restoreCfg)
+		}()
 
-	validateRestoredRecords(t, restoredTopic, kafkaBrokers, totalRecsPerPartition, deletedRecsPerPartition)
+		// Wait for the restore group to finish consuming the plan topic
+		testutil.WaitConsumeAll(t, kadmClient, planTopic, restoreGroup)
 
-	// check topic was excluded on restore
-	restoredRecs, err := testutil.ReadAll(t, restoredExcludedTopic, kafkaBrokers)
-	require.NoError(t, err)
-	require.Empty(t, restoredRecs, "excluded restored topic should be empty")
+		stopApp(t, resumeRestoreCancel, resumeRestoreErrCh)
 
-	t.Log("finished test successfully")
+		validateRestoredRecords(t, restoredTopic, kafkaBrokers, totalRecsPerPartition, deletedRecsPerPartition)
+
+		// check topic was excluded on restore
+		restoredRecs, err := testutil.ReadAll(t, restoredExcludedTopic, kafkaBrokers)
+		require.NoError(t, err)
+		require.Empty(t, restoredRecs, "excluded restored topic should be empty")
+	})
+
+	t.Run("fail when destination has existing data", func(t *testing.T) {
+		t.Parallel()
+		ctx := t.Context()
+
+		restoreTopicPrefix := restoredPrefix + "deny-"
+		restoredTopic := restoreTopicPrefix + srcTopic
+		_, err := kadmClient.CreateTopic(ctx, int32(srcTopicPartitions), 1, nil, restoredTopic)
+		require.NoError(t, err)
+
+		// seed every partition of the destination with a record that was NOT produced by a
+		// previous restore run (no restore.source-offset header), simulating foreign data
+		// already present there.
+		producerClient, err := kgo.NewClient(
+			kgo.SeedBrokers(kafkaBrokers),
+			kgo.RecordPartitioner(kgo.ManualPartitioner()),
+		)
+		require.NoError(t, err)
+		defer producerClient.Close()
+
+		for p := range srcTopicPartitions {
+			res := producerClient.ProduceSync(ctx, &kgo.Record{
+				//nolint:gosec // partitions count is small enough to fit in int32
+				Topic: restoredTopic, Partition: int32(p), Key: []byte("foreign-key"), Value: []byte("foreign-value"),
+			})
+			require.NoError(t, res.FirstErr())
+		}
+
+		restoreGroup := newRandomName("e2e-restore-deny")
+		restoreCfg := restore.AppConfig{
+			KafkaConfig: kafka.Config{
+				Brokers: kafkaBrokers,
+			},
+			PlanTopic:            planTopic,
+			RestoreTopicPrefix:   restoreTopicPrefix,
+			ConsumerGroup:        restoreGroup,
+			ExcludeTopicsRegexes: excludeRestoreTopic,
+			FailOnExistingData:   true,
+			S3: ints3.Config{
+				Bucket:   bucketName,
+				Endpoint: s3Endpoint,
+				Region:   testutil.MinioRegion,
+			},
+		}
+
+		err = restore.Run(ctx, restoreCfg)
+		require.Error(t, err, "restore should fail when destination has foreign data")
+		require.ErrorContains(t, err, "refusing to restore")
+
+		recs, err := testutil.ReadAll(t, restoredTopic, kafkaBrokers)
+		require.NoError(t, err)
+		require.Len(t, recs, srcTopicPartitions, "no restored records should have been written to any partition")
+		for _, r := range recs {
+			require.Equal(t, "foreign-value", string(r.Value), "partition %d should not have been restored into", r.Partition)
+		}
+	})
+
+	t.Run("allows restore over existing data", func(t *testing.T) {
+		t.Parallel()
+		ctx := t.Context()
+
+		restoreTopicPrefix := restoredPrefix + "allow-"
+		restoredTopic := restoreTopicPrefix + srcTopic
+		_, err := kadmClient.CreateTopic(ctx, int32(srcTopicPartitions), 1, nil, restoredTopic)
+		require.NoError(t, err)
+
+		// seed every partition of the destination with a record that was NOT produced by a
+		// previous restore run (no restore.source-offset header), simulating foreign data
+		// already present there.
+		producerClient, err := kgo.NewClient(
+			kgo.SeedBrokers(kafkaBrokers),
+			kgo.RecordPartitioner(kgo.ManualPartitioner()),
+		)
+		require.NoError(t, err)
+		defer producerClient.Close()
+
+		for p := range srcTopicPartitions {
+			res := producerClient.ProduceSync(ctx, &kgo.Record{
+				//nolint:gosec // partitions count is small enough to fit in int32
+				Topic: restoredTopic, Partition: int32(p), Key: []byte("foreign-key"), Value: []byte("foreign-value"),
+			})
+			require.NoError(t, res.FirstErr())
+		}
+
+		restoreGroup := newRandomName("e2e-restore-allow")
+		restoreCfg := restore.AppConfig{
+			KafkaConfig: kafka.Config{
+				Brokers: kafkaBrokers,
+			},
+			PlanTopic:            planTopic,
+			RestoreTopicPrefix:   restoreTopicPrefix,
+			ConsumerGroup:        restoreGroup,
+			ExcludeTopicsRegexes: excludeRestoreTopic,
+			FailOnExistingData:   false,
+			S3: ints3.Config{
+				Bucket:   bucketName,
+				Endpoint: s3Endpoint,
+				Region:   testutil.MinioRegion,
+			},
+		}
+
+		restoreCtx, restoreCancel := context.WithCancel(ctx)
+		defer restoreCancel()
+		restoreErrCh := make(chan error, 1)
+		go func() {
+			restoreErrCh <- restore.Run(restoreCtx, restoreCfg)
+		}()
+
+		// Wait for the restore group to finish consuming the plan topic
+		testutil.WaitConsumeAll(t, kadmClient, planTopic, restoreGroup)
+
+		stopApp(t, restoreCancel, restoreErrCh)
+
+		recs, err := testutil.ReadAll(t, restoredTopic, kafkaBrokers)
+		require.NoError(t, err)
+
+		// one extra (foreign) record per partition on top of the restored total; per-partition
+		// ordering/content/dedup is already covered by the "dedup, resume and topic exclusion" subtest.
+		require.Len(t, recs, total(totalRecsPerPartition)+srcTopicPartitions, "restored topic should contain the foreign records plus all restored records")
+	})
 }
 
 func duplicateRandomFilesForPartition(ctx context.Context, t *testing.T, s3Client *s3.Client, partition int, count int) {

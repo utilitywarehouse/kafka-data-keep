@@ -280,6 +280,12 @@ This ensures that even if S3 contains redundant backup files, the restored Kafka
 The restore process supports resuming from where it left off if interrupted. Since the restore command uses a Kafka consumer group to read from the plan topic, it automatically tracks progress via committed offsets. If the restore process is stopped and restarted, it will continue from the last committed offset, ensuring no data is lost or duplicated during restoration.
 In addition, to avoid duplicate records due to redeliveries from the plan topic, upon resuming, it will read the last restored message in each partition to determine the last restored offset from the "restore.source-offset" header.
 
+### Existing data protection
+
+Before restoring into a destination topic partition for the first time, the restore process checks the last message currently in that partition. If a message is present and it does not have a `restore.source-offset` header, it means the data was not written by a previous restore run of this tool (e.g. the topic is already receiving live production traffic, or was seeded some other way).
+
+By default (`-fail-on-existing-data=true`), the restore process refuses to write to that partition and returns an error, to avoid interleaving restored historical data with unrelated data already in the topic. Set `-fail-on-existing-data=false` to disable this check and allow restoring on top of such data anyway.
+
 ### Parallelism
 It supports launching as many instances as the number of partitions in the plan topic.
 Each instance will consume a single partition from the plan topic and restore its data from S3.
@@ -315,6 +321,7 @@ The `topics-restore` subcommand supports the following flags and environment var
 | `-restore-topic-prefix` | `KAFKA_RESTORE_TOPIC_PREFIX` | `pubsub.restore-test.` | Prefix to add to the restored topics |
 | `-exclude-topics-regexes` | `EXCLUDE_TOPICS_REGEXES` | | List of regular expressions to exclude topics from restore (comma separated) |
 | `-group-id`             | `KAFKA_GROUP_ID`             | `pubsub.msk-data-keep-restore` | Kafka consumer group ID |
+| `-fail-on-existing-data` | `FAIL_ON_EXISTING_DATA`     | `true` | Fail restore if a destination topic partition already contains data that was not written by a previous restore run |
 | `-s3-bucket`            | `S3_BUCKET`                  | | S3 bucket name where the backups are stored |
 | `-s3-endpoint`          | `AWS_ENDPOINT_URL`           | | S3 endpoint URL (for LocalStack or custom S3-compatible storage) |
 | `-s3-region`            | `AWS_REGION`                 | `eu-west-1` | S3 region |
