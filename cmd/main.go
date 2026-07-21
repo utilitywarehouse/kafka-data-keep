@@ -409,6 +409,12 @@ func consumerGroupsRestoreCmd(ctx context.Context, args []string) error {
 	if err := consumergroupsrestore.Run(ctx, cfg); err != nil {
 		return fmt.Errorf("error running consumer-groups-restore: %w", err)
 	}
+
+	// consumer group restore is a one-shot task; keep the process (and its metrics server) alive
+	// until shutdown so the final metrics values are scraped.
+	slog.InfoContext(ctx, "Consumer group restore finished, waiting for shutdown signal")
+	<-ctx.Done()
+
 	return nil
 }
 
