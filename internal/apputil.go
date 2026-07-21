@@ -136,8 +136,8 @@ func initMetricsServer(ctx context.Context, port string) (CloseFunc, error) {
 		metric.WithReader(exporter),
 		// Raise the default cardinality limit (2000) to accommodate high-cardinality
 		// instruments such as the consumer groups restore status gauge, which is keyed
-		// by (group, topic, partition) and can easily exceed 2000 unique combinations.
-		metric.WithCardinalityLimit(100000),
+		// by (group, topic) and could exceed 2000 unique combinations.
+		metric.WithCardinalityLimit(10000),
 	))
 
 	var metricInitErr error
