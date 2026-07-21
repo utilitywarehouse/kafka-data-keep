@@ -132,7 +132,13 @@ func initMetricsServer(ctx context.Context, port string) (CloseFunc, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed initializing prometheus exporter: %w", err)
 	}
-	otel.SetMeterProvider(metric.NewMeterProvider(metric.WithReader(exporter)))
+	otel.SetMeterProvider(metric.NewMeterProvider(
+		metric.WithReader(exporter),
+		// Raise the default cardinality limit (2000) to accommodate high-cardinality
+		// instruments such as the consumer groups restore status gauge, which is keyed
+		// by (group, topic, partition) and can easily exceed 2000 unique combinations.
+		metric.WithCardinalityLimit(100000),
+	))
 
 	var metricInitErr error
 	metricInit.Do(func() {
