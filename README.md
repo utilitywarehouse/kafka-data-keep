@@ -445,6 +445,24 @@ The `consumer-groups-restore` subcommand supports the following flags and enviro
 | `-enable-pprof` | `ENABLE_PPROF` | `false` | Enable pprof server for profiling |
 | `-pprof-port` | `PPROF_PORT` | `6060` | The port to use for the pprof server |
 
+### Consumer groups restore metrics
+
+The restore command exposes a per-group/topic/partition status gauge on the metrics endpoint (`/__/metrics`):
+
+| Metric | Labels | Description |
+| :--- | :--- | :--- |
+| `kafka_data_keep_consumergroups_restore_status` | `group`, `topic`, `partition` | Restore status for a consumer group offset partition |
+
+Status values:
+
+| Value | Meaning |
+| :--- | :--- |
+| `0` | `scheduled` — partition is queued for restore |
+| `1` | `in_progress` — partition has passed all filters and is being processed |
+| `2` | `skipped` — partition was excluded (topic excluded by regex or not found in the cluster) |
+| `3` | `already_restored` — partition already had a committed offset on the target cluster |
+| `4` | `restored` — offset was successfully resolved and committed in this run |
+
 ### Usage Example
 
 ```console
@@ -499,7 +517,7 @@ The progress of restore for topics can be monitored through the [exposed metrics
 3. Create the target topics with the **same partition count** as the source.
 4. Run `topics-plan-restore` (one per plan-restore topic). Deploy as a Kubernetes Deployment with 1 replica — the process keeps running after the plan is produced so its metrics remain scrapeable (see [Plan-restore metrics](#plan-restore-metrics)).
 5. Run `topics-restore` (one Deployment per plan-restore topic). Scale replicas to match the plan-restore topic's partition count. Monitor consumer group progress to determine completion.
-6. Run `consumer-groups-restore`. Can run in parallel with step 5. Runs as a Kubernetes Job and exits when all consumer groups are restored.
+6. Run `consumer-groups-restore`. Can run in parallel with step 5. Deploy as a Kubernetes Deployment with 1 replica — he process keeps running after the consumer groups are fully restore so its metrics remain scrapeable. (see Consumer groups restore metrics(#consumer-groups-restore-metrics))
 
 > **Note:** Consumer group restore lags behind topic restore because it retries on a timer interval.
 

@@ -3,23 +3,29 @@ kind: ServiceAccount
 metadata:
   name: kafka-groups-restore
 ---
-apiVersion: batch/v1
-kind: Job
+apiVersion: apps/v1
+kind: Deployment
 metadata:
   name: kafka-groups-restore
   labels:
     app: kafka-groups-restore
     app.kubernetes.io/name: kafka-groups-restore
 spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka-groups-restore
   template:
     metadata:
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/path: /__/metrics
         prometheus.io/port: "8081"
+      labels:
+        app: kafka-groups-restore
+        app.kubernetes.io/name: kafka-groups-restore
     spec:
       serviceAccountName: kafka-groups-restore
-      restartPolicy: OnFailure
       containers:
         - name: kafka-groups-restore
           image: quay.io/utilitywarehouse/kafka-data-keep:main
