@@ -40,6 +40,14 @@ type Restorer struct {
 
 // Restore orchestrates the full consumer group offset restoration.
 func (r *Restorer) Restore(ctx context.Context, offsets []codec.ConsumerGroupOffset) error {
+	for _, cg := range offsets {
+		for _, to := range cg.Topics {
+			for _, po := range to.Partitions {
+				recordStatusMetric(ctx, cg.GroupID, to.Topic, po.Partition, statusScheduled)
+			}
+		}
+	}
+
 	remaining, err := r.filterAlreadyRestored(ctx, offsets)
 	if err != nil {
 		return fmt.Errorf("checking already restored groups: %w", err)
@@ -57,6 +65,12 @@ func (r *Restorer) Restore(ctx context.Context, offsets []codec.ConsumerGroupOff
 		return fmt.Errorf("filtering non existing topics: %w", err)
 	}
 	slog.InfoContext(ctx, "Filtered non existing topics", "remaining", len(grouped))
+
+	for _, entries := range grouped {
+		for _, e := range entries {
+			recordStatusMetric(ctx, e.GroupID, e.Topic, e.Partition, statusInProgress)
+		}
+	}
 
 	return r.runLoop(ctx, r.loopInterval, grouped)
 }
@@ -113,6 +127,7 @@ func (r *Restorer) filterTopicPartitions(ctx context.Context, cg codec.ConsumerG
 				if resp, ok := fetchedPartitions[po.Partition]; ok && resp.At >= 0 {
 					slog.DebugContext(ctx, "Skipping already restored partition",
 						"group", cg.GroupID, "topic", to.Topic, "partition", po.Partition)
+					recordStatusMetric(ctx, cg.GroupID, to.Topic, po.Partition, statusAlreadyRestored)
 					continue
 				}
 			}
@@ -157,6 +172,9 @@ func filterExcludedTopics(ctx context.Context, grouped map[string][]groupOffset,
 	for topic, entries := range grouped {
 		if internal.MatchesAny(topic, excludeRegexes) {
 			slog.InfoContext(ctx, "Skipping excluded topic", "topic", topic)
+			for _, e := range entries {
+				recordStatusMetric(ctx, e.GroupID, e.Topic, e.Partition, statusSkipped)
+			}
 			continue
 		}
 		result[topic] = entries
@@ -190,6 +208,9 @@ func (r *Restorer) filterNonExistingTopics(ctx context.Context, grouped map[stri
 			result[topic] = entries
 		} else {
 			slog.InfoContext(ctx, "Skipping topic not found in cluster", "topic", restoredTopic)
+			for _, e := range entries {
+				recordStatusMetric(ctx, e.GroupID, e.Topic, e.Partition, statusSkipped)
+			}
 		}
 	}
 	return result, nil
@@ -316,6 +337,7 @@ func (r *Restorer) resolveEntry(ctx context.Context, entry groupOffset, latestRe
 	}
 
 	slog.InfoContext(ctx, "Restored consumer group offset", "group_entry", entry, "restored_offset", foundOffset)
+	recordStatusMetric(ctx, entry.GroupID, entry.Topic, entry.Partition, statusRestored)
 	return true, nil
 }
 
