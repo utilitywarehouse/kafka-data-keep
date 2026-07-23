@@ -509,7 +509,8 @@ Within a single pipeline, ordering can be controlled via configuration:
 1. **Large vs. normal topics** — use the `-process-large-topics-last` flag on `topics-plan-restore` to defer large topics automatically, so they don't block restoration of smaller ones.
 2. **High-priority vs. low-priority topics** — list high-priority topics first in the `-restore-topics-regex` parameter (e.g. `high-prio1,high-prio2,.*`) so they are planned and restored before others.
 
-The progress of restore for topics can be monitored through the [exposed metrics](#restore-metrics).
+The progress of restore for topics can be monitored through the [exposed metrics](#restore-metrics), or visually via the Grafana dashboard at [monitoring/grafana-dashboards/kafka-data-keep-restore-progress.json](monitoring/grafana-dashboards/kafka-data-keep-restore-progress.json), which covers plan-restore, topics-restore, and consumer-groups-restore progress.
+
 ### Steps
 
 1. Provision the new Kafka cluster.
