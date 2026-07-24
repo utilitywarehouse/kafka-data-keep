@@ -91,6 +91,11 @@ To optimize memory usage, the application automatically closes local files assoc
 - **Threshold Control**: This behavior is governed by the `partition-idle-threshold` parameter.
 - **Memory Optimization**: Keeping this threshold to a low value significantly improves memory usage by limiting the number of concurrently open file descriptors and buffered writers. By default this is set to 5s.
 
+### Consume Delay
+When multiple replicas start (or restart) around the same time, the consumer group can go through several rounds of rebalancing before settling on a stable partition assignment. Every time partitions are reassigned mid-flight, any not-yet-uploaded, in-progress data for those partitions is disregarded, which is wasteful when reassignments happen repeatedly in quick succession.
+- **Delay Control**: The `consume-delay` parameter delays the start of consumption after the Kafka client is created, giving the consumer group time to settle before any records are fetched and processed.
+- **Default**: `0s` (no delay), so this is opt-in.
+
 
 ## Configuration
 
@@ -112,6 +117,7 @@ The `topics-backup` subcommand supports the following flags and environment vari
 | `-s3-prefix` | `S3_PREFIX` |                     | The prefix to use for the backup files in S3 |
 | `-min-file-size` | `MIN_FILE_SIZE` | `5242880` (5MB)     | The minimum file size in bytes for each partition backup file |
 | `-partition-idle-threshold` | `PARTITION_IDLE_THRESHOLD` | `5s`                | The threshold after which a partition will be considered idle for not consuming any new records (duration, e.g. `30s`, `5m`) |
+| `-consume-delay` | `CONSUME_DELAY` | `0s`                | Delay before starting to consume, to let the consumer group settle (duration, e.g. `30s`, `5m`). Useful when multiple replicas start concurrently, as repeated partition shuffling during rebalancing is expensive since the in-progress data for the reassigned partitions is disregarded |
 | `-working-dir` | `WORKING_DIR` | `kafka-backup-data` | Working directory for local files |
 | `-s3-endpoint` | `AWS_ENDPOINT_URL` | | S3 endpoint URL (for LocalStack or custom S3-compatible storage) |
 | `-s3-region` | `AWS_REGION` | `eu-west-1` | S3 region |

@@ -110,6 +110,12 @@ func loadTopicsBackupAppConfig(args []string) (topicsbackup.AppConfig, error) {
 		getEnvDuration("PARTITION_IDLE_THRESHOLD", 5*time.Second),
 		"The threshold after which a partition will be considered idle for not consuming any new records. The local files for idle partitions are closed and are resumed on the next incoming record. Must be a duration.",
 	)
+	fs.DurationVar(
+		&cfg.ConsumeDelay,
+		"consume-delay",
+		getEnvDuration("CONSUME_DELAY", 0*time.Second),
+		"Delay before starting to consume, to let the consumer group settle. Useful when multiple replicas start concurrently, as repeated partition shuffling during rebalancing is expensive since the in-progress data for the reassigned partitions is disregarded. Must be a duration.",
+	)
 
 	fs.StringVar(
 		&cfg.WorkingDir,

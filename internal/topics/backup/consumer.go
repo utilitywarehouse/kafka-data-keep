@@ -3,13 +3,24 @@ package backup
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/kafka"
 )
 
 const maxPollRecords = 10000 // this affects how many records are processed per poll, not how many are fetched from Kafka
-func runConsumer(ctx context.Context, client *kgo.Client, pwManager *partitionsWriterManager) error {
+func runConsumer(ctx context.Context, client *kgo.Client, pwManager *partitionsWriterManager, consumeDelay time.Duration) error {
+	if consumeDelay > 0 {
+		slog.InfoContext(ctx, "Delaying consumption to let the consumer group settle", "delay", consumeDelay)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(consumeDelay):
+		}
+	}
+
 	for {
 		fetches := client.PollRecords(ctx, maxPollRecords)
 

@@ -26,6 +26,7 @@ type AppConfig struct {
 	GroupID                string
 	MinFileSize            int64
 	PartitionIdleThreshold time.Duration
+	ConsumeDelay           time.Duration
 	WorkingDir             string
 	S3                     ints3.Config
 	S3Prefix               string
@@ -83,7 +84,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
 	eg.Go(func() error {
-		return runConsumer(ctx, client, mgr)
+		return runConsumer(ctx, client, mgr, cfg.ConsumeDelay)
 	})
 
 	eg.Go(func() error {

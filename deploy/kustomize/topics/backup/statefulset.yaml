@@ -74,6 +74,8 @@ spec:
             # Using a lower IDLE threshold reduces the memory usage, as it will not keep the local partition files open.
             - name: PARTITION_IDLE_THRESHOLD
               value: "5s"
+            - name: CONSUME_DELAY
+              value: "0s"
             - name: WORKING_DIR
               value: /backup-workdir
             - name: LOG_LEVEL
