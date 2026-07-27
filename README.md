@@ -418,7 +418,7 @@ The application restores consumer group offsets from an S3 Avro backup file (cre
 2.  **Filtering**: Filters consumer groups by the include regular expressions, removes groups that already have offsets committed in the cluster, and removes topics that don't exist in the cluster.
 3.  **Offset Resolution Loop**: On each iteration:
     -   For each topic, reads the latest record on each partition using the `restore.source-offset` header.
-    -   For each consumer group offset, if the source offset in the latest record is greater or equal to the backed-up offset, it computes the new offset and walks forward from that position to find the exact matching record.
+    -   For each consumer group offset, if the source offset in the latest record is greater or equal to the backed-up offset, it searches for the exact matching record: if the latest record's source offset already matches, it's used directly; otherwise it walks backwards from the latest record in fixed steps until it finds a record at or before the target offset (or reaches the start of the partition), then walks forward from there to find the exact match.
     -   Commits the resolved offset for the consumer group.
 4.  **Completion**: Exits when all consumer group offsets have been restored.
 
