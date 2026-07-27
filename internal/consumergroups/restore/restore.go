@@ -325,9 +325,17 @@ func (r *Restorer) resolveEntry(ctx context.Context, entry groupOffset, latestRe
 		return false, nil
 	}
 
-	foundOffset, err := r.searchLastProcessed(ctx, entry, latestRecord.Offset)
-	if err != nil {
-		return false, fmt.Errorf("finding restored offset: %w", err)
+	var foundOffset int64
+	if sourceOffset == entry.LastProcessedOffset {
+		// the latest record is itself the last processed one; no need to search for it.
+		slog.DebugContext(ctx, "Found last processed source offset on the latest record",
+			"group_entry", entry, "offset", latestRecord.Offset)
+		foundOffset = latestRecord.Offset
+	} else {
+		foundOffset, err = r.searchLastProcessed(ctx, entry, latestRecord.Offset)
+		if err != nil {
+			return false, fmt.Errorf("finding restored offset: %w", err)
+		}
 	}
 
 	// add 1 to the offset, as this is the previous record to where the consumer group is pointing to.
