@@ -755,7 +755,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "count(group by (group) (last_over_time(kafka_data_keep_consumergroups_restore_status{topic=~\"$topic\", group=~\"$group\"}[$__range]) <= 1)) OR vector(0)",
+          "expr": "count(group by (group) (max by (topic, group) (last_over_time(kafka_data_keep_consumergroups_restore_status{topic=~\"$topic\", group=~\"$group\"}[$__range])) <= 1)) OR vector(0)",
           "instant": true,
           "legendFormat": "Remaining",
           "refId": "A"
@@ -823,7 +823,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "count((group by (group) (last_over_time(kafka_data_keep_consumergroups_restore_status{topic=~\"$topic\", group=~\"$group\"}[$__range]))) unless on (group) (group by (group) (last_over_time(kafka_data_keep_consumergroups_restore_status{topic=~\"$topic\", group=~\"$group\"}[$__range]) <= 1)) unless on (group) ((group by (group) (last_over_time(kafka_data_keep_consumergroups_restore_status{topic=~\"$topic\", group=~\"$group\"}[$__range]) == 2)) unless on (group) (group by (group) (last_over_time(kafka_data_keep_consumergroups_restore_status{topic=~\"$topic\", group=~\"$group\"}[$__range]) <= 1)))) OR vector(0)",
+          "expr": "count((group by (group) (max by (topic, group) (last_over_time(kafka_data_keep_consumergroups_restore_status{topic=~\"$topic\", group=~\"$group\"}[$__range])))) unless on (group) (group by (group) (max by (topic, group) (last_over_time(kafka_data_keep_consumergroups_restore_status{topic=~\"$topic\", group=~\"$group\"}[$__range])) <= 1)) unless on (group) ((group by (group) (max by (topic, group) (last_over_time(kafka_data_keep_consumergroups_restore_status{topic=~\"$topic\", group=~\"$group\"}[$__range])) == 2)) unless on (group) (group by (group) (max by (topic, group) (last_over_time(kafka_data_keep_consumergroups_restore_status{topic=~\"$topic\", group=~\"$group\"}[$__range])) <= 1)))) OR vector(0)",
           "instant": true,
           "legendFormat": "Restored",
           "refId": "A"
@@ -891,7 +891,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "count((group by (group) (last_over_time(kafka_data_keep_consumergroups_restore_status{topic=~\"$topic\", group=~\"$group\"}[$__range]) == 2)) unless on (group) (group by (group) (last_over_time(kafka_data_keep_consumergroups_restore_status{topic=~\"$topic\", group=~\"$group\"}[$__range]) <= 1))) OR vector(0)",
+          "expr": "count((group by (group) (max by (topic, group) (last_over_time(kafka_data_keep_consumergroups_restore_status{topic=~\"$topic\", group=~\"$group\"}[$__range])) == 2)) unless on (group) (group by (group) (max by (topic, group) (last_over_time(kafka_data_keep_consumergroups_restore_status{topic=~\"$topic\", group=~\"$group\"}[$__range])) <= 1))) OR vector(0)",
           "instant": true,
           "legendFormat": "Skipped",
           "refId": "A"
@@ -954,7 +954,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "group by (group) (last_over_time(kafka_data_keep_consumergroups_restore_status{topic=~\"$topic\", group=~\"$group\"}[$__range]) <= 1)",
+          "expr": "group by (group) (max by (topic, group) (last_over_time(kafka_data_keep_consumergroups_restore_status{topic=~\"$topic\", group=~\"$group\"}[$__range])) <= 1)",
           "format": "table",
           "instant": true,
           "legendFormat": "__auto",
@@ -1033,7 +1033,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "(group by (group) (last_over_time(kafka_data_keep_consumergroups_restore_status{topic=~\"$topic\", group=~\"$group\"}[$__range]))) unless on (group) (group by (group) (last_over_time(kafka_data_keep_consumergroups_restore_status{topic=~\"$topic\", group=~\"$group\"}[$__range]) <= 1)) unless on (group) ((group by (group) (last_over_time(kafka_data_keep_consumergroups_restore_status{topic=~\"$topic\", group=~\"$group\"}[$__range]) == 2)) unless on (group) (group by (group) (last_over_time(kafka_data_keep_consumergroups_restore_status{topic=~\"$topic\", group=~\"$group\"}[$__range]) <= 1)))",
+          "expr": "(group by (group) (max by (topic, group) (last_over_time(kafka_data_keep_consumergroups_restore_status{topic=~\"$topic\", group=~\"$group\"}[$__range])))) unless on (group) (group by (group) (max by (topic, group) (last_over_time(kafka_data_keep_consumergroups_restore_status{topic=~\"$topic\", group=~\"$group\"}[$__range])) <= 1)) unless on (group) ((group by (group) (max by (topic, group) (last_over_time(kafka_data_keep_consumergroups_restore_status{topic=~\"$topic\", group=~\"$group\"}[$__range])) == 2)) unless on (group) (group by (group) (max by (topic, group) (last_over_time(kafka_data_keep_consumergroups_restore_status{topic=~\"$topic\", group=~\"$group\"}[$__range])) <= 1)))",
           "format": "table",
           "instant": true,
           "legendFormat": "__auto",
@@ -1112,7 +1112,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "(group by (group) (last_over_time(kafka_data_keep_consumergroups_restore_status{topic=~\"$topic\", group=~\"$group\"}[$__range]) == 2)) unless on (group) (group by (group) (last_over_time(kafka_data_keep_consumergroups_restore_status{topic=~\"$topic\", group=~\"$group\"}[$__range]) <= 1))",
+          "expr": "(group by (group) (max by (topic, group) (last_over_time(kafka_data_keep_consumergroups_restore_status{topic=~\"$topic\", group=~\"$group\"}[$__range])) == 2)) unless on (group) (group by (group) (max by (topic, group) (last_over_time(kafka_data_keep_consumergroups_restore_status{topic=~\"$topic\", group=~\"$group\"}[$__range])) <= 1))",
           "format": "table",
           "instant": true,
           "legendFormat": "__auto",
@@ -1257,7 +1257,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "min by (topic, group) (last_over_time(kafka_data_keep_consumergroups_restore_status{topic=~\"$topic\", group=~\"$group\"}[$__range])) != 2",
+          "expr": "max by (topic, group) (last_over_time(kafka_data_keep_consumergroups_restore_status{topic=~\"$topic\", group=~\"$group\"}[$__range])) != 2",
           "legendFormat": "{{topic}} / {{group}}",
           "range": true,
           "refId": "A"
