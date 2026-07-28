@@ -443,6 +443,7 @@ The `consumer-groups-restore` subcommand supports the following flags and enviro
 | `-exclude-groups-regexes` | `EXCLUDE_GROUPS_REGEXES` | | List of regular expressions to exclude consumer groups from restore (comma separated) |
 | `-exclude-topics-regexes` | `EXCLUDE_TOPICS_REGEXES` | | List of regular expressions to exclude topics from restore (comma separated) |
 | `-loop-interval` | `LOOP_INTERVAL` | `1m` | Duration between consumer group restore iterations (e.g. `30s`, `5m`) |
+| `-lookup-backwards-step` | `LOOKUP_BACKWARDS_STEP` | `10000` | How far back (in restored-topic offsets) each backwards search hop looks when searching for a consumer group's last processed offset |
 | `-s3-endpoint` | `AWS_ENDPOINT_URL` | | S3 endpoint URL (for LocalStack or custom S3-compatible storage) |
 | `-s3-region` | `AWS_REGION` | `eu-west-1` | S3 region |
 | `-log-level` | `LOG_LEVEL` | `INFO` | The log level to use |

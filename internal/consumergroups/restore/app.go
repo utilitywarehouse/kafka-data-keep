@@ -30,6 +30,7 @@ type AppConfig struct {
 	ExcludeGroupsRegexes string
 	ExcludeTopicsRegexes string
 	LoopInterval         time.Duration
+	BackwardsStep        int64
 }
 
 // Run executes the consumer groups restore process.
@@ -82,6 +83,7 @@ func Run(ctx context.Context, cfg AppConfig) error {
 		latestReader:         latestReader,
 		loopInterval:         cfg.LoopInterval,
 		excludeTopicsRegexes: excludeTopicsRegexes,
+		backwardsStep:        cfg.BackwardsStep,
 	}
 	return restorer.Restore(ctx, offsets)
 }

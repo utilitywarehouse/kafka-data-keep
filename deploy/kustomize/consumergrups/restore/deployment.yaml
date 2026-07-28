@@ -64,6 +64,8 @@ spec:
               value: ""
             - name: LOOP_INTERVAL
               value: 1m
+            - name: LOOKUP_BACKWARDS_STEP
+              value: "10000"
             - name: LOG_LEVEL
               value: INFO
             - name: LOG_FORMAT
