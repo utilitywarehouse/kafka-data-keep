@@ -8,7 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager v0.2.5
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.103.1
 	github.com/google/uuid v1.6.0
-	github.com/hamba/avro/v2 v2.31.0
+	github.com/iskorotkov/avro/v2 v2.33.1
 	github.com/johanbrandhorst/certify v1.9.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/stretchr/testify v1.11.1
@@ -60,7 +60,6 @@ require (
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/ebitengine/purego v0.10.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
-	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect

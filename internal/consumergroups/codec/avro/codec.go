@@ -4,8 +4,10 @@ import (
 	_ "embed"
 	"fmt"
 	"io"
+	"math"
 
-	"github.com/hamba/avro/v2/ocf"
+	avro "github.com/iskorotkov/avro/v2"
+	"github.com/iskorotkov/avro/v2/ocf"
 	"github.com/utilitywarehouse/kafka-data-keep/internal/consumergroups/codec"
 )
 
@@ -45,7 +47,12 @@ func (e *groupEncoder) Close() error {
 type GroupDecoderFactory struct{}
 
 func (f *GroupDecoderFactory) New(r io.Reader) (codec.GroupDecoder, error) {
-	decoder, err := ocf.NewDecoder(r)
+	cfg := avro.Config{
+		MaxByteSliceSize:  math.MaxInt32,
+		MaxSliceAllocSize: math.MaxInt32,
+		MaxMapAllocSize:   math.MaxInt32,
+	}.Freeze()
+	decoder, err := ocf.NewDecoder(r, ocf.WithDecoderConfig(cfg))
 	if err != nil {
 		return nil, fmt.Errorf("failed creating ocf decoder: %w", err)
 	}
