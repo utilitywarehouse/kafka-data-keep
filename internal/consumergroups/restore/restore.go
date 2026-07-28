@@ -36,6 +36,7 @@ type Restorer struct {
 	latestReader         *kafka.LatestReader
 	loopInterval         time.Duration
 	excludeTopicsRegexes []*regexp.Regexp
+	backwardsStep        int64
 }
 
 // Restore orchestrates the full consumer group offset restoration.
@@ -354,9 +355,6 @@ func (r *Restorer) resolveEntry(ctx context.Context, entry groupOffset, latestRe
 	return true, nil
 }
 
-// backwardsStep is how far back (in restored-topic offsets) each backwards search hop looks.
-const backwardsStep = 1000
-
 const (
 	offsetStartOfPartition int64 = -1 // no last-processed; next-to-read will be 0 after +1
 	offsetNotFound         int64 = -2 // value returned together with an error when the last processed offset could not be found
@@ -378,10 +376,13 @@ func (r *Restorer) searchLastProcessed(ctx context.Context, entry groupOffset, l
 		// A negative offset would be interpreted by franz-go as "consume from the end",
 		// causing PollRecords to block indefinitely waiting for new records that never
 		// arrive during a restore. Clamp to 0 so we scan from the beginning.
-		offset -= backwardsStep
+		offset -= r.backwardsStep
 		if offset < 0 {
 			offset = 0
 		}
+
+		slog.DebugContext(ctx, "Looking up last processed offset backwards",
+			"group_entry", entry, "offset", offset)
 
 		rec, srcOffset, err := r.fetchRecordAt(ctx, topic, entry.Partition, offset)
 		if err != nil {
@@ -458,7 +459,7 @@ func (r *Restorer) scanForwardLastProcessed(ctx context.Context, topic string, e
 	for {
 		// Poll the next batch directly — the consumer continues from where it left off.
 		// The searched entry should be in the batch from the previous backwards search.
-		fetches := r.consumeClient.PollRecords(ctx, backwardsStep)
+		fetches := r.consumeClient.PollRecords(ctx, int(r.backwardsStep))
 		if err := fetches.Err0(); err != nil {
 			return offsetNotFound, fmt.Errorf("polling from kafka: %w", err)
 		}

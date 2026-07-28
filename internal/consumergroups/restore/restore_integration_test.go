@@ -247,6 +247,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 			ExcludeGroupsRegexes: ignoreGroupID, // exclude everything not included
 			ExcludeTopicsRegexes: "test-exclude.*",
 			LoopInterval:         50 * time.Millisecond,
+			BackwardsStep:        1000,
 		}
 
 		restoreCtx, restoreCancel := context.WithTimeout(ctx, 60*time.Second)
@@ -359,6 +360,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 			RestoreTopicsPrefix:  cgRestoreTopicPrefix,
 			IncludeGroupsRegexes: ".*",
 			LoopInterval:         50 * time.Millisecond,
+			BackwardsStep:        1000,
 		}
 
 		// restore should finish right away, as the group should be skipped as it has offsets
@@ -426,6 +428,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 			RestoreTopicsPrefix:  "", // topics are not prefixed
 			IncludeGroupsRegexes: ".*",
 			LoopInterval:         50 * time.Millisecond,
+			BackwardsStep:        1000,
 		}
 
 		// restore should finish right away, as the messages are already written
@@ -495,6 +498,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 			RestoreTopicsPrefix:  restoreTopicPrefix,
 			IncludeGroupsRegexes: ".*",
 			LoopInterval:         50 * time.Millisecond,
+			BackwardsStep:        1000,
 		}
 
 		// restore should finish right away, as the messages are already written
@@ -560,6 +564,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 			RestoreTopicsPrefix:  restoreTopicPrefix,
 			IncludeGroupsRegexes: ".*",
 			LoopInterval:         50 * time.Millisecond,
+			BackwardsStep:        1000,
 		}
 
 		// restore should finish right away, as the messages are already written
@@ -629,6 +634,7 @@ func TestConsumerGroupRestore(t *testing.T) {
 			RestoreTopicsPrefix:  "", // topics are not prefixed
 			IncludeGroupsRegexes: ".*",
 			LoopInterval:         50 * time.Millisecond,
+			BackwardsStep:        1000,
 		}
 
 		// restore should finish right away, as the messages are already written

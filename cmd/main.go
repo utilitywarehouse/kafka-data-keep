@@ -476,6 +476,12 @@ func loadConsumerGroupsRestoreAppConfig(args []string) (consumergroupsrestore.Ap
 		getEnvDuration("LOOP_INTERVAL", 1*time.Minute),
 		"Duration between consumer group restore iterations",
 	)
+	fs.Int64Var(
+		&cfg.BackwardsStep,
+		"lookup-backwards-step",
+		getEnvInt64("LOOKUP_BACKWARDS_STEP", 10000),
+		"How far back (in restored-topic offsets) each backwards search hop looks when searching for a consumer group's last processed offset",
+	)
 
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
