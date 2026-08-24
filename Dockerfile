@@ -1,4 +1,4 @@
-FROM golang:1.26.5-alpine AS build
+FROM golang:1.26-alpine AS build
 
 RUN --mount=type=cache,target=/var/cache/apk \
     apk add git
@@ -10,16 +10,19 @@ WORKDIR /build
 ENV CGO_ENABLED=0
 
 # Download & cache dependencies
+# GOTOOLCHAIN pins the exact toolchain declared by go.mod's `go` line, so the
+# build isn't at the mercy of whatever patch version the base image ships.
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=bind,source=go.sum,target=go.sum \
     --mount=type=bind,source=go.mod,target=go.mod\
-    go mod download
+    GOTOOLCHAIN=go$(awk '/^go /{print $2; exit}' go.mod) go mod download
 
 ### Build app & inject build time properties
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     --mount=type=secret,id=github_token \
     --mount=type=bind,target=. \
+    GOTOOLCHAIN=go$(awk '/^go /{print $2; exit}' go.mod) \
     go build -o /kafka-data-keep -ldflags "-s -w -X 'main.gitSHA=${GIT_SHA}' -X 'main.buildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)'" ./cmd/main.go
 
 FROM alpine:3.23
