@@ -11,7 +11,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go/modules/minio"
+	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/wait"
 )
 
 const (
@@ -24,20 +25,30 @@ func StartS3Service(t *testing.T) (string, func()) {
 	t.Helper()
 	ctx := t.Context()
 
-	minioContainer, err := minio.Run(ctx, "minio/minio:latest", minio.WithUsername(S3User), minio.WithPassword(s3pass))
+	// LocalStack accepts any credentials; pinned to a release that doesn't require an auth token
+	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: testcontainers.ContainerRequest{
+			Image:        "localstack/localstack:3.8",
+			ExposedPorts: []string{"4566/tcp"},
+			Env:          map[string]string{"SERVICES": "s3"},
+			WaitingFor:   wait.ForHTTP("/_localstack/health").WithPort("4566/tcp"),
+		},
+		Started: true,
+	})
 	require.NoError(t, err)
 
 	terminateFunc := func() {
 		// use the background context to terminate, as the test context is cancelled already at this point
-		if err := minioContainer.Terminate(context.Background()); err != nil {
-			t.Logf("Failed to terminate MinIO container: %v", err)
+		if err := container.Terminate(context.Background()); err != nil {
+			t.Logf("Failed to terminate LocalStack container: %v", err)
 		}
 	}
 
-	// Get connection details for MinIO
-	connString, err := minioContainer.ConnectionString(ctx)
+	host, err := container.Host(ctx)
 	require.NoError(t, err)
-	return fmt.Sprintf("http://%s", connString), terminateFunc
+	port, err := container.MappedPort(ctx, "4566/tcp")
+	require.NoError(t, err)
+	return fmt.Sprintf("http://%s:%s", host, port.Port()), terminateFunc
 }
 
 func NewS3Client(t *testing.T, s3Endpoint string) *s3.Client {
