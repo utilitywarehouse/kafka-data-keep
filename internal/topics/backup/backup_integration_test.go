@@ -919,7 +919,7 @@ func listFilesOnBucket(t *testing.T, s3Client *s3.Client, s3prefix string) map[s
 		require.NoError(t, err)
 		records := decodeAvroFile(t, getResp.Body)
 		filesFound[key] = len(records)
-		t.Logf("Found file: %s (size: %d), recs: %d", key, obj.Size, len(records))
+		t.Logf("Found file: %s (size: %d), recs: %d", key, aws.ToInt64(obj.Size), len(records))
 	}
 	return filesFound
 }

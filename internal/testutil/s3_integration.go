@@ -11,7 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go/modules/minio"
+	"github.com/testcontainers/testcontainers-go/modules/s3mock"
 )
 
 const (
@@ -24,20 +24,19 @@ func StartS3Service(t *testing.T) (string, func()) {
 	t.Helper()
 	ctx := t.Context()
 
-	minioContainer, err := minio.Run(ctx, "minio/minio:latest", minio.WithUsername(S3User), minio.WithPassword(s3pass))
+	container, err := s3mock.Run(ctx, "adobe/s3mock:5.2.3")
 	require.NoError(t, err)
 
 	terminateFunc := func() {
 		// use the background context to terminate, as the test context is cancelled already at this point
-		if err := minioContainer.Terminate(context.Background()); err != nil {
-			t.Logf("Failed to terminate MinIO container: %v", err)
+		if err := container.Terminate(context.Background()); err != nil {
+			t.Logf("Failed to terminate S3Mock container: %v", err)
 		}
 	}
 
-	// Get connection details for MinIO
-	connString, err := minioContainer.ConnectionString(ctx)
+	endpoint, err := container.EndpointURL(ctx)
 	require.NoError(t, err)
-	return fmt.Sprintf("http://%s", connString), terminateFunc
+	return endpoint, terminateFunc
 }
 
 func NewS3Client(t *testing.T, s3Endpoint string) *s3.Client {
