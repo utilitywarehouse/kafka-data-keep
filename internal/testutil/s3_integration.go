@@ -11,8 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
+	"github.com/testcontainers/testcontainers-go/modules/s3mock"
 )
 
 const (
@@ -25,15 +24,7 @@ func StartS3Service(t *testing.T) (string, func()) {
 	t.Helper()
 	ctx := t.Context()
 
-	// S3Mock does not validate credentials
-	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        "adobe/s3mock:5.2.3",
-			ExposedPorts: []string{"9090/tcp"},
-			WaitingFor:   wait.ForListeningPort("9090/tcp"),
-		},
-		Started: true,
-	})
+	container, err := s3mock.Run(ctx, "adobe/s3mock:5.2.3")
 	require.NoError(t, err)
 
 	terminateFunc := func() {
@@ -43,11 +34,9 @@ func StartS3Service(t *testing.T) (string, func()) {
 		}
 	}
 
-	host, err := container.Host(ctx)
+	endpoint, err := container.EndpointURL(ctx)
 	require.NoError(t, err)
-	port, err := container.MappedPort(ctx, "9090/tcp")
-	require.NoError(t, err)
-	return fmt.Sprintf("http://%s:%s", host, port.Port()), terminateFunc
+	return endpoint, terminateFunc
 }
 
 func NewS3Client(t *testing.T, s3Endpoint string) *s3.Client {
