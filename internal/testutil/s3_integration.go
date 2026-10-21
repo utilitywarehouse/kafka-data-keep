@@ -25,13 +25,12 @@ func StartS3Service(t *testing.T) (string, func()) {
 	t.Helper()
 	ctx := t.Context()
 
-	// LocalStack accepts any credentials; pinned to a release that doesn't require an auth token
+	// S3Mock does not validate credentials
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        "localstack/localstack:3.8",
-			ExposedPorts: []string{"4566/tcp"},
-			Env:          map[string]string{"SERVICES": "s3"},
-			WaitingFor:   wait.ForHTTP("/_localstack/health").WithPort("4566/tcp"),
+			Image:        "adobe/s3mock:5.2.3",
+			ExposedPorts: []string{"9090/tcp"},
+			WaitingFor:   wait.ForListeningPort("9090/tcp"),
 		},
 		Started: true,
 	})
@@ -40,13 +39,13 @@ func StartS3Service(t *testing.T) (string, func()) {
 	terminateFunc := func() {
 		// use the background context to terminate, as the test context is cancelled already at this point
 		if err := container.Terminate(context.Background()); err != nil {
-			t.Logf("Failed to terminate LocalStack container: %v", err)
+			t.Logf("Failed to terminate S3Mock container: %v", err)
 		}
 	}
 
 	host, err := container.Host(ctx)
 	require.NoError(t, err)
-	port, err := container.MappedPort(ctx, "4566/tcp")
+	port, err := container.MappedPort(ctx, "9090/tcp")
 	require.NoError(t, err)
 	return fmt.Sprintf("http://%s:%s", host, port.Port()), terminateFunc
 }
